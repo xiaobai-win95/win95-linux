@@ -1,0 +1,42 @@
+#!/bin/sh
+# Close the XFCE session and return to the Win95 desktop on tty1.
+# Called from the XFCE desktop shortcut.
+
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+
+if [ "$(id -u)" != "0" ]; then
+	echo "switch-to-win95: must run as root" >&2
+	exit 1
+fi
+
+if [ ! -S /tmp/.X11-unix/X0 ]; then
+	echo "XFCE is not running; switching to tty1."
+	command -v chvt >/dev/null 2>&1 && chvt 1
+	exit 0
+fi
+
+# Capture the current X selection before X goes away so the Win95 side can
+# paste whatever was copied in the final seconds of the XFCE session.
+if command -v xclip >/dev/null 2>&1; then
+	if xclip -selection clipboard -o >/run/win95-clipboard.tmp 2>/dev/null; then
+		[ -s /run/win95-clipboard.tmp ] && mv -f /run/win95-clipboard.tmp /run/win95-clipboard
+	fi
+	rm -f /run/win95-clipboard.tmp
+fi
+
+# --fast logs out without the session dialog; startgui then restarts win95gui.
+if command -v xfce4-session-logout >/dev/null 2>&1; then
+	xfce4-session-logout --logout --fast >/dev/null 2>&1
+else
+	pkill -TERM -f xfce4-session >/dev/null 2>&1
+fi
+
+i=0
+while [ -S /tmp/.X11-unix/X0 ] && [ "$i" -lt 100 ]; do
+	sleep 0.1
+	i=$((i + 1))
+done
+
+command -v chvt >/dev/null 2>&1 && chvt 1
+exit 0

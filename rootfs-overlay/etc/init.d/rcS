@@ -1,0 +1,28 @@
+#!/bin/sh
+
+export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export LANG=C.UTF-8
+
+mountpoint -q /proc || mount -t proc proc /proc
+mountpoint -q /sys || mount -t sysfs sysfs /sys
+mountpoint -q /dev || mount -t devtmpfs devtmpfs /dev
+mkdir -p /dev/pts /dev/shm
+mountpoint -q /dev/pts || mount -t devpts -o gid=5,mode=0620 devpts /dev/pts
+mountpoint -q /tmp || mount -t tmpfs -o mode=1777 tmpfs /tmp
+mountpoint -q /run || mount -t tmpfs -o mode=0755 tmpfs /run
+
+echo 1 > /proc/sys/kernel/printk 2>/dev/null
+echo 0 > /sys/class/graphics/fbcon/cursor_blink 2>/dev/null
+hostname win95 2>/dev/null
+mkdir -p /root/文档 /root/下载 /root/桌面 /root/图片 /var/log
+
+for iface in /sys/class/net/*; do
+	[ -e "$iface" ] || continue
+	name=${iface##*/}
+	[ "$name" = lo ] && continue
+	ifconfig "$name" up 2>/dev/null
+	udhcpc -i "$name" -b -t 8 -T 2 -s /etc/udhcpc.script \
+		-p "/run/udhcpc.$name.pid" >/dev/null 2>&1 &
+done
+
+exit 0

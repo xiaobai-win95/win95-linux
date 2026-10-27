@@ -1,0 +1,135 @@
+#!/bin/sh
+export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+cd /root
+
+XFCE_REQUEST=/run/win95-xfce.request
+XFCE_LOG=/var/log/xfce.log
+
+start_xfce() {
+	vt=$(tty 2>/dev/null | sed -n 's|^/dev/tty\([0-9][0-9]*\)$|\1|p')
+	[ -n "$vt" ] || vt=1
+
+	# Remove a display 0 lock left by an X server that crashed; never touch
+	# one whose owner is still alive.
+	if [ -e /tmp/.X0-lock ]; then
+		xpid=$(cat /tmp/.X0-lock 2>/dev/null)
+		if [ -n "$xpid" ] && kill -0 "$xpid" 2>/dev/null; then
+			echo "X display 0 is already in use by pid $xpid" >>"$XFCE_LOG"
+			return
+		fi
+		rm -f /tmp/.X0-lock /tmp/.X11-unix/X0
+	fi
+
+	mkdir -p /run/user/0 /run/udev /tmp/.X11-unix
+	chmod 0700 /run/user/0
+	chmod 1777 /tmp/.X11-unix
+	if command -v udevd >/dev/null 2>&1; then
+		if ! pidof udevd >/dev/null 2>&1; then
+			udevd --daemon >>"$XFCE_LOG" 2>&1
+		fi
+		udevadm trigger --action=add >>"$XFCE_LOG" 2>&1
+		udevadm settle >>"$XFCE_LOG" 2>&1
+	fi
+
+	# Cross-TTY clipboard sharing needs xclip on the X side. It is part of
+	# the normal package list; this covers sessions installed before it was.
+	if ! command -v xclip >/dev/null 2>&1; then
+		apk add xclip >>"$XFCE_LOG" 2>&1
+	fi
+
+	echo "Starting XFCE on tty$vt (log: $XFCE_LOG)" >/dev/tty1 2>/dev/null
+	echo "=== $(date '+%F %T') startxfce4 on vt$vt ===" >>"$XFCE_LOG"
+
+	export LANG=zh_CN.UTF-8 LANGUAGE=zh_CN:zh
+	export XDG_VTNR="$vt" XDG_RUNTIME_DIR=/run/user/0 XDG_SESSION_TYPE=x11
+	if command -v dbus-run-session >/dev/null 2>&1; then
+		dbus-run-session -- startx /usr/bin/startxfce4 -- "vt$vt" -keeptty -nolisten tcp >>"$XFCE_LOG" 2>&1
+	else
+		startx /usr/bin/startxfce4 -- "vt$vt" -keeptty -nolisten tcp >>"$XFCE_LOG" 2>&1
+	fi
+	rc=$?
+	echo "=== $(date '+%F %T') startxfce4 exited ($rc) ===" >>"$XFCE_LOG"
+	# After an XFCE logout, bring the console back to the Win95 desktop.
+	command -v chvt >/dev/null 2>&1 && chvt "$vt"
+}
+
+# A program chosen in Win95 is handed over through /run/win95-launch. Turn it
+# into a one-shot XFCE autostart entry so it opens once the X session is up.
+prepare_launch() {
+	[ -s /run/win95-launch ] || return 0
+	cmd=$(cat /run/win95-launch)
+	rm -f /run/win95-launch
+	[ -n "$cmd" ] || return 0
+	mkdir -p /root/.config/autostart
+	cat >/run/win95-launch.sh <<EOF
+#!/bin/sh
+export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export HOME=/root DISPLAY=:0 LANG=zh_CN.UTF-8
+rm -f /root/.config/autostart/win95-launch.desktop /run/win95-launch.sh
+exec $cmd
+EOF
+	chmod 0755 /run/win95-launch.sh
+	cat >/root/.config/autostart/win95-launch.desktop <<'EOF'
+[Desktop Entry]
+Type=Application
+Name=Win95 Launch
+Exec=/run/win95-launch.sh
+Terminal=false
+NoDisplay=true
+X-GNOME-Autostart-enabled=true
+EOF
+}
+
+clear_stale_launch() {
+	if [ ! -e /run/win95-launch ] && [ ! -e /run/win95-launch.sh ]; then
+		rm -f /root/.config/autostart/win95-launch.desktop
+	fi
+}
+
+while :; do
+	clear_stale_launch
+	/usr/bin/win95gui >>/var/log/win95gui.log 2>&1
+	rc=$?
+
+	# switch-to-xfce creates this file before stopping the GUI. Keep this
+	# process alive (so init does not respawn a second GUI over Xorg) and
+	# start the alternative desktop in the tty1 session.
+	if [ -e "$XFCE_REQUEST" ]; then
+		rm -f "$XFCE_REQUEST"
+		prepare_launch
+		start_xfce
+		continue
+	fi
+
+	# Code 42 is a user logoff, not a crash. The console has no CJK font,
+	# so this login prompt stays ASCII.
+	if [ "$rc" = "42" ]; then
+		{
+			echo
+			echo "You have logged off from the Windows 95 desktop."
+			echo "Press Enter to log on again."
+		} >/dev/tty1 2>&1
+		read -r _ </dev/tty1 >/dev/null 2>&1
+		continue
+	fi
+
+	# The text console has no CJK font, so this fallback stays ASCII.
+	{
+		echo
+		echo "GUI failed or exited (code $rc). Last log lines:"
+		tail -n 12 /var/log/win95gui.log 2>/dev/null
+		echo
+		echo "--- framebuffer ---"
+		ls -l /dev/fb* 2>&1
+		for f in /sys/class/graphics/*/name; do
+			[ -e "$f" ] && echo "$f: $(cat "$f" 2>/dev/null)"
+		done
+		echo "--- input devices ---"
+		ls -l /dev/input 2>&1
+		echo "--- kernel log ---"
+		dmesg 2>/dev/null | grep -iE 'win95|drm|fb0|virtio|simpledrm' | tail -n 20
+		echo
+		echo "Type commands to investigate. Type 'exit' to retry the GUI."
+	} >/dev/tty1 2>&1
+	/bin/sh -i </dev/tty1 >/dev/tty1 2>&1
+done

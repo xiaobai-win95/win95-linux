@@ -1,0 +1,11 @@
+# Windows 95 Linux 中文版
+
+::sysinit:/etc/init.d/rcS
+# tty1：Win95 图形桌面（startgui 会 respawn，也可在其退出后启动 XFCE）
+tty1::respawn:/usr/bin/startgui
+# tty2/tty3：文本控制台，按一次回车即进入 root shell（busybox init 的 askfirst）
+tty2::askfirst:/bin/sh
+tty3::askfirst:/bin/sh
+
+::ctrlaltdel:/sbin/reboot
+::shutdown:/bin/umount -a -r

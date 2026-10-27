@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Win95 Clipboard Sync
+Comment=Share the clipboard between the Win95 and XFCE desktops
+Exec=/usr/bin/win95-clipd
+Terminal=false
+NoDisplay=true
+X-GNOME-Autostart-enabled=true

@@ -1,0 +1,7 @@
+# 清华大学 TUNA 镜像（默认软件源）
+https://mirrors.tuna.tsinghua.edu.cn/alpine/v3.24/main
+https://mirrors.tuna.tsinghua.edu.cn/alpine/v3.24/community
+
+# 官方源（备用）：镜像不可用时，注释掉上面两行并启用下面两行
+# https://dl-cdn.alpinelinux.org/alpine/v3.24/main
+# https://dl-cdn.alpinelinux.org/alpine/v3.24/community

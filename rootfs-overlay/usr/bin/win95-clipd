@@ -1,0 +1,82 @@
+#!/bin/sh
+# Keep the X11 clipboard and /run/win95-clipboard in sync so text copied in
+# one desktop can be pasted in the other after switching VTs.
+# Runs inside the XFCE session; exits quietly when xclip is unavailable.
+
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+
+FILE=/run/win95-clipboard
+STATE=/run/win95-clipd
+mkdir -p "$STATE" 2>/dev/null || exit 0
+
+# A second daemon would fight this one over the same file.
+if [ -e "$STATE/pid" ]; then
+	old=$(cat "$STATE/pid" 2>/dev/null)
+	if [ -n "$old" ] && kill -0 "$old" 2>/dev/null; then
+		exit 0
+	fi
+fi
+echo $$ >"$STATE/pid"
+
+X_CUR=$STATE/x.cur
+F_CUR=$STATE/f.cur
+X_LAST=$STATE/x.last
+F_LAST=$STATE/f.last
+: >"$X_CUR"
+: >"$F_CUR"
+: >"$X_LAST"
+: >"$F_LAST"
+
+cleanup() {
+	[ "$(cat "$STATE/pid" 2>/dev/null)" = "$$" ] && rm -f "$STATE/pid"
+	rm -f "$X_CUR" "$F_CUR" "$X_LAST" "$F_LAST"
+}
+trap cleanup EXIT INT TERM
+
+command -v xclip >/dev/null 2>&1 || exit 0
+
+read_x() {
+	if ! xclip -selection clipboard -o >"$X_CUR" 2>/dev/null; then
+		: >"$X_CUR"
+	fi
+}
+
+read_file() {
+	if [ -f "$FILE" ]; then
+		cat "$FILE" >"$F_CUR" 2>/dev/null || : >"$F_CUR"
+	else
+		: >"$F_CUR"
+	fi
+}
+
+write_file() {
+	tmp="$FILE.tmp.$$"
+	if cp "$1" "$tmp" 2>/dev/null; then
+		chmod 0644 "$tmp" 2>/dev/null
+		mv -f "$tmp" "$FILE"
+	else
+		rm -f "$tmp"
+	fi
+}
+
+while :; do
+	read_x
+	read_file
+	if [ -s "$F_CUR" ] && ! cmp -s "$F_CUR" "$F_LAST" && ! cmp -s "$F_CUR" "$X_CUR"; then
+		# Win95 copied something: make it the X11 clipboard.
+		xclip -selection clipboard -i -quiet <"$F_CUR" 2>/dev/null
+		cp "$F_CUR" "$X_CUR"
+		cp "$F_CUR" "$X_LAST"
+		cp "$F_CUR" "$F_LAST"
+	elif [ -s "$X_CUR" ] && ! cmp -s "$X_CUR" "$X_LAST" && ! cmp -s "$X_CUR" "$F_CUR"; then
+		# XFCE copied something: publish it for the Win95 side.
+		write_file "$X_CUR"
+		cp "$X_CUR" "$X_LAST"
+		cp "$X_CUR" "$F_LAST"
+	else
+		cp "$X_CUR" "$X_LAST"
+		cp "$F_CUR" "$F_LAST"
+	fi
+	sleep 0.5
+done

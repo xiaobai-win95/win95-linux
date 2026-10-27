@@ -1,0 +1,19 @@
+#!/bin/sh
+
+case "$1" in
+deconfig)
+	ifconfig "$interface" 0.0.0.0 up 2>/dev/null
+	;;
+bound|renew)
+	ifconfig "$interface" "$ip" netmask "$subnet" up 2>/dev/null
+	route del default 2>/dev/null
+	for r in $router; do
+		route add default gw "$r" 2>/dev/null
+	done
+	: > /etc/resolv.conf
+	for d in $dns; do
+		echo "nameserver $d" >> /etc/resolv.conf
+	done
+	;;
+esac
+exit 0

@@ -1,0 +1,12 @@
+export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export HOME=/root
+export LANG=C.UTF-8
+export PAGER=less
+export PS1='[win95 \w]\$ '
+umask 022
+
+alias ll='ls -l'
+alias la='ls -a'
+alias ..='cd ..'
+
+cat /etc/motd 2>/dev/null

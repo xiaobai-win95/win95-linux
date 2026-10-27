@@ -1,0 +1,137 @@
+#!/bin/sh
+# Hand the display over from the Win95 desktop to Xorg/XFCE for this boot.
+# Output stays ASCII because this may also be run from a plain text VT.
+
+export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+LOG=/var/log/switch-to-xfce.log
+REQUEST=/run/win95-xfce.request
+PIDFILE=/run/win95gui.pid
+SELF=/usr/bin/switch-to-xfce
+PACKAGES="xorg-server xinit xf86-input-libinput xf86-video-fbdev xfce4 xfce4-terminal eudev dbus dbus-x11 font-wqy-zenhei xclip"
+
+log() {
+	echo "$(date '+%F %T') $*" >>"$LOG"
+}
+
+deps_missing() {
+	[ -x /usr/bin/Xorg ] || return 0
+	[ -x /usr/bin/xinit ] || return 0
+	[ -x /usr/bin/startxfce4 ] || return 0
+	[ -f /usr/lib/xorg/modules/input/libinput_drv.so ] || return 0
+	command -v udevd >/dev/null 2>&1 || return 0
+	return 1
+}
+
+if [ "$(id -u)" != "0" ]; then
+	echo "switch-to-xfce: must run as root" >&2
+	exit 1
+fi
+
+if [ -S /tmp/.X11-unix/X0 ] && [ ! -s "$PIDFILE" ]; then
+	echo "XFCE appears to be running; switching to tty1."
+	command -v chvt >/dev/null 2>&1 && chvt 1
+	exit 0
+fi
+
+if [ "${WIN95_SWITCH_WORKER:-}" != "1" ] && [ -e "$REQUEST" ]; then
+	echo "switch-to-xfce: a switch is already in progress." >&2
+	exit 1
+fi
+
+if deps_missing; then
+	echo "Xorg/XFCE is not fully installed."
+	echo "Required Alpine packages:"
+	echo "  $PACKAGES"
+	if [ -t 0 ] && [ -t 1 ]; then
+		printf "Install them now with apk? This downloads and installs the full Xorg/XFCE stack. [y/N] "
+		read -r answer
+		case "$answer" in
+			y|Y|yes|YES) ;;
+			*) echo "Cancelled."; exit 1 ;;
+		esac
+		log "installing Xorg/XFCE packages"
+		if ! apk update || ! apk add $PACKAGES; then
+			echo "Package installation failed; see the output above."
+			exit 1
+		fi
+		if deps_missing; then
+			echo "Xorg/XFCE is still incomplete after installation."
+			exit 1
+		fi
+	else
+		echo "Install them first:"
+		echo "  apk update && apk add $PACKAGES"
+		exit 1
+	fi
+fi
+
+if [ "${WIN95_SWITCH_WORKER:-}" != "1" ]; then
+	mkdir -p /run
+	trap 'rm -f "$REQUEST"; exit 1' HUP INT TERM
+	: >"$REQUEST"
+	echo "Stopping the Win95 desktop and starting XFCE..."
+	echo "Log: $LOG"
+	log "requested from $(tty 2>/dev/null || echo unknown)"
+	if WIN95_SWITCH_WORKER=1 setsid "$SELF" </dev/null >>"$LOG" 2>&1; then
+		trap - HUP INT TERM
+		exit 0
+	fi
+	rm -f "$REQUEST"
+	echo "switch-to-xfce: failed to detach from the terminal." >&2
+	exit 1
+fi
+
+# Worker: detached from the GUI terminal, so stopping win95gui cannot kill it.
+sleep 0.3
+# The foreground's HUP trap removes the request if the terminal closed
+# immediately after launch; the switch must still happen.
+if [ ! -e "$REQUEST" ]; then
+	: >"$REQUEST"
+	log "recreated missing switch request"
+fi
+if [ ! -s "$PIDFILE" ]; then
+	echo "win95gui is not running (missing $PIDFILE)."
+	rm -f "$REQUEST"
+	exit 1
+fi
+pid=$(cat "$PIDFILE" 2>/dev/null)
+if [ -z "$pid" ] || ! kill -0 "$pid" 2>/dev/null; then
+	echo "Stale win95gui PID file; removing it."
+	rm -f "$PIDFILE"
+	rm -f "$REQUEST"
+	exit 1
+fi
+comm=$(cat "/proc/$pid/comm" 2>/dev/null)
+if [ "$comm" != "win95gui" ]; then
+	echo "PID $pid is '$comm', not win95gui; refusing to signal it."
+	rm -f "$REQUEST"
+	exit 1
+fi
+
+log "stopping win95gui pid $pid"
+kill -TERM "$pid" 2>/dev/null
+i=0
+while kill -0 "$pid" 2>/dev/null && [ "$i" -lt 50 ]; do
+	sleep 0.1
+	i=$((i + 1))
+done
+if kill -0 "$pid" 2>/dev/null; then
+	log "win95gui did not exit after SIGTERM; sending SIGKILL"
+	kill -KILL "$pid" 2>/dev/null
+	sleep 0.3
+fi
+
+log "win95gui stopped; waiting for startgui to hand the VT to Xorg"
+i=0
+while [ -e "$REQUEST" ] && [ "$i" -lt 150 ]; do
+	sleep 0.1
+	i=$((i + 1))
+done
+if [ -e "$REQUEST" ]; then
+	log "warning: startgui did not consume the switch request; removing it"
+	rm -f "$REQUEST"
+else
+	log "switch request consumed by startgui"
+fi
+exit 0

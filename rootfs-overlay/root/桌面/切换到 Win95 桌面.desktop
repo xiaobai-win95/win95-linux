@@ -1,0 +1,11 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=切换到 Win95 桌面
+Comment=关闭 XFCE 并返回 Win95 桌面
+Exec=/usr/bin/switch-to-win95
+Icon=computer
+Terminal=false
+StartupNotify=false
+Categories=System;
+X-Win95-Hide=true
