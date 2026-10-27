@@ -6,23 +6,10 @@ This is a linux OS which has the win95 style GUI
 
 ## 一、交付文件
 
-| 文件 | 说明 |
-| --- | --- |
-| `win95-installer-aarch64.img` | 可启动的 UEFI 安装盘镜像（raw GPT，130 MiB） |
-| `win95-installer-aarch64.img.sha256` | SHA-256 校验值 |
+| 文件 | 说明 | 备注 |
+| --- | --- | --- |
+| `win95-installer-aarch64.img` | 可启动的 UEFI 安装盘镜像（raw GPT，130 MiB） | 此文件请自己根据源码生成 |
 
-校验方法：
-
-```sh
-cd /Users/madic/aiwork/win95linux/out
-shasum -a 256 -c win95-installer-aarch64.img.sha256
-```
-
-镜像 SHA-256：
-
-```
-0c9ad4aeec6a77a6afcc476e1d41474a95daf724d6810621fb968d33d66990d2
-```
 
 > 这是**磁盘镜像**，不是 ISO，不要挂到“CD/DVD”上。必须作为 UTM 的硬盘设备导入。
 
