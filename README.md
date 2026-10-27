@@ -1,6 +1,8 @@
 # win95-linux
 This is a linux OS which has the win95 style GUI
 
+[Screenshots]<img width="1920" height="1080" alt="Win95 Linux Xfce4" src="https://github.com/user-attachments/assets/0425cba7-33f4-4ac7-86bc-66abd78ad75b" />
+
 
 # Windows 95 Linux 中文版 · UTM 配置与安装说明
 
