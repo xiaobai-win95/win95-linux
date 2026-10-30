@@ -331,7 +331,7 @@ XFCE 会话启动时会自动运行：
 
   改回清华源只需把 `sed` 里的两个域名对调。
 - 本系统是 Alpine（musl）ARM64，只能安装 Alpine v3.24 仓库中的包。Arch、Debian 等发行版的包无法安装，硬拷进来也会因 glibc/依赖不同而无法运行。
-- 安装的图形程序如果依赖 X11/Wayland，不会显示在 Win95 桌面上；桌面是直接绘制 framebuffer 的，不是 X 环境。需要时可执行 `switch-to-xfce` 切换到 XFCE 再运行这些程序；命令行程序仍可在 Win95 终端正常使用。
+- 安装的图形程序如果依赖 X11/Wayland，不会显示在 Win95 桌面上；桌面是直接绘制 framebuffer 的，不是 X 环境。需要时可执行 `switch-to-xfce` 切换到 XFCE 再运行这些程序；命令行程序仍可在 Win95 终端正常使用（如果执行`switch-to-xfce`来安装xfce，那么可能会有图标缺失或者太丑陋等问题，但字体支持中文）。
 - 安装内容写入系统盘，重启后保留；目标盘只有 8–10 GiB 时，避免一次安装体积过大的软件。
 
 **想恢复干净状态**
@@ -343,7 +343,7 @@ XFCE 会话启动时会自动运行：
 ## 八、说明
 
 - 安装镜像与已安装系统均为 ARM64 UEFI，面向 Apple Virtualization / UTM。
-- 本说明中的镜像由离线素材构建；构建者未在 UTM 中实际启动过虚拟机，运行时行为需要按上述步骤自行验证。
+- 本说明中的镜像由离线素材构建；构建者已在 UTM 中实际启动过虚拟机，运行时行为需要按上述步骤配置UTM，若无法启动，请检查配置。
 - UTM 的 Apple Virtualization 后端只支持 raw 磁盘；qcow2 仅适用于 QEMU 后端。
 
 参考：UTM 官方文档《Drive》（Apple Virtualization）  
