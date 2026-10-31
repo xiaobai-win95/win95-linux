@@ -138,6 +138,8 @@ func (d *Desktop) drawSysTray(c *ui.Canvas) {
 	c.FillRect(r, ui.ColFace)
 	c.Sunken(r)
 
+	drawNetLED(c, ui.Rect{r.X + 5, r.Y + 6, 12, 12}, d.netState)
+
 	rows := []struct {
 		label string
 		pct   int
@@ -147,8 +149,9 @@ func (d *Desktop) drawSysTray(c *ui.Canvas) {
 	}
 	for i, row := range rows {
 		y := r.Y + 4 + i*9
-		ui.TinyText(c, r.X+4, y, fmt.Sprintf("%s%3d%%", row.label, row.pct), ui.ColText)
-		drawGauge(c, ui.Rect{r.X + 36, y, r.W - 40, 5}, row.pct, gaugeColor(row.pct))
+		x := r.X + 20
+		ui.TinyText(c, x, y, fmt.Sprintf("%s%3d%%", row.label, row.pct), ui.ColText)
+		drawGauge(c, ui.Rect{x + 32, y, r.W - 36 - (x - r.X), 5}, row.pct, gaugeColor(row.pct))
 	}
 }
 
@@ -171,7 +174,7 @@ func (d *Desktop) showSysMonitor() {
 	}
 	usedMB := (totalKB - availKB) / 1024
 	totalMB := totalKB / 1024
-	text := fmt.Sprintf("CPU 占用：%d%%\n内存占用：%d%%（%d MB / %d MB）\n系统负载：%s\n运行时间：%s",
-		d.cpuPct, d.memPct, usedMB, totalMB, load, uptime)
+	text := fmt.Sprintf("CPU 占用：%d%%\n内存占用：%d%%（%d MB / %d MB）\n网络状态：%s（任务栏指示灯）\n系统负载：%s\n运行时间：%s",
+		d.cpuPct, d.memPct, usedMB, totalMB, netStateText(d.netState), load, uptime)
 	d.MessageBox("系统监视器", text, IconInfo, []string{"确定"}, nil)
 }

@@ -9,3 +9,7 @@ func (d *Desktop) switchToXFCE() {
 func (d *Desktop) launchShortcut(string, bool) {
 	d.MessageBox("切换桌面", "X11 图形程序只能在 Linux 虚拟机上启动。", IconInfo, []string{"确定"}, nil)
 }
+
+func (d *Desktop) launchXFCEApp(string) {
+	d.MessageBox("切换桌面", "X11 图形程序只能在 Linux 虚拟机上启动。", IconInfo, []string{"确定"}, nil)
+}

@@ -13,11 +13,13 @@ import (
 )
 
 const (
-	shortcutsDir      = "/root/桌面"
 	launchRequestPath = "/run/win95-launch"
 	shortcutMarker    = "X-Win95-Shortcut"
 	shortcutPkgKey    = "X-Win95-Package"
 )
+
+// shortcutsDir is a variable so tests can point it at a temporary folder.
+var shortcutsDir = "/root/桌面"
 
 type shortcutEntry struct {
 	Name       string
@@ -345,7 +347,16 @@ func (d *Desktop) refreshShortcuts(force bool) {
 		path := filepath.Join(shortcutsDir, name)
 		label := name
 		kind := desktopFileIcon(name)
-		if !de.IsDir() && strings.HasSuffix(strings.ToLower(name), ".desktop") {
+		isDir := de.IsDir()
+		if !isDir && de.Type()&os.ModeSymlink != 0 {
+			if st, err := os.Stat(path); err == nil {
+				isDir = st.IsDir()
+			}
+		}
+		if isDir {
+			kind = ui.IcoFolder
+		}
+		if !isDir && strings.HasSuffix(strings.ToLower(name), ".desktop") {
 			e, ok := parseShortcut(path)
 			if ok && e.Win95Hide {
 				continue
@@ -367,7 +378,7 @@ func (d *Desktop) refreshShortcuts(force bool) {
 			kind:  kind,
 			key:   p,
 			path:  p,
-			isDir: de.IsDir(),
+			isDir: isDir,
 			action: func() {
 				d.openDesktopPath(p)
 			},

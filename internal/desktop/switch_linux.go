@@ -40,6 +40,42 @@ func (d *Desktop) launchShortcut(execLine string, terminal bool) {
 		})
 }
 
+// launchXFCEApp starts one X11 program on tty2 while Win95 stays alive on
+// tty1. Closing the program switches the console back automatically.
+func (d *Desktop) launchXFCEApp(app string) {
+	if _, err := os.Stat("/usr/bin/Xorg"); err != nil {
+		d.MessageBox("XFCE 应用", "XFCE 图形环境尚未安装。\n\n请先在终端执行：\napk update && apk add xorg-server xinit xf86-input-libinput xf86-video-fbdev xfce4 xfce4-terminal firefox dbus dbus-x11 font-wqy-zenhei\n\n安装完成后，双击图标即可在后台启动。", IconInfo, []string{"确定"}, nil)
+		return
+	}
+	exe, err := exec.LookPath(app)
+	if err != nil {
+		hint := "apk add " + app
+		if app == "firefox" {
+			hint = "apk add firefox"
+		} else if app == "xfce4-terminal" {
+			hint = "apk add xfce4-terminal"
+		}
+		d.MessageBox("XFCE 应用", "没有找到 "+app+"。\n\n请先在终端执行：\n  "+hint, IconInfo, []string{"确定"}, nil)
+		return
+	}
+	if _, err := os.Stat("/usr/bin/win95-xfce-app"); err != nil {
+		d.MessageBox("XFCE 应用", "系统缺少 win95-xfce-app 启动组件。\n\n请使用 v26.1 或更新的镜像。", IconError, []string{"确定"}, nil)
+		return
+	}
+	cmd := exec.Command("/usr/bin/win95-xfce-app", exe)
+	cmd.Dir = "/"
+	cmd.Env = []string{
+		"PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+		"HOME=/root",
+		"LANG=zh_CN.UTF-8",
+	}
+	if err := cmd.Start(); err != nil {
+		d.MessageBox("XFCE 应用", "无法启动 XFCE 应用：\n"+err.Error(), IconError, []string{"确定"}, nil)
+		return
+	}
+	_ = cmd.Process.Release()
+}
+
 func (d *Desktop) launchXFCE() {
 	for _, path := range []string{"/usr/bin/Xorg", "/usr/bin/startxfce4"} {
 		if _, err := os.Stat(path); err != nil {

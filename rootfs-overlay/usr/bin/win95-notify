@@ -1,0 +1,26 @@
+#!/bin/sh
+# Queue a balloon tip for the Win95 taskbar. XFCE helpers call this while the
+# Win95 desktop is in the background; the balloon appears after switching back.
+QUEUE=/run/win95-notify
+LOCK=/run/win95-notify.lock
+
+title=${1:-Windows 95 Linux}
+text=${2:-}
+[ -n "$text" ] || { text=$title; title="Windows 95 Linux"; }
+
+clean() {
+	printf '%s' "$1" | tr '\t\r\n' '   '
+}
+title=$(clean "$title")
+text=$(clean "$text")
+
+mkdir -p /run
+if command -v flock >/dev/null 2>&1; then
+	{
+		flock 9
+		printf '%s\t%s\n' "$title" "$text" >>"$QUEUE"
+	} 9>"$LOCK"
+else
+	printf '%s\t%s\n' "$title" "$text" >>"$QUEUE"
+fi
+exit 0

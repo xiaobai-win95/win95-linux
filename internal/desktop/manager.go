@@ -57,9 +57,28 @@ type Desktop struct {
 	saver        bool
 	saverAt      time.Time
 	saverStep    time.Time
+	saverStyle   int
+	saverWait    time.Duration
 	saverTrails  []saverTrail
+	saverStars   []saverStar
+	saverWindows []saverWindow
+	background   int
+	runHistory   []string
 	shortcutMod  time.Time
 	shortcutNext time.Time
+
+	notices     []notice
+	noticeUntil time.Time
+	noticeRect  ui.Rect
+	netState    int
+	netNext     time.Time
+	netChecking bool
+	fileDrag    *fileDrag
+
+	nuke     bool
+	nukeAt   time.Time
+	nukeStep time.Time
+	bsodText string
 
 	sleepPending bool
 	sleeping     bool
@@ -91,8 +110,11 @@ func New(width, height int, mode Mode, host Host) *Desktop {
 		iconPositions: map[string]iconPoint{},
 		clockLoc:      loc,
 		lastInput:     time.Now(),
+		saverStyle:    saverMystify,
+		saverWait:     saverIdleDefault,
 	}
 	d.clock = time.Now().In(loc).Format("15:04")
+	d.loadPrefs()
 	d.sampleSystem()
 	d.setupShell()
 	d.Invalidate()
@@ -253,6 +275,11 @@ func (d *Desktop) Tick(now time.Time) {
 		if d.cpuPct != oldCPU || d.memPct != oldMem {
 			d.Invalidate()
 		}
+		d.pollNotifications()
+		if !now.Before(d.netNext) {
+			d.netNext = now.Add(12 * time.Second)
+			d.checkNetwork()
+		}
 		d.refreshShortcuts(false)
 		for _, w := range d.windows {
 			if t, ok := w.App.(Ticker); ok {
@@ -265,6 +292,18 @@ func (d *Desktop) Tick(now time.Time) {
 // Animate advances time-based visual effects. The host calls it on a short
 // frame ticker; the desktop stays mostly idle when nothing is animating.
 func (d *Desktop) Animate(now time.Time) {
+	if d.nuke {
+		if now.Sub(d.nukeAt) >= 1600*time.Millisecond {
+			d.nuke = false
+			d.showBSODText("System Override: Nuclear Strike Confirmed.")
+			return
+		}
+		if now.Sub(d.nukeStep) >= 120*time.Millisecond {
+			d.nukeStep = now
+			d.Invalidate()
+		}
+		return
+	}
 	if d.bsod {
 		// Redraw slowly so the "Press any key" prompt keeps blinking.
 		if now.Sub(d.bsodStep) >= 400*time.Millisecond {
@@ -272,6 +311,19 @@ func (d *Desktop) Animate(now time.Time) {
 			d.Invalidate()
 		}
 		return
+	}
+	if len(d.notices) > 0 && d.visible() {
+		if d.noticeUntil.IsZero() {
+			d.noticeUntil = now.Add(noticeLifetime)
+		} else if now.After(d.noticeUntil) {
+			d.notices = d.notices[1:]
+			if len(d.notices) > 0 {
+				d.noticeUntil = now.Add(noticeLifetime)
+			} else {
+				d.noticeUntil = time.Time{}
+			}
+			d.Invalidate()
+		}
 	}
 	if d.sleepPending {
 		d.runSleep()
@@ -285,7 +337,7 @@ func (d *Desktop) Animate(now time.Time) {
 		d.Invalidate()
 		return
 	}
-	if !d.lastInput.IsZero() && now.Sub(d.lastInput) >= saverIdle {
+	if d.saverStyle > 0 && !d.lastInput.IsZero() && now.Sub(d.lastInput) >= d.saverWait {
 		d.startSaver(now)
 		d.Invalidate()
 	}

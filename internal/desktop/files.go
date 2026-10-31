@@ -34,6 +34,12 @@ type FileManagerApp struct {
 	lastClick time.Time
 	lastSel   int
 
+	down     bool
+	dragPath string
+	dragName string
+	dragX    int
+	dragY    int
+
 	btnUp, btnNew, btnDelete ui.Rect
 	listR, statusR           ui.Rect
 }
@@ -51,6 +57,9 @@ func (a *FileManagerApp) Title() string {
 	if a.path == "/" {
 		return "系统盘 (C:)"
 	}
+	if a.path == trashDir {
+		return "回收站"
+	}
 	return filepath.Base(a.path) + " - 文件管理器"
 }
 
@@ -66,16 +75,22 @@ func (a *FileManagerApp) MinSize() (int, int)     { return 480, 320 }
 func (a *FileManagerApp) Resizable() bool         { return true }
 
 func (a *FileManagerApp) Menus(d *Desktop, w *Window) []Menu {
+	fileItems := []MenuItem{
+		{Label: "新建文件夹(N)", Enabled: a.path != "" && a.path != trashDir, Action: func() { a.newFolder(d) }},
+		{Label: "删除(D)", Accel: "Del", Enabled: a.sel >= 0, Action: func() { a.deleteSelected(d) }},
+	}
+	if a.path == trashDir {
+		fileItems = append(fileItems, MenuItem{Label: "清空回收站(E)", Enabled: d.recycleCount() > 0, Action: func() { d.emptyRecycle(a.load) }})
+	}
+	fileItems = append(fileItems,
+		MenuItem{Separator: true},
+		MenuItem{Label: "打开(O)", Enabled: a.sel >= 0, Action: func() { a.activate(a.sel) }},
+		MenuItem{Label: "向上(U)", Accel: "Backspace", Enabled: a.path != "", Action: func() { a.up() }},
+		MenuItem{Separator: true},
+		MenuItem{Label: "关闭(C)", Action: func() { d.CloseWindow(w) }},
+	)
 	return []Menu{
-		{Label: "文件(F)", Items: []MenuItem{
-			{Label: "新建文件夹(N)", Enabled: a.path != "", Action: func() { a.newFolder(d) }},
-			{Label: "删除(D)", Accel: "Del", Enabled: a.sel >= 0, Action: func() { a.deleteSelected(d) }},
-			{Separator: true},
-			{Label: "打开(O)", Enabled: a.sel >= 0, Action: func() { a.activate(a.sel) }},
-			{Label: "向上(U)", Accel: "Backspace", Enabled: a.path != "", Action: func() { a.up() }},
-			{Separator: true},
-			{Label: "关闭(C)", Action: func() { d.CloseWindow(w) }},
-		}},
+		{Label: "文件(F)", Items: fileItems},
 		{Label: "查看(V)", Items: []MenuItem{
 			{Label: "刷新(R)", Accel: "F5", Action: func() { a.load() }},
 			{Separator: true},
@@ -119,7 +134,13 @@ func (a *FileManagerApp) load() {
 		}
 		kind := ui.IcoFile
 		typ := "文件"
-		if e.IsDir() {
+		isDir := e.IsDir()
+		if !isDir && e.Type()&os.ModeSymlink != 0 {
+			if st, err := os.Stat(filepath.Join(a.path, name)); err == nil {
+				isDir = st.IsDir()
+			}
+		}
+		if isDir {
 			kind = ui.IcoFolder
 			typ = "文件夹"
 		} else {
@@ -133,7 +154,7 @@ func (a *FileManagerApp) load() {
 			}
 		}
 		a.entries = append(a.entries, fmEntry{
-			name: name, path: filepath.Join(a.path, name), isDir: e.IsDir(),
+			name: name, path: filepath.Join(a.path, name), isDir: isDir,
 			kind: kind, size: info.Size(), mod: info.ModTime(), typ: typ,
 		})
 	}
@@ -168,7 +189,7 @@ func (a *FileManagerApp) Paint(d *Desktop, w *Window, c *ui.Canvas, r ui.Rect) {
 	a.btnNew = ui.Rect{tx + 72, ty, 78, 24}
 	a.btnDelete = ui.Rect{tx + 154, ty, 58, 24}
 	ui.Button(c, a.btnUp, "上一级", a.press == "up", a.path != "")
-	ui.Button(c, a.btnNew, "新建文件夹", a.press == "new", a.path != "")
+	ui.Button(c, a.btnNew, "新建文件夹", a.press == "new", a.path != "" && a.path != trashDir)
 	ui.Button(c, a.btnDelete, "删除", a.press == "del", a.sel >= 0)
 	c.HLine(r.X+4, r.Y+31, r.W-8, ui.ColShadow)
 	c.HLine(r.X+4, r.Y+32, r.W-8, ui.ColWhite)
@@ -288,12 +309,23 @@ func (a *FileManagerApp) Mouse(d *Desktop, w *Window, client ui.Rect, ev MouseEv
 	if ev.Kind == MouseWheel {
 		return
 	}
+	if ev.Kind == MouseMove {
+		if a.down && a.dragPath != "" && d.fileDrag == nil {
+			if absInt(ev.X-a.dragX)+absInt(ev.Y-a.dragY) > 6 {
+				d.fileDrag = &fileDrag{name: a.dragName, path: a.dragPath}
+				d.Invalidate()
+			}
+		}
+		return
+	}
 	if ev.Button != 1 {
 		return
 	}
 	switch ev.Kind {
 	case MouseDown:
 		a.press = ""
+		a.down = true
+		a.dragPath, a.dragName = "", ""
 		switch {
 		case a.btnUp.Contains(ev.X, ev.Y):
 			a.press = "up"
@@ -305,7 +337,13 @@ func (a *FileManagerApp) Mouse(d *Desktop, w *Window, client ui.Rect, ev MouseEv
 			idx := a.rowAt(ev.X, ev.Y)
 			if idx >= 0 {
 				a.sel = idx
+				e := a.entries[idx]
+				if e.path != "" && !strings.HasPrefix(e.path, "@") {
+					a.dragPath, a.dragName = e.path, e.name
+					a.dragX, a.dragY = ev.X, ev.Y
+				}
 				if time.Since(a.lastClick) < 450*time.Millisecond && a.lastSel == idx {
+					a.dragPath = ""
 					a.activate(idx)
 				}
 				a.lastClick = time.Now()
@@ -313,8 +351,19 @@ func (a *FileManagerApp) Mouse(d *Desktop, w *Window, client ui.Rect, ev MouseEv
 			}
 		}
 	case MouseUp:
+		a.down = false
 		p := a.press
 		a.press = ""
+		if d.fileDrag != nil {
+			a.dragPath = ""
+			target := d.fileDragTarget(ev.X, ev.Y)
+			d.dropFileDrag(ev.X, ev.Y)
+			if target == dropRecycle {
+				a.load()
+			}
+			return
+		}
+		a.dragPath = ""
 		switch p {
 		case "up":
 			if a.btnUp.Contains(ev.X, ev.Y) {
@@ -369,7 +418,7 @@ func protectedPath(p string) bool {
 }
 
 func (a *FileManagerApp) newFolder(d *Desktop) {
-	if a.path == "" {
+	if a.path == "" || a.path == trashDir {
 		return
 	}
 	base := "新建文件夹"
@@ -401,12 +450,27 @@ func (a *FileManagerApp) deleteSelected(d *Desktop) {
 		d.MessageBox("文件管理器", "不能删除系统文件夹“"+e.name+"”。", IconWarning, []string{"确定"}, nil)
 		return
 	}
+	if a.path == trashDir {
+		d.MessageBox("确认删除", "确实要永久删除“"+e.name+"”吗？\n\n此操作无法撤销。", IconQuestion,
+			[]string{"是", "否"}, func(i int) {
+				if i != 0 {
+					return
+				}
+				if err := os.RemoveAll(e.path); err != nil {
+					d.MessageBox("文件管理器", "删除失败：\n"+err.Error(), IconError, []string{"确定"}, nil)
+					return
+				}
+				a.load()
+				d.Invalidate()
+			})
+		return
+	}
 	d.MessageBox("确认删除", "确实要把“"+e.name+"”放入回收站吗？", IconQuestion,
 		[]string{"是", "否"}, func(i int) {
 			if i != 0 {
 				return
 			}
-			trash := "/root/.trash"
+			trash := trashDir
 			if err := os.MkdirAll(trash, 0o755); err != nil {
 				d.MessageBox("文件管理器", "无法创建回收站：\n"+err.Error(), IconError, []string{"确定"}, nil)
 				return
@@ -435,6 +499,14 @@ func (a *FileManagerApp) Key(d *Desktop, w *Window, ev KeyEvent) bool {
 	case "Delete":
 		a.deleteSelected(d)
 		return true
+	case "Esc":
+		if d.fileDrag != nil {
+			d.fileDrag = nil
+			a.dragPath = ""
+			d.Invalidate()
+			return true
+		}
+		return false
 	case "F5":
 		a.load()
 		return true

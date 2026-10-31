@@ -39,4 +39,7 @@ while [ -S /tmp/.X11-unix/X0 ] && [ "$i" -lt 100 ]; do
 done
 
 command -v chvt >/dev/null 2>&1 && chvt 1
+if [ -x /usr/bin/win95-notify ]; then
+	/usr/bin/win95-notify "XFCE 会话已结束" "已返回 Windows 95 桌面。" >/dev/null 2>&1
+fi
 exit 0

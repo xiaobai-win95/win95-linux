@@ -224,6 +224,8 @@ func Run(opt Options) error {
 		info = buildInfo(fb, devs)
 	}
 
+	canvas := ui.NewCanvas(fb.w, fb.h)
+
 	wake := make(chan struct{}, 1)
 	quit := make(chan struct{}, 1)
 	host := desktop.Host{
@@ -247,15 +249,21 @@ func Run(opt Options) error {
 			default:
 			}
 		},
+		Screenshot: func() (string, error) {
+			return saveScreenshot(canvas)
+		},
+		Visible: func() bool {
+			return consoleActive.Load()
+		},
 	}
 	d := desktop.New(fb.w, fb.h, opt.Mode, host)
+	desktop.BootBeep()
 
 	events := make(chan inputEvent, 2048)
 	for _, dev := range devs {
 		go dev.readLoop(events)
 	}
 
-	canvas := ui.NewCanvas(fb.w, fb.h)
 	state := newInputState(fb.w, fb.h)
 	tick := time.NewTicker(time.Second)
 	defer tick.Stop()

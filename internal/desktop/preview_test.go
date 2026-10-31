@@ -65,6 +65,18 @@ func TestPreviewFrames(t *testing.T) {
 	savePreview(t, canvas, "desk-preview-context-icon.png")
 	d.ctx = nil
 
+	for i, ic := range d.icons {
+		if ic.key != "sys:recycle" {
+			continue
+		}
+		d.openContext(d.iconMenuItems(i), 300, 300)
+		d.ctx.hover = 6
+		d.Draw(canvas)
+		savePreview(t, canvas, "desk-preview-context-recycle.png")
+		d.ctx = nil
+		break
+	}
+
 	np := NewNotepadApp(d, "")
 	np.SetContent("/root/文档/工作计划.txt", "本周工作计划\n\n1. 完成桌面环境的中文化与图标绘制。\n2. 验证终端、计算器和日历程序。\n3. 检查浏览器对本地页面和下载链接的支持。\n4. 在 UTM 中安装到虚拟硬盘并测试启动。\n\n备注：所有界面使用 Win95 经典配色。\n")
 	nw := d.Open(np)
@@ -241,6 +253,206 @@ func TestPreviewFrames(t *testing.T) {
 	sc := ui.NewCanvas(1024, 768)
 	saverD.Draw(sc)
 	savePreview(t, sc, "desk-preview-saver.png")
+
+	starD := New(1024, 768, ModeDesktop, Host{Info: info})
+	starD.saverStyle = saverStarfield
+	starD.startSaver(now)
+	for i := 1; i <= 300; i++ {
+		starD.stepSaver(now.Add(time.Duration(i) * 33 * time.Millisecond))
+	}
+	stc := ui.NewCanvas(1024, 768)
+	starD.Draw(stc)
+	savePreview(t, stc, "desk-preview-saver-starfield.png")
+
+	for _, bg := range []struct {
+		style int
+		name  string
+	}{{3, "cloud"}, {4, "night"}, {5, "slate"}} {
+		wallD := New(1024, 768, ModeDesktop, Host{Info: info})
+		wallD.clock = "09:41"
+		wallD.cpuPct, wallD.memPct = 37, 64
+		wallD.background = bg.style
+		wc := ui.NewCanvas(1024, 768)
+		wallD.Draw(wc)
+		savePreview(t, wc, "desk-preview-wallpaper-"+bg.name+".png")
+	}
+
+	dispD := New(1024, 768, ModeDesktop, Host{Info: info})
+	dispD.background = 0
+	dispD.openDisplayProperties()
+	dispApp := dispD.windows[len(dispD.windows)-1].App.(*DisplayApp)
+	dispApp.bg = 3
+	dc := ui.NewCanvas(1024, 768)
+	dispD.Draw(dc)
+	savePreview(t, dc, "desk-preview-display-bg.png")
+
+	dispApp.tab = 1
+	dispApp.style = 2
+	dispApp.wait = 3
+	dispD.Draw(dc)
+	savePreview(t, dc, "desk-preview-display-saver.png")
+
+	dispApp.comboOpen = 1
+	dispD.Draw(dc)
+	savePreview(t, dc, "desk-preview-display-combo.png")
+	dispApp.comboOpen = 0
+
+	runD := New(1024, 768, ModeDesktop, Host{Info: info})
+	runD.runHistory = []string{"notepad /root/文档/工作计划.txt", "calc", "find"}
+	runD.openRunDialog()
+	runApp := runD.windows[len(runD.windows)-1].App.(*RunDialogApp)
+	runApp.setValue("notepad /root/文档/工作计划.txt")
+	rc := ui.NewCanvas(1024, 768)
+	runD.Draw(rc)
+	savePreview(t, rc, "desk-preview-run.png")
+
+	findD := New(1024, 768, ModeDesktop, Host{Info: info})
+	findD.openFind()
+	findApp := findD.windows[len(findD.windows)-1].App.(*FindApp)
+	findApp.query = []rune("工作")
+	findApp.queryCaret = len(findApp.query)
+	findApp.done = true
+	findApp.sel = 0
+	findApp.status = "找到 4 个项目。"
+	findApp.results = []findResult{
+		{name: "工作计划.txt", dir: "/root/文档", path: "/root/文档/工作计划.txt", size: 184},
+		{name: "工作日志.md", dir: "/root/文档", path: "/root/文档/工作日志.md", size: 2048},
+		{name: "工作备份", dir: "/root/文档", path: "/root/文档/工作备份", isDir: true},
+		{name: "工作台说明.html", dir: "/root/下载/示例", path: "/root/下载/示例/工作台说明.html", size: 3612},
+	}
+	fc := ui.NewCanvas(1024, 768)
+	findD.Draw(fc)
+	savePreview(t, fc, "desk-preview-find.png")
+
+	flySaverD := New(1024, 768, ModeDesktop, Host{Info: info})
+	flySaverD.saverStyle = saverFlying
+	flySaverD.startSaver(now)
+	for i := 1; i <= 90; i++ {
+		flySaverD.stepSaver(now.Add(time.Duration(i) * 33 * time.Millisecond))
+	}
+	flc := ui.NewCanvas(1024, 768)
+	flySaverD.Draw(flc)
+	savePreview(t, flc, "desk-preview-saver-flying.png")
+
+	renderApp(t, "desk-preview-solitaire.png",
+		func(d *Desktop) App { return &SolitaireApp{d: d} },
+		func(d *Desktop, app App) {
+			a := app.(*SolitaireApp)
+			a.newGame()
+			a.stock = a.stock[:12]
+			a.waste = []solCard{
+				{suit: solDiamonds, rank: 10, up: true},
+				{suit: solClubs, rank: 9, up: true},
+				{suit: solHearts, rank: 9, up: true},
+			}
+			a.found[0] = []solCard{
+				{suit: solHearts, rank: 1, up: true},
+				{suit: solHearts, rank: 2, up: true},
+				{suit: solHearts, rank: 3, up: true},
+			}
+			a.found[1] = []solCard{
+				{suit: solSpades, rank: 1, up: true},
+				{suit: solSpades, rank: 2, up: true},
+			}
+			a.tab[0] = []solCard{
+				{suit: solSpades, rank: 13, up: true},
+				{suit: solHearts, rank: 12, up: true},
+				{suit: solClubs, rank: 11, up: true},
+				{suit: solDiamonds, rank: 10, up: true},
+			}
+			a.tab[1] = []solCard{
+				{suit: solClubs, rank: 13},
+				{suit: solDiamonds, rank: 12, up: true},
+				{suit: solSpades, rank: 11, up: true},
+				{suit: solHearts, rank: 10, up: true},
+			}
+			a.tab[2] = []solCard{{suit: solDiamonds, rank: 7, up: true}}
+			a.tab[3] = []solCard{
+				{suit: solClubs, rank: 8},
+				{suit: solClubs, rank: 7, up: true},
+			}
+			a.tab[4] = []solCard{
+				{suit: solSpades, rank: 9, up: true},
+				{suit: solHearts, rank: 8, up: true},
+			}
+			a.tab[5] = []solCard{
+				{suit: solDiamonds, rank: 6},
+				{suit: solDiamonds, rank: 5},
+				{suit: solClubs, rank: 4, up: true},
+			}
+			a.tab[6] = []solCard{{suit: solHearts, rank: 3, up: true}}
+			a.score, a.moves, a.elapsed = 185, 24, 93
+		})
+	renderApp(t, "desk-preview-downloader.png",
+		func(d *Desktop) App {
+			return &DownloaderApp{d: d, status: "输入下载地址，然后点“开始下载”。"}
+		},
+		func(d *Desktop, app App) {
+			a := app.(*DownloaderApp)
+			a.value = []rune("https://mirrors.tuna.tsinghua.edu.cn/alpine/v3.24/releases/aarch64/alpine-virt-3.24.3-aarch64.iso")
+			a.caret = len(a.value)
+		})
+	renderApp(t, "desk-preview-downloader-progress.png",
+		func(d *Desktop) App { return &DownloaderApp{d: d} },
+		func(d *Desktop, app App) {
+			a := app.(*DownloaderApp)
+			a.value = []rune("https://mirrors.tuna.tsinghua.edu.cn/alpine/v3.24/releases/aarch64/alpine-virt-3.24.3-aarch64.iso")
+			a.caret = len(a.value)
+			a.state = dlWorking
+			a.received = 23 * 1024 * 1024
+			a.total = 64 * 1024 * 1024
+			a.speed = 2.8 * 1024 * 1024
+			a.dest = "alpine-virt-3.24.3-aarch64.iso"
+			a.status = "正在下载 alpine-virt-3.24.3-aarch64.iso …"
+		})
+	renderApp(t, "desk-preview-nuke-auth.png",
+		func(d *Desktop) App { return &NukeAuthApp{d: d} },
+		func(d *Desktop, app App) {
+			app.(*NukeAuthApp).code = []rune("00")
+		})
+	renderApp(t, "desk-preview-nuke-countdown.png",
+		func(d *Desktop) App {
+			return &NukeCountdownApp{d: d, deadline: time.Now().Add(6400 * time.Millisecond)}
+		},
+		nil)
+
+	notifyD := New(1024, 768, ModeDesktop, Host{Info: info})
+	notifyD.clock = "09:41"
+	notifyD.cpuPct, notifyD.memPct = 37, 64
+	notifyD.Notify("下载完成", "文件已保存：alpine-virt-3.24.3-aarch64.iso")
+	nc := ui.NewCanvas(1024, 768)
+	notifyD.Draw(nc)
+	savePreview(t, nc, "desk-preview-notification.png")
+
+	dragD := New(1024, 768, ModeDesktop, Host{Info: info})
+	dragD.clock = "09:41"
+	dragD.cpuPct, dragD.memPct = 37, 64
+	dragD.fileDrag = &fileDrag{name: "季度报告.txt", path: "/root/文档/季度报告.txt"}
+	for i, ic := range dragD.icons {
+		if ic.key != "sys:recycle" {
+			continue
+		}
+		ix, iy := dragD.iconPos(i)
+		dragD.MouseX, dragD.MouseY = ix+43, iy+32
+		break
+	}
+	dragCanvas := ui.NewCanvas(1024, 768)
+	dragD.Draw(dragCanvas)
+	savePreview(t, dragCanvas, "desk-preview-file-drag.png")
+
+	overrideD := New(1024, 768, ModeDesktop, Host{Info: info})
+	overrideD.nuke = true
+	overrideD.nukeAt = time.Now()
+	overrideD.nukeStep = overrideD.nukeAt
+	oc := ui.NewCanvas(1024, 768)
+	overrideD.Draw(oc)
+	savePreview(t, oc, "desk-preview-nuke-override.png")
+
+	nukeBSODD := New(1024, 768, ModeDesktop, Host{Info: info})
+	nukeBSODD.showBSODText("System Override: Nuclear Strike Confirmed.")
+	nbc := ui.NewCanvas(1024, 768)
+	nukeBSODD.Draw(nbc)
+	savePreview(t, nbc, "desk-preview-nuke-bsod.png")
 
 	bsodD := New(1024, 768, ModeDesktop, Host{Info: info})
 	bsodD.showBSOD()

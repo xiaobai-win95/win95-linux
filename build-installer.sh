@@ -40,7 +40,7 @@ cp -a "$ROOT/rootfs-overlay/." "$ROOTFS/"
 install -m 0755 "$BIN/win95gui" "$ROOTFS/usr/bin/win95gui"
 mkdir -p "$ROOTFS"/dev "$ROOTFS"/proc "$ROOTFS"/sys "$ROOTFS"/tmp "$ROOTFS"/run "$ROOTFS"/mnt "$ROOTFS"/var/log
 mkdir -p "$ROOTFS/root/文档" "$ROOTFS/root/下载" "$ROOTFS/root/桌面" "$ROOTFS/root/图片"
-chmod 0755 "$ROOTFS/etc/init.d/rcS" "$ROOTFS/etc/udhcpc.script" "$ROOTFS/usr/bin/startgui" "$ROOTFS/usr/bin/switch-to-xfce" "$ROOTFS/usr/bin/switch-to-win95" "$ROOTFS/usr/bin/win95-clipd"
+chmod 0755 "$ROOTFS/etc/init.d/rcS" "$ROOTFS/etc/udhcpc.script" "$ROOTFS/usr/bin/startgui" "$ROOTFS/usr/bin/switch-to-xfce" "$ROOTFS/usr/bin/switch-to-win95" "$ROOTFS/usr/bin/win95-clipd" "$ROOTFS/usr/bin/win95-notify" "$ROOTFS/usr/bin/win95-xfce-app" "$ROOTFS/usr/bin/win95-download-watch"
 chmod 0755 "$ROOTFS/root/桌面/切换到 Win95 桌面.desktop"
 chmod 0700 "$ROOTFS/root"
 COPYFILE_DISABLE=1 tar --no-xattrs --exclude='.DS_Store' --exclude='._*' -C "$ROOTFS" -czf "$STAGE/rootfs.tar.gz" .
@@ -133,7 +133,7 @@ for entry in "$STAGE/initrd-installer.img:安装器" "$STAGE/initrd-installed.im
 		;;
 	esac
 done
-tar -tzf "$STAGE/rootfs.tar.gz" | grep -E '^\./(sbin/init|usr/bin/win95gui|usr/bin/startgui|usr/bin/switch-to-xfce|usr/bin/switch-to-win95|usr/bin/win95-clipd|etc/inittab|etc/init.d/rcS|root/\.config/autostart/win95-clipd\.desktop|root/\.config/user-dirs\.dirs|root/桌面/切换到 Win95 桌面\.desktop)$' | sort
+tar -tzf "$STAGE/rootfs.tar.gz" | grep -E '^\./(sbin/init|usr/bin/win95gui|usr/bin/startgui|usr/bin/switch-to-xfce|usr/bin/switch-to-win95|usr/bin/win95-clipd|usr/bin/win95-notify|usr/bin/win95-xfce-app|usr/bin/win95-download-watch|etc/inittab|etc/init.d/rcS|root/\.config/autostart/win95-clipd\.desktop|root/\.config/autostart/win95-download-watch\.desktop|root/\.config/user-dirs\.dirs|root/桌面/切换到 Win95 桌面\.desktop)$' | sort
 file "$IMAGE"
 ( cd "$OUT" && shasum -a 256 "$(basename "$IMAGE")" > "$(basename "$IMAGE").sha256" )
 ls -lh "$IMAGE" "$IMAGE.sha256" "$STAGE/initrd-installer.img" "$STAGE/initrd-installed.img" "$STAGE/rootfs.tar.gz"

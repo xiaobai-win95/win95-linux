@@ -25,6 +25,8 @@ const (
 	IcoPackage
 	IcoMine
 	IcoPaint
+	IcoNuke
+	IcoCards
 )
 
 // DrawIcon32 draws a 32x32 icon at x,y. selected dithers the background navy.
@@ -320,6 +322,49 @@ func DrawIcon32(c *Canvas, kind IconKind, x, y int, selected bool) {
 				set(22+dx, 26+dy-1, ColDark)
 			}
 		}
+	case IcoNuke:
+		for yy := 2; yy < 30; yy++ {
+			for xx := 2; xx < 30; xx++ {
+				dx, dy := xx-16, yy-16
+				if dx*dx+dy*dy <= 180 {
+					set(xx, yy, 0xC00000)
+				}
+			}
+		}
+		for _, p := range [][2]int{{16, 10}, {11, 21}, {21, 21}} {
+			for yy := -4; yy <= 4; yy++ {
+				for xx := -4; xx <= 4; xx++ {
+					if xx*xx+yy*yy <= 17 {
+						set(p[0]+xx, p[1]+yy, ColDark)
+					}
+				}
+			}
+		}
+		for yy := -3; yy <= 3; yy++ {
+			for xx := -3; xx <= 3; xx++ {
+				if xx*xx+yy*yy <= 9 {
+					set(16+xx, 16+yy, 0xFFE000)
+				}
+			}
+		}
+	case IcoCards:
+		box(5, 7, 21, 29, ColFace)
+		frame(5, 7, 21, 29, ColDark)
+		for yy := 9; yy < 28; yy += 3 {
+			for xx := 7; xx < 20; xx += 2 {
+				set(xx, yy, ColShadow)
+			}
+		}
+		box(11, 3, 28, 25, ColWhite)
+		frame(11, 3, 28, 25, ColDark)
+		for yy := -5; yy <= 5; yy++ {
+			for xx := -5; xx <= 5; xx++ {
+				if (xx < 0 && -xx+yy <= 5) || (xx >= 0 && xx+yy <= 5) ||
+					(xx < 0 && -xx-yy <= 5) || (xx >= 0 && xx-yy <= 5) {
+					set(19+xx, 14+yy, ColRed)
+				}
+			}
+		}
 	}
 }
 
@@ -494,6 +539,39 @@ func DrawIcon16(c *Canvas, kind IconKind, x, y int) {
 		set(6, 11, ColGreen)
 		set(6, 12, ColGreen)
 		box(12, 12, 14, 14, 0x805020)
+	case IcoNuke:
+		for yy := 1; yy < 15; yy++ {
+			for xx := 1; xx < 15; xx++ {
+				dx, dy := xx-8, yy-8
+				if dx*dx+dy*dy <= 46 {
+					set(xx, yy, 0xC00000)
+				}
+			}
+		}
+		for _, p := range [][2]int{{8, 4}, {5, 11}, {11, 11}} {
+			for yy := -2; yy <= 2; yy++ {
+				for xx := -2; xx <= 2; xx++ {
+					if xx*xx+yy*yy <= 5 {
+						set(p[0]+xx, p[1]+yy, ColDark)
+					}
+				}
+			}
+		}
+		for yy := -1; yy <= 1; yy++ {
+			for xx := -1; xx <= 1; xx++ {
+				set(8+xx, 8+yy, 0xFFE000)
+			}
+		}
+	case IcoCards:
+		box(2, 4, 10, 14, ColFace)
+		frame(2, 4, 10, 14, ColDark)
+		box(5, 1, 13, 11, ColWhite)
+		frame(5, 1, 13, 11, ColDark)
+		set(9, 5, ColRed)
+		set(8, 6, ColRed)
+		set(9, 6, ColRed)
+		set(10, 6, ColRed)
+		set(9, 7, ColRed)
 	default:
 		box(3, 3, 12, 12, ColFace)
 		frame(3, 3, 12, 12, ColDark)

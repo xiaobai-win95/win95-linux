@@ -1,0 +1,31 @@
+#!/bin/sh
+# Watch ~/下载 for completed downloads and queue a Win95 balloon for each new
+# file. Partial files (*.part) are ignored while the browser is writing them.
+
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+
+DIR=/root/下载
+STAMP=/run/win95-download-watch.stamp
+NOTIFY=/usr/bin/win95-notify
+
+[ -x "$NOTIFY" ] || exit 0
+mkdir -p "$DIR" /run
+
+if command -v flock >/dev/null 2>&1; then
+	exec 8>/run/win95-download-watch.lock
+	flock -n 8 || exit 0
+fi
+
+# Files already present when the watcher starts are not "new downloads".
+touch "$STAMP"
+while :; do
+	sleep 8
+	[ -e "$STAMP" ] || touch "$STAMP"
+	find "$DIR" -maxdepth 1 -type f ! -name '*.part' -newer "$STAMP" -print 2>/dev/null |
+		while IFS= read -r file; do
+			base=$(basename "$file")
+			"$NOTIFY" "下载完成" "文件已保存：$base" >/dev/null 2>&1
+		done
+	touch "$STAMP"
+done

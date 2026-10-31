@@ -1,0 +1,111 @@
+#!/bin/sh
+# Run one X11 application on tty2 while the Win95 desktop keeps running on
+# tty1. When the application exits, the console switches back to Win95.
+# Text output stays ASCII; user-facing messages are queued as Win95 balloons.
+
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+
+VT=2
+LOG=/var/log/win95-xfce-app.log
+PIDFILE=/run/win95-xfce-app.pid
+WRAPPER=/run/win95-xfce-app.sh
+NOTIFY=/usr/bin/win95-notify
+
+log() {
+	echo "$(date '+%F %T') $*" >>"$LOG"
+}
+
+notify() {
+	[ -x "$NOTIFY" ] || return 0
+	"$NOTIFY" "$1" "$2" >/dev/null 2>&1
+}
+
+APP="$*"
+[ -n "$APP" ] || {
+	echo "usage: win95-xfce-app COMMAND" >&2
+	exit 2
+}
+
+if [ ! -x /usr/bin/Xorg ] || ! command -v startx >/dev/null 2>&1; then
+	log "Xorg/xinit missing"
+	notify "XFCE 应用" "Xorg 尚未安装，无法启动图形程序。"
+	exit 1
+fi
+
+if [ -e "$PIDFILE" ]; then
+	old=$(cat "$PIDFILE" 2>/dev/null)
+	if [ -n "$old" ] && kill -0 "$old" 2>/dev/null; then
+		log "another app session is running (pid $old)"
+		notify "XFCE 应用" "已有一个 XFCE 应用正在运行。"
+		exit 1
+	fi
+	rm -f "$PIDFILE"
+fi
+echo $$ >"$PIDFILE"
+trap 'rm -f "$PIDFILE" "$WRAPPER"' EXIT
+
+if [ -e /tmp/.X0-lock ]; then
+	xpid=$(cat /tmp/.X0-lock 2>/dev/null)
+	if [ -n "$xpid" ] && kill -0 "$xpid" 2>/dev/null; then
+		log "X display 0 is in use by pid $xpid"
+		notify "XFCE 应用" "另一个 X 会话正在使用显示服务。"
+		exit 1
+	fi
+	rm -f /tmp/.X0-lock /tmp/.X11-unix/X0
+fi
+
+mkdir -p /run/user/0 /run/udev /tmp/.X11-unix
+chmod 0700 /run/user/0
+chmod 1777 /tmp/.X11-unix
+if command -v udevd >/dev/null 2>&1; then
+	if ! pidof udevd >/dev/null 2>&1; then
+		udevd --daemon >>"$LOG" 2>&1
+	fi
+	udevadm trigger --action=add >>"$LOG" 2>&1
+	udevadm settle >>"$LOG" 2>&1
+fi
+
+# A background copy watcher turns XFCE downloads into Win95 balloons.
+if [ -x /usr/bin/win95-download-watch ]; then
+	/usr/bin/win95-download-watch >/dev/null 2>&1 &
+fi
+
+# Start the window manager first so the application gets decorations and
+# keyboard focus even though a full XFCE session is not running.
+cat >"$WRAPPER" <<EOF
+#!/bin/sh
+export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export HOME=/root DISPLAY=:0 LANG=zh_CN.UTF-8 LANGUAGE=zh_CN:zh
+if command -v xfwm4 >/dev/null 2>&1; then
+	xfwm4 --daemon >/dev/null 2>&1
+fi
+$APP
+rc=\$?
+echo "=== \$(date '+%F %T') application exited (\$rc) ===" >>"$LOG"
+exit \$rc
+EOF
+chmod 0755 "$WRAPPER"
+
+# Let the Win95 GUI release /dev/fb0 before Xorg maps the display.
+command -v chvt >/dev/null 2>&1 && chvt "$VT"
+sleep 0.8
+
+export LANG=zh_CN.UTF-8 LANGUAGE=zh_CN:zh
+export XDG_VTNR="$VT" XDG_RUNTIME_DIR=/run/user/0 XDG_SESSION_TYPE=x11
+log "starting $APP on vt$VT"
+echo "=== $(date '+%F %T') start $APP on vt$VT ===" >>"$LOG"
+if command -v dbus-run-session >/dev/null 2>&1; then
+	dbus-run-session -- startx "$WRAPPER" -- "vt$VT" -keeptty -nolisten tcp >>"$LOG" 2>&1
+else
+	startx "$WRAPPER" -- "vt$VT" -keeptty -nolisten tcp >>"$LOG" 2>&1
+fi
+rc=$?
+log "X session ended ($rc)"
+command -v chvt >/dev/null 2>&1 && chvt 1
+if [ "$rc" -eq 0 ]; then
+	notify "XFCE 应用已退出" "已返回 Windows 95 桌面。"
+else
+	notify "XFCE 应用已退出" "返回码 $rc，详情见 /var/log/win95-xfce-app.log"
+fi
+exit 0

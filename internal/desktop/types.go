@@ -23,7 +23,13 @@ type Host struct {
 	Suspend func() error
 	// Wake asks the host event loop to process queued UI callbacks.
 	Wake func()
-	Info string
+	// Screenshot saves the currently displayed frame as a PNG and returns
+	// its path.
+	Screenshot func() (string, error)
+	// Visible reports whether the framebuffer is on screen. Off-screen
+	// notifications are queued until the desktop is visible again.
+	Visible func() bool
+	Info    string
 }
 
 type MouseKind int
@@ -130,7 +136,7 @@ const (
 	startBtnW  = 86
 	startMenuW = 248
 	clockW     = 82
-	sysTrayW   = 104
+	sysTrayW   = 122
 )
 
 func (w *Window) TitleRect() ui.Rect {

@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Win95 Download Notifications
+Comment=Show finished XFCE downloads as Windows 95 balloon tips
+Exec=/usr/bin/win95-download-watch
+Terminal=false
+NoDisplay=true
+X-GNOME-Autostart-enabled=true

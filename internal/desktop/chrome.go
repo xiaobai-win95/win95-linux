@@ -12,6 +12,10 @@ func (d *Desktop) Draw(c *ui.Canvas) {
 		d.drawBSOD(c)
 		return
 	}
+	if d.nuke {
+		d.drawNuke(c)
+		return
+	}
 	if d.sleepPending || d.sleeping {
 		d.drawSleep(c)
 		return
@@ -20,7 +24,7 @@ func (d *Desktop) Draw(c *ui.Canvas) {
 		d.drawScreensaver(c)
 		return
 	}
-	c.DesktopPattern(ui.Rect{0, 0, c.W, c.H})
+	d.drawDesktopBackground(c)
 	d.drawIcons(c)
 	for _, w := range d.windows {
 		if w.Minimized {
@@ -40,6 +44,8 @@ func (d *Desktop) Draw(c *ui.Canvas) {
 	if d.modal == nil {
 		d.drawContext(c)
 	}
+	d.drawNotifications(c)
+	d.drawFileDrag(c)
 	if d.hand {
 		ui.CursorHand(c, d.MouseX, d.MouseY)
 	} else {
@@ -229,6 +235,7 @@ type startEntry struct {
 	action   func()
 	sep      bool
 	enabled  bool
+	danger   bool
 	children []startEntry
 }
 
@@ -237,8 +244,10 @@ func (d *Desktop) menuEntries() []startEntry {
 		{id: "prog", label: "程序(P)", icon: ui.IcoFolderOpen, enabled: true, children: d.programEntries()},
 		{id: "docs", label: "文档(D)", icon: ui.IcoFolder, enabled: true, children: d.documentEntries()},
 		{id: "settings", label: "设置(S)", icon: ui.IcoSetup, enabled: true, children: d.settingsEntries()},
-		{id: "find", label: "查找(F)", icon: ui.IcoFolderOpen, enabled: true, action: func() { d.openFiles("") }},
+		{id: "find", label: "查找(F)", icon: ui.IcoFolderOpen, enabled: true, action: func() { d.openFind() }},
 		{id: "help", label: "帮助(H)", icon: ui.IcoInfo, enabled: true, action: func() { d.showAbout() }},
+		{id: "run", label: "运行(R)…", icon: ui.IcoSetup, enabled: true, action: func() { d.openRunDialog() }},
+		{id: "nuke", label: "死手系统（核反击）…", icon: ui.IcoNuke, danger: true, enabled: true, action: func() { d.openDeadHand() }},
 		{sep: true},
 	}
 	if d.Mode == ModeDesktop {
@@ -315,10 +324,17 @@ func (d *Desktop) drawStartMenu(c *ui.Canvas) {
 		ir := rects[i]
 		hover := d.startSel == e.id
 		if hover && e.enabled {
-			c.FillRect(ir, ui.ColNavy)
+			if e.danger {
+				c.FillRect(ir, 0x800000)
+			} else {
+				c.FillRect(ir, ui.ColNavy)
+			}
 		}
 		ui.DrawIcon16(c, e.icon, ir.X+4, ir.Y+5)
 		col := ui.ColText
+		if e.danger {
+			col = 0xA00000
+		}
 		if !e.enabled {
 			col = ui.ColTextDis
 		}
@@ -452,7 +468,7 @@ func (d *Desktop) subEntry(id string) *startEntry {
 
 func (d *Desktop) showAbout() {
 	d.MessageBox("关于 Windows 95 Linux",
-		"Windows 95 Linux 中文版\n版本 1.0 · ARM64 / UEFI\n\nWin95 风格图形环境，内置终端、记事本、计算器、日历、文件管理器与网络浏览器。\n\n"+d.Host.Info,
+		"Windows 95 Linux 中文版\n版本 26.1 · ARM64 / UEFI\n\nWin95 风格桌面：纸牌、扫雷、画图、图形化下载器、拖放与截屏。\n双击 XFCE 终端或 Firefox 可在 tty2 后台启动，退出后自动返回。\n\n"+d.Host.Info,
 		IconInfo, []string{"确定"}, nil)
 }
 
@@ -526,10 +542,15 @@ func (d *Desktop) programEntries() []startEntry {
 		{id: "files", label: "文件管理器", icon: ui.IcoFolder, enabled: true, action: func() { d.openFiles("/root") }},
 		{id: "browser", label: "网络浏览器", icon: ui.IcoBrowser, enabled: true, action: func() { d.openBrowser("") }},
 		{sep: true},
-		{id: "pkgman", label: "软件包管理器", icon: ui.IcoPackage, enabled: true, action: func() { d.openPkgMan() }},
+		{id: "sol", label: "纸牌", icon: ui.IcoCards, enabled: true, action: func() { d.openSolitaire() }},
 		{id: "mines", label: "扫雷", icon: ui.IcoMine, enabled: true, action: func() { d.openMines() }},
 		{id: "paint", label: "画图", icon: ui.IcoPaint, enabled: true, action: func() { d.openPaint() }},
 		{sep: true},
+		{id: "download", label: "图形化下载器", icon: ui.IcoDownload, enabled: true, action: func() { d.openDownloader() }},
+		{id: "pkgman", label: "软件包管理器", icon: ui.IcoPackage, enabled: true, action: func() { d.openPkgMan() }},
+		{sep: true},
+		{id: "xfce-term", label: "XFCE 终端 (tty2)", icon: ui.IcoTerminal, enabled: true, action: func() { d.launchXFCEApp("xfce4-terminal") }},
+		{id: "firefox", label: "Firefox (tty2)", icon: ui.IcoBrowser, enabled: true, action: func() { d.launchXFCEApp("firefox") }},
 		{id: "sysinfo", label: "系统信息", icon: ui.IcoInfo, enabled: true, action: func() { d.showAbout() }},
 	}
 	if d.Mode == ModeInstaller {
@@ -560,6 +581,8 @@ func (d *Desktop) documentEntries() []startEntry {
 func (d *Desktop) settingsEntries() []startEntry {
 	return []startEntry{
 		{id: "about", label: "关于本机", icon: ui.IcoInfo, enabled: true, action: func() { d.showAbout() }},
+		{id: "display", label: "显示属性(D)", icon: ui.IcoComputer, enabled: true, action: func() { d.openDisplayProperties() }},
+		{id: "shot", label: "截屏(S)  Print Screen", icon: ui.IcoComputer, enabled: true, action: func() { d.takeScreenshot() }},
 		{id: "pkgman", label: "添加/删除软件", icon: ui.IcoPackage, enabled: true, action: func() { d.openPkgMan() }},
 		{id: "files", label: "文件管理器", icon: ui.IcoFolder, enabled: true, action: func() { d.openFiles("/root") }},
 		{sep: true},

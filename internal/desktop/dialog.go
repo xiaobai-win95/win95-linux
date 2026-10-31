@@ -72,6 +72,9 @@ func (d *Desktop) MessageBox(title, text string, icon DialogIcon, buttons []stri
 		h = 185
 	}
 	a := &dialogApp{d: d, title: title, lines: lines, icon: icon, buttons: buttons, cb: cb, w: w, h: h}
+	if icon == IconError {
+		beep()
+	}
 	a.win = d.OpenModal(a)
 	return a.win
 }

@@ -23,6 +23,11 @@ func (d *Desktop) Mouse(ev MouseEvent) {
 	d.MouseX, d.MouseY = gx, gy
 	d.hand = false
 
+	if ev.Kind == MouseDown && ev.Button == 1 && len(d.notices) > 0 && d.noticeRect.Contains(gx, gy) {
+		d.dismissNotice()
+		return
+	}
+
 	if d.ctx != nil && d.ctxMouse(ev) {
 		return
 	}
@@ -701,6 +706,13 @@ func (d *Desktop) Key(ev KeyEvent) {
 		return
 	}
 	if d.sleepPending || d.sleeping {
+		return
+	}
+	if ev.Name == "Print" {
+		d.takeScreenshot()
+		if d.saver {
+			d.stopSaver(time.Now())
+		}
 		return
 	}
 	if d.saver {

@@ -1,10 +1,14 @@
 package desktop
 
 import (
+	"fmt"
 	"os"
+	"path/filepath"
 
 	"win95linux/internal/ui"
 )
+
+const trashDir = "/root/.trash"
 
 type iconPoint struct {
 	x, y int
@@ -38,6 +42,8 @@ func (d *Desktop) setupShell() {
 		{label: "我的电脑", kind: ui.IcoComputer, key: "sys:computer", action: func() { d.openFiles("") }},
 		{label: "我的文档", kind: ui.IcoFolder, key: "sys:docs", isDir: true, action: func() { d.openFiles("/root/文档") }},
 		{label: "网络浏览器", kind: ui.IcoBrowser, key: "sys:browser", action: func() { d.openBrowser("") }},
+		{label: "XFCE 终端", kind: ui.IcoTerminal, key: "sys:xfce-term", action: func() { d.launchXFCEApp("xfce4-terminal") }},
+		{label: "Firefox", kind: ui.IcoBrowser, key: "sys:firefox", action: func() { d.launchXFCEApp("firefox") }},
 		{label: "XFCE 桌面", kind: ui.IcoComputer, key: "sys:xfce", action: func() { d.switchToXFCE() }},
 		{label: "回收站", kind: ui.IcoRecycle, key: "sys:recycle", action: func() { d.openRecycle() }},
 	}
@@ -46,11 +52,52 @@ func (d *Desktop) setupShell() {
 }
 
 func (d *Desktop) openRecycle() {
-	if st, err := os.Stat("/root/.trash"); err == nil && st.IsDir() {
-		d.openFiles("/root/.trash")
+	if st, err := os.Stat(trashDir); err == nil && st.IsDir() {
+		d.openFiles(trashDir)
 		return
 	}
 	d.MessageBox("回收站", "回收站是空的。\n\n删除的文件会暂时保存在这里。", IconInfo, []string{"确定"}, nil)
+}
+
+func (d *Desktop) recycleCount() int {
+	ents, err := os.ReadDir(trashDir)
+	if err != nil {
+		return 0
+	}
+	return len(ents)
+}
+
+func (d *Desktop) emptyRecycle(after func()) {
+	ents, err := os.ReadDir(trashDir)
+	if err != nil || len(ents) == 0 {
+		d.MessageBox("回收站", "回收站已经是空的。", IconInfo, []string{"确定"}, nil)
+		if after != nil {
+			after()
+		}
+		return
+	}
+	d.MessageBox("确认删除", fmt.Sprintf("确实要删除回收站中的 %d 个项目吗？\n\n这些项目将被永久删除。", len(ents)),
+		IconQuestion, []string{"是", "否"}, func(i int) {
+			if i != 0 {
+				return
+			}
+			failed := ""
+			for _, e := range ents {
+				if err := os.RemoveAll(filepath.Join(trashDir, e.Name())); err != nil {
+					failed = err.Error()
+				}
+			}
+			d.refreshShortcuts(true)
+			d.Invalidate()
+			if after != nil {
+				after()
+			}
+			if failed != "" {
+				d.MessageBox("回收站", "无法删除所有项目：\n"+failed, IconError, []string{"确定"}, nil)
+				return
+			}
+			d.MessageBox("回收站", "回收站已清空。", IconInfo, []string{"确定"}, nil)
+		})
 }
 
 func (d *Desktop) openNotepad(path string) {

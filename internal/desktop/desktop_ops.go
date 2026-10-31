@@ -144,7 +144,7 @@ func (d *Desktop) desktopMenuItems() []ctxItem {
 			{label: "文本文档(T)", icon: ui.IcoText, enabled: true, action: func() { d.newDesktopText() }},
 		}},
 		{sep: true},
-		{label: "属性(R)", icon: ui.IcoInfo, enabled: true, action: func() { d.showDesktopProperties() }},
+		{label: "属性(R)", icon: ui.IcoInfo, enabled: true, action: func() { d.openDisplayProperties() }},
 	}
 }
 
@@ -155,15 +155,21 @@ func (d *Desktop) iconMenuItems(idx int) []ctxItem {
 	ic := d.icons[idx]
 	user := ic.path != ""
 	explore := ic.path != "" || ic.key == "sys:computer" || ic.key == "sys:docs" || ic.key == "sys:recycle"
-	return []ctxItem{
+	items := []ctxItem{
 		{label: "打开(O)", enabled: true, action: func() { d.activateIcon(idx) }},
 		{label: "资源管理器(X)", enabled: explore, action: func() { d.exploreIcon(idx) }},
 		{sep: true},
 		{label: "重命名(M)", enabled: user, action: func() { d.renameIcon(idx) }},
 		{label: "删除(D)", accel: "Del", enabled: user, action: func() { d.deleteIcon(idx) }},
 		{sep: true},
-		{label: "属性(R)", action: func() { d.showIconProperties(idx) }},
 	}
+	if ic.key == "sys:recycle" {
+		items = append(items,
+			ctxItem{label: "清空回收站(C)", icon: ui.IcoRecycle, enabled: d.recycleCount() > 0, action: func() { d.emptyRecycle(nil) }},
+			ctxItem{sep: true},
+		)
+	}
+	return append(items, ctxItem{label: "属性(R)", action: func() { d.showIconProperties(idx) }})
 }
 
 func (d *Desktop) windowMenuItems(w *Window) []ctxItem {
@@ -199,6 +205,7 @@ func (d *Desktop) startMenuButtonItems() []ctxItem {
 			d.Invalidate()
 		}},
 		{label: "资源管理器(X)", enabled: true, action: func() { d.openFiles("/root") }},
+		{label: "运行(R)…", enabled: true, action: func() { d.openRunDialog() }},
 		{sep: true},
 		{label: "关于本机(A)", enabled: true, action: func() { d.showAbout() }},
 	}
@@ -218,7 +225,8 @@ func (d *Desktop) clockMenuItems() []ctxItem {
 func (d *Desktop) trayMenuItems() []ctxItem {
 	return []ctxItem{
 		{label: "系统监视器(M)", enabled: true, action: func() { d.showSysMonitor() }},
-		{label: "桌面属性(R)", enabled: true, action: func() { d.showDesktopProperties() }},
+		{label: "网络状态(N)：" + netStateText(d.netState), enabled: true, action: func() { d.showNetworkStatus() }},
+		{label: "桌面属性(R)", enabled: true, action: func() { d.openDisplayProperties() }},
 		{sep: true},
 		{label: "关于本机(A)", enabled: true, action: func() { d.showAbout() }},
 	}
@@ -239,7 +247,7 @@ func (d *Desktop) taskbarMenuItems() []ctxItem {
 		{sep: true},
 		{label: "最小化所有窗口(M)", enabled: hasWin, action: func() { d.minimizeAll() }},
 		{sep: true},
-		{label: "桌面属性(R)", enabled: true, action: func() { d.showDesktopProperties() }},
+		{label: "桌面属性(R)", enabled: true, action: func() { d.openDisplayProperties() }},
 	}
 }
 
@@ -353,7 +361,7 @@ func (d *Desktop) renameIcon(idx int) {
 }
 
 func moveToTrash(path string) (string, error) {
-	trash := "/root/.trash"
+	trash := trashDir
 	if err := os.MkdirAll(trash, 0o755); err != nil {
 		return "", err
 	}
@@ -400,16 +408,6 @@ func (d *Desktop) deleteIcon(idx int) {
 		})
 }
 
-func (d *Desktop) showDesktopProperties() {
-	auto := "关闭"
-	if d.autoArrange {
-		auto = "开启"
-	}
-	text := fmt.Sprintf("Windows 95 Linux 中文版\n\n桌面分辨率：%d × %d\n桌面文件夹：%s\n图标数量：%d\n自动排列：%s\n\n%s",
-		d.W, d.H, shortcutsDir, len(d.icons), auto, d.Host.Info)
-	d.MessageBox("显示 属性", text, IconInfo, []string{"确定"}, nil)
-}
-
 func (d *Desktop) showIconProperties(idx int) {
 	d.closeContext()
 	if idx < 0 || idx >= len(d.icons) {
@@ -427,6 +425,10 @@ func (d *Desktop) showIconProperties(idx int) {
 		b.WriteString("类型：程序\n说明：打开网络浏览器。")
 	case "sys:xfce":
 		b.WriteString("类型：程序\n说明：切换到 XFCE 图形桌面。")
+	case "sys:xfce-term":
+		b.WriteString("类型：程序\n说明：在 tty2 启动 Xorg 和 XFCE 终端，关闭后自动返回 Win95。")
+	case "sys:firefox":
+		b.WriteString("类型：程序\n说明：在 tty2 启动 Xorg 和 Firefox，关闭后自动返回 Win95。")
 	case "sys:recycle":
 		b.WriteString("类型：系统文件夹\n位置：/root/.trash")
 	case "sys:setup":

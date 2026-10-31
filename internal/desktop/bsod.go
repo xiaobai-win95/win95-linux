@@ -10,12 +10,18 @@ import (
 const bsodGrace = 900 * time.Millisecond
 
 func (d *Desktop) showBSOD() {
+	d.showBSODText("")
+}
+
+func (d *Desktop) showBSODText(text string) {
 	d.bsod = true
+	d.bsodText = text
 	d.bsodAt = time.Now()
 	d.bsodStep = d.bsodAt
 	d.startOpen = false
 	d.startSub = ""
 	d.closeMenusExcept(nil)
+	beep()
 	d.Invalidate()
 }
 
@@ -26,6 +32,7 @@ func (d *Desktop) handleBSODInput() {
 		return
 	}
 	d.bsod = false
+	d.bsodText = ""
 	d.lastInput = time.Now()
 	d.Invalidate()
 }
@@ -38,6 +45,16 @@ func (d *Desktop) drawBSOD(c *ui.Canvas) {
 	title := "Windows"
 	tw := f.ScaledWidth(title, 3)
 	f.Scaled(c, (c.W-tw)/2, 70, title, ui.ColWhite, 3)
+
+	nuke := d.bsodText != ""
+	if nuke {
+		scale := 2
+		for scale > 1 && f.ScaledWidth(d.bsodText, scale) > c.W-120 {
+			scale--
+		}
+		tw = f.ScaledWidth(d.bsodText, scale)
+		f.Scaled(c, (c.W-tw)/2, 128, d.bsodText, 0xFFD700, scale)
+	}
 
 	lines := []string{
 		"",
@@ -53,10 +70,22 @@ func (d *Desktop) drawBSOD(c *ui.Canvas) {
 		"         ESI=81C3A000  EDI=00000000  EIP=C0011E36  ESP=81C3FF00",
 		"         win95::panic(USER_FAULT, rip=0x0028C0011E36, cr2=0xDEADBEEF)",
 		"",
-		"         系统已停止响应。这只是“危险操作”彩蛋，数据没有丢失。",
-		"",
 	}
-	y := 170
+	if nuke {
+		lines = append(lines,
+			"         死手系统已执行核反击指令。这只是彩蛋，数据没有丢失。",
+		)
+	} else {
+		lines = append(lines,
+			"         系统已停止响应。这只是“危险操作”彩蛋，数据没有丢失。",
+		)
+	}
+	lines = append(lines, "")
+	startY := 178
+	if nuke {
+		startY = 220
+	}
+	y := startY
 	for _, line := range lines {
 		f.Text(c, 96, y, line, ui.ColWhite)
 		y += 22

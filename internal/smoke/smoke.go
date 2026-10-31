@@ -230,7 +230,7 @@ func (s *Screen) drawSidebar(c *ui.Canvas, l layout) {
 	f.Text(c, x, l.client.Y+232, "安装向导 第 1 步", 0xC0E0FF)
 
 	bottom := l.client.Bottom()
-	f.Text(c, x, bottom-72, "版本 1.0", 0xC0E0FF)
+	f.Text(c, x, bottom-72, "版本 26.1", 0xC0E0FF)
 	f.Text(c, x, bottom-50, "ARM64 · UEFI", 0xC0E0FF)
 	f.Text(c, x, bottom-28, "© 2026 Win95 Linux", 0x80C0FF)
 }
@@ -388,7 +388,7 @@ func (s *Screen) showAbout() {
 	s.modal = &Modal{
 		Title: "关于自检盘",
 		Lines: []string{
-			"Windows 95 Linux 自检盘　版本 1.0",
+			"Windows 95 Linux 自检盘　版本 26.1",
 			"ARM64 · UEFI · VirtIO · 中文界面",
 		},
 		Action: "about",
