@@ -16,13 +16,13 @@ This is a linux OS which has the win95 style GUI (Chinese).
 
 校验方法（在镜像所在目录执行）：
 
-```sh
+```zsh
 shasum -a 256 -c win95-installer-aarch64.img.sha256
 ```
 
 镜像 SHA-256：
 
-```
+```sha256
 24fcafc5747a187f9a53730068a01d9a17c52295227b123dce9400fe1e06147c
 ```
 
@@ -221,7 +221,7 @@ shasum -a 256 -c win95-installer-aarch64.img.sha256
 - **一键切换**：双击桌面上的“XFCE 桌面”图标，或使用 **开始 → 设置 → 切换到 XFCE 桌面**。桌面会先确认，再结束 Win95 会话并自动切换到 XFCE（若尚未安装 XFCE，会提示先运行 `switch-to-xfce` 安装）。
 - **命令行切换**：在 Win95 桌面里打开终端，或切到 tty2/tty3，执行：
 
-```sh
+```ash
 switch-to-xfce
 ```
 
@@ -253,7 +253,7 @@ XFCE 会话启动时会自动运行：
 - **入口**：桌面图标“XFCE 终端”“Firefox”，或开始 → 程序 → “XFCE 终端 (tty2)”“Firefox (tty2)”。
 - **流程**：`win95-xfce-app` 先 `chvt 2`，然后在 tty2 上启动 Xorg、`xfwm4` 和指定程序；Win95 桌面仍运行在 tty1，只是暂时收不到输入和 framebuffer。程序退出后脚本自动 `chvt 1`，桌面和原来打开的窗口都还在。
 - **依赖检查**：未安装 Xorg 或对应程序时，桌面会弹出提示和 `apk add` 命令；安装后重试即可。Xorg 缺失时的示例：
-  ```sh
+  ```ash
   apk update && apk add xorg-server xinit xf86-input-libinput xf86-video-fbdev xfce4 xfce4-terminal firefox dbus dbus-x11 font-wqy-zenhei
   ```
 - **一次一个**：同一时间只运行一个 XFCE 应用；已有应用时会提示“已有一个 XFCE 应用正在运行”。
@@ -372,7 +372,7 @@ XFCE 会话启动时会自动运行：
 
   出问题的只是目标盘 EFI 分区里的 `/initrd`，系统本体完好。完全关机 → 用新镜像覆盖 UTM 里的安装盘文件 → 启动到安装器 → 点 **终端**，执行：
 
-  ```sh
+  ```ash
   mkdir -p /mnt/esp
   mount /dev/vda1 /mnt/esp          # 目标盘的 EFI 分区；若目标盘是 vdb 则写 /dev/vdb1
   cp /payload/initrd-installed.img /mnt/esp/initrd
@@ -407,7 +407,7 @@ XFCE 会话启动时会自动运行：
 - 若日志提示网络错误，先在终端确认地址：`ifconfig` 应有与 Mac 同网段的局域网地址（如 `192.168.x.x`），`cat /etc/resolv.conf` 应有 `nameserver`。没有地址时见上一条 `CONFIG_PACKET` 的说明。
 - 清华镜像不可用或同步滞后时，可切回官方源，在终端执行：
 
-  ```sh
+  ```ash
   sed -i 's|mirrors.tuna.tsinghua.edu.cn|dl-cdn.alpinelinux.org|' /etc/apk/repositories
   apk update
   ```
@@ -425,7 +425,7 @@ XFCE 会话启动时会自动运行：
 
 - 安装时请这样执行：
 
-  ```sh
+  ```ash
   apk add alpine-conf
   setup-desktop
   # 请选择xfce
