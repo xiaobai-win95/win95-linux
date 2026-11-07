@@ -5,6 +5,7 @@ import (
 	"image"
 	"image/color"
 	"image/png"
+	"math"
 	"os"
 	"testing"
 	"time"
@@ -203,6 +204,56 @@ func TestPreviewFrames(t *testing.T) {
 		}
 		return m
 	}, nil)
+	renderApp(t, "desk-preview-blockworld.png",
+		func(d *Desktop) App {
+			a := NewBlockWorldApp(d)
+			a.newWorld(9526)
+			a.phase = 0.33
+			a.sel = 3
+			a.status = "左键挖掘 · 右键放置 · 世界已保存到 /root/文档"
+			a.statusUntil = time.Now().Add(time.Hour)
+			tx := int(a.px/bwTile) + 3
+			ty := a.world.columnTop(tx)
+			a.hoverX, a.hoverY, a.hoverValid = tx, ty, true
+			a.mining = true
+			a.mineTx, a.mineTy = tx, ty
+			a.mineProg = bwHard[a.world.At(tx, ty)] * 0.45
+			return a
+		}, nil)
+	renderApp(t, "desk-preview-blockworld-craft.png",
+		func(d *Desktop) App {
+			a := NewBlockWorldApp(d)
+			a.newWorld(9526)
+			a.phase = 0.33
+			cx := int((a.px + bwPW/2) / bwTile)
+			cy := int((a.py + bwPH/2) / bwTile)
+			a.world.Set(cx+2, cy+1, bwCraftingTable)
+			a.craftOpen = true
+			a.craftSel = 3
+			a.status = "合成了 玻璃 ×2"
+			a.statusUntil = time.Now().Add(time.Hour)
+			return a
+		}, nil)
+	renderApp(t, "desk-preview-blockworld-3d.png",
+		func(d *Desktop) App {
+			a := NewBlockWorldApp(d)
+			a.newWorld(9526)
+			a.phase = 0.33
+			a.view3D = true
+			a.sel = 3
+			a.status = "3D 立体视角已开启（按 V 切回平面）"
+			a.statusUntil = time.Now().Add(time.Hour)
+			tx := int(a.px/bwTile) + 3
+			ty := a.world.columnTop(tx)
+			a.hoverX, a.hoverY, a.hoverValid = tx, ty, true
+			return a
+		}, nil)
+	welcomeD := New(1024, 768, ModeDesktop, Host{Info: info})
+	welcomeD.eulaAccepted = false
+	welcomeD.MaybeShowWelcome()
+	welc := ui.NewCanvas(1024, 768)
+	welcomeD.Draw(welc)
+	savePreview(t, welc, "desk-preview-welcome.png")
 	renderApp(t, "desk-preview-paint.png",
 		func(d *Desktop) App { return NewPaintApp(d) },
 		func(d *Desktop, app App) {
@@ -383,6 +434,83 @@ func TestPreviewFrames(t *testing.T) {
 			a.tab[6] = []solCard{{suit: solHearts, rank: 3, up: true}}
 			a.score, a.moves, a.elapsed = 185, 24, 93
 		})
+	renderApp(t, "desk-preview-pshell.png",
+		func(d *Desktop) App {
+			a := NewPShellApp(d)
+			a.sess.cwd = "/root"
+			a.lines = []psLine{
+				{text: "Windows PowerShell 26.2", col: psColPrompt, bold: true},
+				{text: "版权所有 (C) 2026 Windows 95 Linux 项目。保留所有权利。", col: psColDim},
+				{text: ""},
+				{text: "PS C:\\root> Get-ChildItem", col: psColDim},
+				{text: "", col: psColText},
+				{text: "    目录: C:\\root", col: psColInfo},
+				{text: ""},
+				{text: "Mode     LastWriteTime        Length Name", col: psColDim},
+				{text: "----     -------------        ------ ----", col: psColDim},
+				{text: "d----    2026-11-06 09:41           文档", col: 0x66D9FF},
+				{text: "d----    2026-11-06 09:41           下载", col: 0x66D9FF},
+				{text: "-a---    2026-11-06 09:41       184 欢迎使用.txt", col: psColText},
+				{text: "PS C:\\root> $name = \"世界\"; Write-Output \"你好，$name\"", col: psColDim},
+				{text: "你好，世界", col: psColText},
+				{text: "PS C:\\root> Get-Process | Sort-Object -Property Id | Select-Object -First 3", col: psColDim},
+				{text: "    Id ProcessName             CPU(s)   WorkingSet", col: psColDim},
+				{text: "    -- -----------             ------   ----------", col: psColDim},
+				{text: "     1 init                      0.12      1.4 MB", col: psColText},
+				{text: "   142 systemd-journald          0.08      2.1 MB", col: psColText},
+				{text: "   188 systemd-udevd             0.03      1.2 MB", col: psColText},
+				{text: "", col: psColText},
+			}
+			a.input = []rune("Get-ComputerInfo")
+			a.caret = len(a.input)
+			a.stick = true
+			return a
+		}, nil)
+	renderApp(t, "desk-preview-ise.png",
+		func(d *Desktop) App {
+			a := NewPShellISEApp(d)
+			a.sess.cwd = "/root"
+			a.path = "/root/文档/示例.ps1"
+			a.caretLn, a.caretCol = 8, len([]rune(a.lines[8]))
+			a.out = []psLine{
+				{text: "Windows PowerShell ISE 26.2", col: psColPrompt, bold: true},
+				{text: "编辑脚本后按 F5 运行。Ctrl+S 保存，Ctrl+O 打开。", col: psColDim},
+				{text: ""},
+				{text: "— 运行 09:41:27 —", col: psColDim},
+				{text: "你好，Windows 95 Linux！", col: 0xFFFF40},
+				{text: "你好，世界", col: psColText},
+				{text: "", col: psColText},
+				{text: "2026年11月6日 星期五", col: psColText},
+				{text: "09:41:27", col: psColText},
+				{text: "", col: psColText},
+				{text: "    目录: C:\\root", col: psColInfo},
+				{text: "Mode     LastWriteTime        Length Name", col: psColDim},
+				{text: "d----    2026-11-06 09:41           文档", col: 0x66D9FF},
+				{text: "-a---    2026-11-06 09:41       184 欢迎使用.txt", col: psColText},
+			}
+			a.outStick = true
+			a.status = "就绪"
+			return a
+		}, nil)
+	renderApp(t, "desk-preview-imageviewer.png",
+		func(d *Desktop) App {
+			a := NewImageViewerApp(d)
+			a.img = previewPicture(360, 220)
+			a.iw, a.ih = 360, 220
+			a.size = 360*220*3 + 54
+			a.path = "/root/图片/示例图片.png"
+			return a
+		}, nil)
+	renderApp(t, "desk-preview-browser-setup.png",
+		func(d *Desktop) App { return &BrowserApp{d: d} },
+		func(d *Desktop, app App) {
+			a := app.(*BrowserApp)
+			s := newBrowserSetup()
+			a.setup = s
+			s.update(0, setupOK, "/root/.config/win95-browser")
+			s.update(1, setupOK, "goja ECMAScript 5.1（已安装）")
+			s.update(2, setupRunning, "正在写入 dom-bridge.js…")
+		})
 	renderApp(t, "desk-preview-downloader.png",
 		func(d *Desktop) App {
 			return &DownloaderApp{d: d, status: "输入下载地址，然后点“开始下载”。"}
@@ -460,6 +588,91 @@ func TestPreviewFrames(t *testing.T) {
 	bsodD.Draw(bsc)
 	savePreview(t, bsc, "desk-preview-bsod.png")
 
+	oskD := New(1024, 768, ModeDesktop, Host{Info: info})
+	oskD.clock = "09:41"
+	oskD.sk = &softKeyboard{hover: 3, press: -1}
+	oskCanvas := ui.NewCanvas(1024, 768)
+	oskD.Draw(oskCanvas)
+	savePreview(t, oskCanvas, "desk-preview-softkeyboard.png")
+
+	prankWarnD := New(1024, 768, ModeDesktop, Host{Info: info})
+	prankWarnD.prank = newPrankDemo(time.Now())
+	pwc := ui.NewCanvas(1024, 768)
+	prankWarnD.Draw(pwc)
+	savePreview(t, pwc, "desk-preview-prank-warning.png")
+
+	prankFmtD := New(1024, 768, ModeDesktop, Host{Info: info})
+	prankFmtD.prank = newPrankDemo(time.Now())
+	prankFmtD.prank.stage = prankStageFormat
+	prankFmtD.prank.stageAt = time.Now().Add(-4200 * time.Millisecond)
+	pfc := ui.NewCanvas(1024, 768)
+	prankFmtD.Draw(pfc)
+	savePreview(t, pfc, "desk-preview-prank-format.png")
+
+	prankDanceD := New(1024, 768, ModeDesktop, Host{Info: info})
+	prankDanceD.prank = newPrankDemo(time.Now())
+	prankDanceD.prank.begin(false)
+	prankDanceD.prank.enter(prankDanceD, prankStageDance, time.Now())
+	prankDanceD.prank.stageAt = time.Now().Add(-1400 * time.Millisecond)
+	pdc := ui.NewCanvas(1024, 768)
+	prankDanceD.Draw(pdc)
+	savePreview(t, pdc, "desk-preview-prank-dance.png")
+
+	prankStripesD := New(1024, 768, ModeDesktop, Host{Info: info})
+	prankStripesD.prank = newPrankDemo(time.Now())
+	prankStripesD.prank.begin(false)
+	prankStripesD.prank.enter(prankStripesD, prankStageStripes, time.Now())
+	prankStripesD.prank.stageAt = time.Now().Add(-1500 * time.Millisecond)
+	psc := ui.NewCanvas(1024, 768)
+	prankStripesD.Draw(psc)
+	savePreview(t, psc, "desk-preview-prank-stripes.png")
+
+	prankShapesD := New(1024, 768, ModeDesktop, Host{Info: info})
+	prankShapesD.prank = newPrankDemo(time.Now())
+	prankShapesD.prank.begin(false)
+	prankShapesD.prank.enter(prankShapesD, prankStageShapes, time.Now())
+	prankShapesD.prank.stageAt = time.Now().Add(-1700 * time.Millisecond)
+	pshc := ui.NewCanvas(1024, 768)
+	prankShapesD.Draw(pshc)
+	savePreview(t, pshc, "desk-preview-prank-shapes.png")
+
+	prankMsgD := New(1024, 768, ModeDesktop, Host{Info: info})
+	prankMsgD.prank = newPrankDemo(time.Now())
+	prankMsgD.prank.begin(false)
+	prankMsgD.prank.enter(prankMsgD, prankStageShapes, time.Now())
+	prankMsgD.prank.enter(prankMsgD, prankStageMessage, time.Now())
+	prankMsgD.prank.stageAt = time.Now().Add(-1200 * time.Millisecond)
+	pmc := ui.NewCanvas(1024, 768)
+	prankMsgD.Draw(pmc)
+	savePreview(t, pmc, "desk-preview-prank-message.png")
+
+	prankVortexD := New(1024, 768, ModeDesktop, Host{Info: info})
+	prankVortexD.prank = newPrankDemo(time.Now())
+	prankVortexD.prank.begin(false)
+	prankVortexD.prank.enter(prankVortexD, prankStageVortex, time.Now())
+	prankVortexD.prank.stageAt = time.Now().Add(-2800 * time.Millisecond)
+	pvc := ui.NewCanvas(1024, 768)
+	prankVortexD.Draw(pvc)
+	savePreview(t, pvc, "desk-preview-prank-vortex.png")
+
+	prankChaosD := New(1024, 768, ModeDesktop, Host{Info: info})
+	prankChaosD.prank = newPrankDemo(time.Now())
+	prankChaosD.prank.begin(false)
+	prankChaosD.prank.enter(prankChaosD, prankStageVortex, time.Now())
+	prankChaosD.prank.enter(prankChaosD, prankStageChaos, time.Now())
+	prankChaosD.prank.stageAt = time.Now().Add(-2500 * time.Millisecond)
+	pcc := ui.NewCanvas(1024, 768)
+	prankChaosD.Draw(pcc)
+	savePreview(t, pcc, "desk-preview-prank-chaos.png")
+
+	prankBsodD := New(1024, 768, ModeDesktop, Host{Info: info})
+	prankBsodD.prank = newPrankDemo(time.Now())
+	prankBsodD.prank.stage = prankStageBSOD
+	prankBsodD.prank.stageAt = time.Now().Add(-900 * time.Millisecond)
+	pbc := ui.NewCanvas(1024, 768)
+	prankBsodD.Draw(pbc)
+	savePreview(t, pbc, "desk-preview-prank-bsod.png")
+
 	sleepD := New(1024, 768, ModeDesktop, Host{Info: info})
 	sleepD.sleeping = true
 	slc := ui.NewCanvas(1024, 768)
@@ -482,4 +695,47 @@ func renderApp(t *testing.T, name string, makeApp func(d *Desktop) App, after fu
 	c := ui.NewCanvas(1024, 768)
 	d.Draw(c)
 	savePreview(t, c, name)
+}
+
+func previewPicture(w, h int) *image.RGBA {
+	img := image.NewRGBA(image.Rect(0, 0, w, h))
+	for y := 0; y < h; y++ {
+		t := float64(y) / float64(h)
+		for x := 0; x < w; x++ {
+			img.SetRGBA(x, y, color.RGBA{
+				R: uint8(126 + 90*t),
+				G: uint8(178 + 52*t),
+				B: uint8(238 - 70*t),
+				A: 255,
+			})
+		}
+	}
+	cx, cy, rad := w*3/4, h/4, h/9
+	for y := 0; y < h; y++ {
+		for x := 0; x < w; x++ {
+			dx, dy := x-cx, y-cy
+			if dx*dx+dy*dy <= rad*rad {
+				img.SetRGBA(x, y, color.RGBA{255, 235, 138, 255})
+			}
+		}
+	}
+	hill := func(base float64, amp float64, phase float64) func(int) int {
+		return func(x int) int {
+			return int(base + amp*math.Sin(float64(x)/38+phase))
+		}
+	}
+	far, near := hill(float64(h)*0.52, 22, 0.4), hill(float64(h)*0.68, 18, 2.1)
+	for x := 0; x < w; x++ {
+		if y := far(x); y < h {
+			for yy := y; yy < h; yy++ {
+				img.SetRGBA(x, yy, color.RGBA{86, 142, 92, 255})
+			}
+		}
+		if y := near(x); y < h {
+			for yy := y; yy < h; yy++ {
+				img.SetRGBA(x, yy, color.RGBA{46, 100, 62, 255})
+			}
+		}
+	}
+	return img
 }

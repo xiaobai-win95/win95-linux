@@ -23,8 +23,8 @@ type Host struct {
 	Suspend func() error
 	// Wake asks the host event loop to process queued UI callbacks.
 	Wake func()
-	// Screenshot saves the currently displayed frame as a PNG and returns
-	// its path.
+	// Screenshot saves the currently displayed frame as a PNG and a BMP and
+	// returns both paths separated by a newline.
 	Screenshot func() (string, error)
 	// Visible reports whether the framebuffer is on screen. Off-screen
 	// notifications are queued until the desktop is visible again.
@@ -94,6 +94,12 @@ type MenuItem struct {
 
 type MenuProvider interface {
 	Menus(d *Desktop, w *Window) []Menu
+}
+
+// Animator is implemented by apps that need periodic updates (for example
+// JavaScript timers in the browser or game physics).
+type Animator interface {
+	Animate(d *Desktop, w *Window, now time.Time)
 }
 
 type CloseRequester interface {

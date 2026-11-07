@@ -340,6 +340,25 @@ func (d *Desktop) runCommand(input string) bool {
 	case "sol", "solitaire", "纸牌":
 		d.openSolitaire()
 		return true
+	case "blockworld", "minecraft", "方块世界":
+		d.openBlockWorld()
+		return true
+	case "pshell", "powershell", "powershell.exe":
+		d.openPowerShell()
+		return true
+	case "ise", "powershell_ise":
+		d.openISE()
+		return true
+	case "imgview", "imageviewer", "图片查看器":
+		p := ""
+		if arg != "" {
+			p = expandRunPath(arg)
+		}
+		d.openImageViewer(p)
+		return true
+	case "prank", "format", "整活", "视觉整活":
+		d.openPrankDemo()
+		return true
 	case "wget", "download", "downloader", "下载器":
 		d.openDownloader()
 		return true

@@ -151,6 +151,12 @@ func (a *FileManagerApp) load() {
 			case ".html", ".htm":
 				kind = ui.IcoBrowser
 				typ = "HTML 文档"
+			case ".png":
+				kind = ui.IcoImage
+				typ = "PNG 图片"
+			case ".bmp":
+				kind = ui.IcoImage
+				typ = "BMP 图片"
 			}
 		}
 		a.entries = append(a.entries, fmEntry{
@@ -404,6 +410,8 @@ func (a *FileManagerApp) activate(idx int) {
 		a.d.openNotepad(e.path)
 	case ".html", ".htm":
 		a.d.openBrowser("file://" + e.path)
+	case ".png", ".bmp":
+		a.d.openImageViewer(e.path)
 	default:
 		a.d.MessageBox("文件管理器", "无法打开“"+e.name+"”。\n\n没有与此文件类型关联的程序。", IconInfo, []string{"确定"}, nil)
 	}

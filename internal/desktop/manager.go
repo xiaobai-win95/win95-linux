@@ -64,6 +64,7 @@ type Desktop struct {
 	saverWindows []saverWindow
 	background   int
 	runHistory   []string
+	eulaAccepted bool
 	shortcutMod  time.Time
 	shortcutNext time.Time
 
@@ -75,10 +76,13 @@ type Desktop struct {
 	netChecking bool
 	fileDrag    *fileDrag
 
+	sk *softKeyboard
+
 	nuke     bool
 	nukeAt   time.Time
 	nukeStep time.Time
 	bsodText string
+	prank    *prankDemo
 
 	sleepPending bool
 	sleeping     bool
@@ -292,13 +296,17 @@ func (d *Desktop) Tick(now time.Time) {
 // Animate advances time-based visual effects. The host calls it on a short
 // frame ticker; the desktop stays mostly idle when nothing is animating.
 func (d *Desktop) Animate(now time.Time) {
+	if d.prank != nil {
+		d.prank.animate(d, now)
+		return
+	}
 	if d.nuke {
 		if now.Sub(d.nukeAt) >= 1600*time.Millisecond {
 			d.nuke = false
 			d.showBSODText("System Override: Nuclear Strike Confirmed.")
 			return
 		}
-		if now.Sub(d.nukeStep) >= 120*time.Millisecond {
+		if now.Sub(d.nukeStep) >= 340*time.Millisecond {
 			d.nukeStep = now
 			d.Invalidate()
 		}
@@ -340,6 +348,17 @@ func (d *Desktop) Animate(now time.Time) {
 	if d.saverStyle > 0 && !d.lastInput.IsZero() && now.Sub(d.lastInput) >= d.saverWait {
 		d.startSaver(now)
 		d.Invalidate()
+	}
+	// Give live apps (browser timers, games) a chance to advance. Snapshot the
+	// window list because an animator may post callbacks that open dialogs.
+	windows := append([]*Window(nil), d.windows...)
+	for _, w := range windows {
+		if w.App == nil || w.Minimized {
+			continue
+		}
+		if an, ok := w.App.(Animator); ok {
+			an.Animate(d, w, now)
+		}
 	}
 }
 

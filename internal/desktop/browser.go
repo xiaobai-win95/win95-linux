@@ -29,6 +29,7 @@ type bStyle struct {
 	underline bool
 	col       uint32
 	hasCol    bool
+	node      *xhtml.Node
 }
 
 type bSpan struct {
@@ -74,6 +75,9 @@ type hCtx struct {
 	indent    int
 	center    bool
 	scale     int
+	col       uint32
+	hasCol    bool
+	node      *xhtml.Node
 }
 
 type htmlWalker struct {
@@ -135,10 +139,14 @@ func (w *htmlWalker) add(text string, ctx hCtx) {
 	}
 	st := bStyle{
 		scale: 1, bold: ctx.bold, href: ctx.href, download: ctx.download,
-		underline: ctx.underline,
+		underline: ctx.underline, node: ctx.node,
 	}
 	if ctx.scale > 1 {
 		st.scale = ctx.scale
+	}
+	if ctx.hasCol {
+		st.col = ctx.col
+		st.hasCol = true
 	}
 	if ctx.code {
 		st.col = 0x800000
@@ -188,6 +196,10 @@ func (w *htmlWalker) walk(n *xhtml.Node, ctx hCtx) {
 	default:
 		return
 	}
+	if styleHidden(n) {
+		return
+	}
+	ctx = applyNodeContext(ctx, n)
 	tag := n.Data
 	switch tag {
 	case "script", "style", "noscript", "template", "svg", "link", "meta":
@@ -385,21 +397,57 @@ func (w *htmlWalker) walkListItem(li *xhtml.Node, ctx hCtx, bullet string) {
 	w.flush(2)
 }
 
-func layoutHTML(raw string, width int) *bDoc {
-	root, err := xhtml.Parse(strings.NewReader(raw))
-	if err != nil {
-		return layoutText(raw, width)
+func applyNodeContext(ctx hCtx, n *xhtml.Node) hCtx {
+	ctx.node = n
+	if styleBold(n) {
+		ctx.bold = true
 	}
+	if s := styleScaleOf(n); s > ctx.scale {
+		ctx.scale = s
+	}
+	if col, ok := styleColorOf(n); ok {
+		ctx.col = col
+		ctx.hasCol = true
+	}
+	if strings.EqualFold(strings.TrimSpace(styleValue(n, "text-align")), "center") {
+		ctx.center = true
+	}
+	if strings.Contains(strings.ToLower(styleValue(n, "text-decoration")), "underline") {
+		ctx.underline = true
+	}
+	return ctx
+}
+
+func parseHTMLRoot(raw string) (*xhtml.Node, error) {
+	return xhtml.Parse(strings.NewReader(raw))
+}
+
+func layoutDOM(root *xhtml.Node, width int) *bDoc {
 	w := &htmlWalker{}
 	body := findBody(root)
 	if body == nil {
 		body = root
 	}
-	w.walkChildren(body, hCtx{indent: 0})
+	ctx := hCtx{indent: 0}
+	if body.Type == xhtml.ElementNode {
+		if styleHidden(body) {
+			return layoutBlocks(nil, width)
+		}
+		ctx = applyNodeContext(ctx, body)
+	}
+	w.walkChildren(body, ctx)
 	w.flush(0)
 	doc := layoutBlocks(w.blocks, width)
 	doc.title = findTitle(root)
 	return doc
+}
+
+func layoutHTML(raw string, width int) *bDoc {
+	root, err := parseHTMLRoot(raw)
+	if err != nil {
+		return layoutText(raw, width)
+	}
+	return layoutDOM(root, width)
 }
 
 func layoutText(raw string, width int) *bDoc {
@@ -649,9 +697,11 @@ type fetchResult struct {
 }
 
 type linkHit struct {
-	rect     ui.Rect
-	href     string
-	download bool
+	rect      ui.Rect
+	href      string
+	download  bool
+	node      *xhtml.Node
+	clickable bool
 }
 
 type BrowserApp struct {
@@ -659,26 +709,35 @@ type BrowserApp struct {
 	d   *Desktop
 	win *Window
 
-	mu      sync.Mutex
-	curURL  string
-	addr    string
-	title   string
-	raw     string
-	kind    pageKind
-	doc     *bDoc
-	history []histEntry
-	histIdx int
-	visited map[string]bool
-	loading bool
-	err     string
-	status  string
-	gen     int
+	mu        sync.Mutex
+	curURL    string
+	addr      string
+	title     string
+	raw       string
+	kind      pageKind
+	doc       *bDoc
+	dom       *xhtml.Node
+	js        *pageJS
+	jsHits    []linkHit
+	jsLastLog string
+	setup     *browserSetup
+	setupURL  string
+	closed    bool
+	history   []histEntry
+	histIdx   int
+	visited   map[string]bool
+	loading   bool
+	err       string
+	status    string
+	gen       int
 
 	addrEditing bool
 	addrSelAll  bool
 	addrCaret   int
 	hoverHref   string
+	hoverNode   *xhtml.Node
 	pressHref   string
+	pressNode   *xhtml.Node
 	pressDown   bool
 
 	scroll     VScroll
@@ -694,11 +753,19 @@ func NewBrowserApp(d *Desktop, start string) *BrowserApp {
 	if start == "" {
 		start = "about:home"
 	}
-	a.Navigate(start)
+	a.setupURL = start
+	if browserRuntimeReady() {
+		a.Navigate(start)
+	} else {
+		a.beginBrowserSetup(start)
+	}
 	return a
 }
 
 func (a *BrowserApp) Title() string {
+	if a.setup != nil {
+		return "网络浏览器 - 安装依赖"
+	}
 	if a.title != "" {
 		return a.title + " - 网络浏览器"
 	}
@@ -725,10 +792,17 @@ func (a *BrowserApp) Menus(d *Desktop, w *Window) []Menu {
 			{Label: "刷新(R)", Accel: "F5", Enabled: true, Action: func() { a.reload() }},
 			{Label: "主页(H)", Enabled: true, Action: func() { a.Navigate("about:home") }},
 		}},
+		{Label: "工具(T)", Items: []MenuItem{
+			{Label: "JavaScript 控制台(J)", Enabled: true, Action: func() { a.openJSConsole() }},
+			{Label: "重新安装浏览器依赖(R)", Enabled: true, Action: func() { a.reinstallRuntime() }},
+			{Separator: true},
+			{Label: "运行时信息(I)", Enabled: true, Action: func() { a.showRuntimeInfo() }},
+		}},
 		{Label: "帮助(H)", Items: []MenuItem{
 			{Label: "浏览器帮助(A)", Enabled: true, Action: func() { a.Navigate("about:help") }},
+			{Label: "JavaScript 演示(D)", Enabled: true, Action: func() { a.Navigate("about:demo") }},
 			{Label: "关于(A)", Enabled: true, Action: func() {
-				d.MessageBox("关于网络浏览器", "Windows 95 Linux 网络浏览器\n版本 1.0\n\n支持 HTML 页面、超链接、本地文件、HTTP/HTTPS 访问与文件下载。\n下载的文件保存在 "+downloadDir()+"。", IconInfo, []string{"确定"}, nil)
+				d.MessageBox("关于网络浏览器", "Windows 95 Linux 网络浏览器\n版本 26.2\n\n支持 HTML 页面、超链接、本地文件、HTTP/HTTPS 访问、文件下载与 JavaScript（ECMAScript 5.1）。\n下载的文件保存在 "+downloadDir()+"。", IconInfo, []string{"确定"}, nil)
 			}},
 		}},
 	}
@@ -823,6 +897,7 @@ func (a *BrowserApp) applyResult(res fetchResult) {
 		return
 	}
 	if res.err != nil {
+		a.stopPageJS()
 		a.err = res.err.Error()
 		a.status = "无法打开页面"
 		errHTML := errorPageHTML(res.err.Error(), res.finalURL)
@@ -849,6 +924,7 @@ func (a *BrowserApp) applyResult(res fetchResult) {
 	a.err = ""
 	a.status = "完成"
 	a.visited[stripFragment(e.url)] = true
+	a.startPageDOM()
 	if a.histIdx >= 0 && a.histIdx < len(a.history) && a.history[a.histIdx].url == e.url && a.history[a.histIdx].raw == e.raw {
 		// Reload replaces the current entry.
 	} else {
@@ -861,6 +937,7 @@ func (a *BrowserApp) applyResult(res fetchResult) {
 		}
 		a.histIdx = len(a.history) - 1
 	}
+	a.scroll.Pos = 0
 	a.rebuild()
 }
 
@@ -881,6 +958,22 @@ func (a *BrowserApp) contentWidth() int {
 	return 640
 }
 
+func (a *BrowserApp) startPageDOM() {
+	a.stopPageJS()
+	if a.kind != pageHTML {
+		return
+	}
+	root, err := parseHTMLRoot(a.raw)
+	if err != nil {
+		return
+	}
+	a.dom = root
+	a.js = newPageJS(a, root, a.curURL)
+	if a.js != nil && a.js.closed {
+		a.js = nil
+	}
+}
+
 func (a *BrowserApp) rebuild() {
 	if a.curURL == "" {
 		a.curURL = a.addr
@@ -894,13 +987,17 @@ func (a *BrowserApp) rebuild() {
 		if a.title == "" {
 			a.title = a.curURL
 		}
+	} else if a.dom != nil {
+		a.doc = layoutDOM(a.dom, w)
+		if a.doc.title != "" {
+			a.title = a.doc.title
+		}
 	} else {
 		a.doc = layoutHTML(a.raw, w)
 		if a.doc.title != "" {
 			a.title = a.doc.title
 		}
 	}
-	a.scroll.Pos = 0
 	a.layoutW = w
 	a.d.Invalidate()
 }
@@ -936,6 +1033,8 @@ func (a *BrowserApp) showHistory() {
 	a.addrEditing = false
 	a.err = ""
 	a.status = "完成"
+	a.startPageDOM()
+	a.scroll.Pos = 0
 	a.rebuild()
 	a.d.Invalidate()
 }
@@ -955,6 +1054,11 @@ func (a *BrowserApp) Paint(d *Desktop, w *Window, c *ui.Canvas, client ui.Rect) 
 	a.layoutRects(client)
 	c.FillRect(client, ui.ColFace)
 	f := ui.DefaultFont()
+
+	if a.setup != nil {
+		a.paintBrowserSetup(c, f, client)
+		return
+	}
 
 	a.paintToolbar(c, f, client)
 
@@ -1168,6 +1272,9 @@ func (a *BrowserApp) paintScrollbar(c *ui.Canvas, client ui.Rect) {
 
 func (a *BrowserApp) Mouse(d *Desktop, w *Window, client ui.Rect, ev MouseEvent) {
 	a.layoutRects(client)
+	if a.setup != nil {
+		return
+	}
 	if ev.Kind == MouseWheel {
 		before := a.scroll.Pos
 		a.scroll.ScrollBy(-ev.Wheel * 48)
@@ -1228,8 +1335,9 @@ func (a *BrowserApp) Mouse(d *Desktop, w *Window, client ui.Rect, ev MouseEvent)
 		}
 	}
 	if !a.contentR.Contains(ev.X, ev.Y) {
-		if ev.Kind == MouseMove && a.hoverHref != "" {
+		if ev.Kind == MouseMove && (a.hoverHref != "" || a.hoverNode != nil) {
 			a.hoverHref = ""
+			a.hoverNode = nil
 			d.SetHand(false)
 			d.Invalidate()
 		}
@@ -1237,12 +1345,17 @@ func (a *BrowserApp) Mouse(d *Desktop, w *Window, client ui.Rect, ev MouseEvent)
 	}
 	hit := a.linkAt(ev.X, ev.Y)
 	if ev.Kind == MouseMove {
-		href := ""
+		var href string
+		var node *xhtml.Node
 		if hit != nil {
 			href = hit.href
+			if hit.clickable {
+				node = hit.node
+			}
 		}
-		if href != a.hoverHref {
+		if href != a.hoverHref || node != a.hoverNode {
 			a.hoverHref = href
+			a.hoverNode = node
 			a.d.SetHand(hit != nil)
 			d.Invalidate()
 		}
@@ -1250,19 +1363,29 @@ func (a *BrowserApp) Mouse(d *Desktop, w *Window, client ui.Rect, ev MouseEvent)
 	}
 	if ev.Kind == MouseDown {
 		a.pressHref = ""
+		a.pressNode = nil
 		a.pressDown = false
 		if hit != nil {
 			a.pressHref = hit.href
+			a.pressNode = hit.node
 			a.pressDown = hit.download
 			a.d.SetHand(true)
 		}
 		return
 	}
 	if ev.Kind == MouseUp {
-		if hit != nil && hit.href == a.pressHref && hit.href != "" {
-			a.openLink(hit.href, hit.download || a.pressDown)
+		if hit != nil && hit.node == a.pressNode {
+			prevented := false
+			if a.js != nil && hit.node != nil {
+				prevented = a.js.dispatchClick(hit.node, ev.X, ev.Y)
+			}
+			if !prevented && hit.href != "" {
+				a.openLink(hit.href, hit.download || a.pressDown)
+			}
+			d.Invalidate()
 		}
 		a.pressHref = ""
+		a.pressNode = nil
 	}
 }
 
@@ -1271,21 +1394,31 @@ func (a *BrowserApp) linkAt(gx, gy int) *linkHit {
 	if doc == nil {
 		return nil
 	}
+	js := a.js
 	for _, line := range doc.lines {
 		y := a.innerR.Y + line.y - a.scroll.Pos
 		if gy < y || gy >= y+line.h {
 			continue
 		}
 		for _, sp := range line.spans {
-			if sp.st.href == "" {
+			if sp.st.href == "" && sp.st.node == nil {
+				continue
+			}
+			clickable := false
+			if js != nil && sp.st.node != nil {
+				clickable = js.nodeClickable(sp.st.node)
+			}
+			if sp.st.href == "" && !clickable {
 				continue
 			}
 			x := a.innerR.X + 8 + sp.x
 			if gx >= x && gx < x+sp.w && gx < a.innerR.Right() {
 				return &linkHit{
-					rect:     ui.Rect{x, y, sp.w, line.h},
-					href:     sp.st.href,
-					download: sp.st.download,
+					rect:      ui.Rect{x, y, sp.w, line.h},
+					href:      sp.st.href,
+					download:  sp.st.download,
+					node:      sp.st.node,
+					clickable: clickable,
 				}
 			}
 		}
@@ -1294,6 +1427,9 @@ func (a *BrowserApp) linkAt(gx, gy int) *linkHit {
 }
 
 func (a *BrowserApp) Key(d *Desktop, w *Window, ev KeyEvent) bool {
+	if a.setup != nil {
+		return false
+	}
 	if a.addrEditing {
 		switch ev.Name {
 		case "Enter":
@@ -1423,7 +1559,10 @@ func (a *BrowserApp) Resized(d *Desktop, w *Window, client ui.Rect) {
 	a.InvalidateLayout()
 }
 
-func (a *BrowserApp) Close() {}
+func (a *BrowserApp) Close() {
+	a.closed = true
+	a.stopPageJS()
+}
 
 func normalizeURL(raw string) string {
 	s := strings.TrimSpace(raw)
@@ -1511,6 +1650,9 @@ func fetchPage(raw string, forceDownload bool) fetchResult {
 		return res
 	case lower == "about:help" || lower == "about:about":
 		res.entry = histEntry{url: raw, raw: helpPageHTML, title: "浏览器帮助", kind: pageHTML}
+		return res
+	case lower == "about:demo":
+		res.entry = histEntry{url: raw, raw: demoPageHTML, title: "JavaScript 演示", kind: pageHTML}
 		return res
 	case strings.HasPrefix(lower, "about:"):
 		res.entry = histEntry{url: raw, raw: simplePageHTML("关于 "+raw, "此页面是浏览器内置页面。请访问主页或输入其他地址。"), title: raw, kind: pageHTML}
@@ -1787,6 +1929,9 @@ const homePageHTML = `<!DOCTYPE html>
 <h2>互联网</h2>
 <p>在地址栏输入 <code>example.com</code> 或完整的 <code>https://</code> 网址即可访问网络（需要虚拟机具备网络连接）。</p>
 <p><a href="https://example.com/">访问 example.com</a></p>
+<h2>JavaScript 支持</h2>
+<p>本版本内置 JavaScript 引擎（ECMAScript 5.1），首次启动会自动安装运行时依赖。页面脚本、DOM 操作、定时器与交互事件都可以使用。</p>
+<p><a href="about:demo">打开 JavaScript 演示页面</a> · <a href="about:help">阅读帮助</a></p>
 <hr>
 <h2>下载说明</h2>
 <p>当链接指向的文件不是网页或文本时，浏览器会自动将其下载到 <code>/root/下载</code> 文件夹，并显示提示窗口。带“下载”标记的链接无论类型都会直接保存。</p>
@@ -1822,5 +1967,77 @@ const helpPageHTML = `<!DOCTYPE html>
 <p>浏览器使用系统的 CA 证书验证 HTTPS 连接。在离线或证书无效时会显示错误页面，不会忽略证书错误。</p>
 <hr>
 <p><a href="about:home">返回主页</a></p>
+</body>
+</html>`
+
+const demoPageHTML = `<!DOCTYPE html>
+<html lang="zh-CN">
+<head><title>JavaScript 演示</title></head>
+<body>
+<h1>JavaScript 演示</h1>
+<p>这个页面完全由浏览器内置的 JavaScript 引擎驱动。点击下面的按钮试试看。</p>
+<hr>
+<h2>1. 计数器</h2>
+<p id="countOut" style="color:#000080">点击次数：0</p>
+<button id="count" onclick="countClicks()">点我加一</button>
+<h2>2. 修改页面样式</h2>
+<p id="styleText" style="color:#000000">这段文字的颜色和字号会变化。</p>
+<button onclick="document.getElementById('styleText').style.color='#C00000'; document.getElementById('styleText').style.fontSize='22px';">变红变大</button>
+<button onclick="document.getElementById('styleText').style.color='#000000'; document.getElementById('styleText').style.fontSize='16px';">恢复原样</button>
+<h2>3. 显示与隐藏</h2>
+<p id="secret" style="color:#008000">你找到了隐藏的段落！</p>
+<button onclick="toggleSecret()">显示 / 隐藏</button>
+<h2>4. 读取输入框</h2>
+<p>输入框内容：<input id="name" value="Windows 95" size="20"></p>
+<button onclick="greet()">显示问候</button>
+<p id="greeting" style="color:#800000"></p>
+<h2>5. 定时器</h2>
+<p id="clock" style="color:#000080">计时器未启动。</p>
+<button onclick="startClock()">启动计时器</button>
+<button onclick="stopClock()">停止计时器</button>
+<h2>6. JavaScript 拦截链接</h2>
+<p><a href="about:home" onclick="document.getElementById('greeting').textContent='导航已被 JavaScript 取消。'; return false;">点击这个链接不会离开当前页面</a></p>
+<hr>
+<p id="ver" style="color:#808080"></p>
+<p><a href="about:home">返回主页</a> · <a href="about:help">浏览器帮助</a></p>
+<script>
+var clicks = 0;
+function countClicks() {
+  clicks++;
+  document.getElementById("countOut").textContent = "点击次数：" + clicks;
+}
+function toggleSecret() {
+  var n = document.getElementById("secret");
+  if (n.style.display === "none") {
+    n.style.display = "";
+  } else {
+    n.style.display = "none";
+  }
+}
+function greet() {
+  var name = document.getElementById("name").value;
+  document.getElementById("greeting").textContent = "你好，" + name + "！";
+}
+var clockTimer = null;
+var ticks = 0;
+function startClock() {
+  if (clockTimer !== null) return;
+  ticks = 0;
+  clockTimer = setInterval(function () {
+    ticks++;
+    document.getElementById("clock").textContent = "已经过去 " + ticks + " 秒。";
+  }, 1000);
+  document.getElementById("clock").textContent = "计时器已启动。";
+}
+function stopClock() {
+  if (clockTimer !== null) {
+    clearInterval(clockTimer);
+    clockTimer = null;
+  }
+  document.getElementById("clock").textContent = "计时器已停止。";
+}
+document.getElementById("ver").textContent =
+  "浏览器 " + Win95.version + " · 引擎 " + Win95.engine + " · DOM 桥 " + Win95.domBridge;
+</script>
 </body>
 </html>`

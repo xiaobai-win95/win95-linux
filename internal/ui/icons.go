@@ -27,6 +27,12 @@ const (
 	IcoPaint
 	IcoNuke
 	IcoCards
+	IcoKeyboard
+	IcoShell
+	IcoISE
+	IcoImage
+	IcoGame
+	IcoGlitch
 )
 
 // DrawIcon32 draws a 32x32 icon at x,y. selected dithers the background navy.
@@ -365,6 +371,105 @@ func DrawIcon32(c *Canvas, kind IconKind, x, y int, selected bool) {
 				}
 			}
 		}
+	case IcoKeyboard:
+		box(2, 7, 29, 27, ColFace)
+		frame(2, 7, 29, 27, ColDark)
+		box(4, 9, 27, 12, 0xE8E8E8)
+		for row := 0; row < 3; row++ {
+			for col := 0; col < 7; col++ {
+				box(4+col*3, 14+row*4, 6+col*3, 16+row*4, ColLight)
+				set(4+col*3, 14+row*4, ColWhite)
+				set(6+col*3, 16+row*4, ColShadow)
+			}
+		}
+		box(9, 25, 22, 26, ColLight)
+		frame(9, 25, 22, 26, ColShadow)
+		set(5, 24, ColGreen)
+	case IcoShell:
+		box(2, 5, 29, 28, 0x101820)
+		frame(2, 5, 29, 28, ColDark)
+		box(3, 6, 28, 10, 0x003060)
+		frame(3, 6, 28, 10, 0x001030)
+		box(4, 7, 8, 9, 0x1070C0)
+		box(10, 7, 12, 9, 0xD0E0FF)
+		box(5, 13, 6, 14, 0x60C0FF)
+		box(8, 17, 9, 18, 0x60C0FF)
+		for xx := 11; xx < 26; xx++ {
+			set(xx, 13, 0x80A0C0)
+			set(xx, 21, 0x80A0C0)
+		}
+		box(5, 21, 6, 22, ColWhite)
+		box(8, 25, 9, 26, ColWhite)
+	case IcoISE:
+		box(2, 4, 29, 29, ColFace)
+		frame(2, 4, 29, 29, ColDark)
+		box(4, 6, 27, 9, 0xD8E8F8)
+		for xx := 5; xx < 10; xx++ {
+			set(xx, 7, 0x2060C0)
+			set(xx, 8, 0x2060C0)
+		}
+		box(4, 11, 15, 26, ColWhite)
+		frame(4, 11, 15, 26, ColShadow)
+		box(17, 11, 27, 26, 0x101820)
+		frame(17, 11, 27, 26, ColShadow)
+		for yy := 13; yy < 25; yy += 3 {
+			for xx := 6; xx < 13; xx += 2 {
+				set(xx, yy, 0x2060C0)
+			}
+		}
+		for yy := 13; yy < 24; yy += 2 {
+			set(19, yy, 0x60C0FF)
+		}
+		set(22, 21, ColWhite)
+	case IcoImage:
+		box(3, 4, 28, 28, ColWhite)
+		frame(3, 4, 28, 28, ColDark)
+		box(21, 7, 25, 11, 0xF0C000)
+		frame(21, 7, 25, 11, 0xA08000)
+		for i := 0; i < 12; i++ {
+			for j := 0; j <= i; j++ {
+				set(6+j, 23-i, 0x208020)
+			}
+		}
+		for i := 0; i < 10; i++ {
+			for j := 0; j <= i; j++ {
+				set(16+j, 24-i, 0x40A040)
+			}
+		}
+		box(4, 25, 27, 26, 0x806040)
+	case IcoGame:
+		box(2, 4, 29, 29, 0x6B4A2A)
+		frame(2, 4, 29, 29, 0x402010)
+		for yy := 4; yy < 11; yy++ {
+			for xx := 3; xx < 29; xx++ {
+				set(xx, yy, 0x4CA030)
+			}
+		}
+		for yy := 11; yy < 29; yy += 2 {
+			set(6, yy, 0x50301C)
+			set(13, yy+1, 0x805030)
+			set(22, yy, 0x50301C)
+		}
+		box(11, 11, 20, 20, 0xA0A0A0)
+		frame(11, 11, 20, 20, 0x606060)
+		set(12, 12, ColWhite)
+		box(14, 14, 17, 17, 0xE0E0E0)
+		set(16, 16, 0x808080)
+	case IcoGlitch:
+		box(2, 8, 29, 24, 0x181020)
+		frame(2, 8, 29, 24, ColDark)
+		for i := 0; i < 10; i++ {
+			col := []uint32{0xFF00C0, 0x00E0FF, 0xF0F000, 0x8000C0}[i%4]
+			box(4+i*2, 12+(i%5)*2, 4+i*2+6, 13+(i%5)*2, col)
+		}
+		box(12, 25, 19, 28, ColShadow)
+		frame(12, 25, 19, 28, ColDark)
+		box(8, 29, 23, 29, ColShadow)
+		box(13, 4, 18, 7, 0xF0E000)
+		frame(13, 4, 18, 7, 0xA08000)
+		set(15, 5, ColDark)
+		set(15, 6, ColDark)
+		set(16, 5, ColDark)
 	}
 }
 
@@ -572,6 +677,63 @@ func DrawIcon16(c *Canvas, kind IconKind, x, y int) {
 		set(9, 6, ColRed)
 		set(10, 6, ColRed)
 		set(9, 7, ColRed)
+	case IcoKeyboard:
+		box(1, 4, 14, 14, ColFace)
+		frame(1, 4, 14, 14, ColDark)
+		for row := 0; row < 3; row++ {
+			for col := 0; col < 5; col++ {
+				box(2+col*2, 6+row*2, 3+col*2, 7+row*2, ColLight)
+			}
+		}
+		box(5, 12, 10, 13, ColLight)
+	case IcoShell:
+		box(1, 2, 14, 14, 0x101820)
+		frame(1, 2, 14, 14, ColDark)
+		box(2, 3, 13, 4, 0x003060)
+		box(3, 6, 5, 7, 0x60C0FF)
+		box(4, 9, 5, 10, ColWhite)
+		box(7, 12, 8, 13, ColWhite)
+	case IcoISE:
+		box(1, 1, 14, 14, ColFace)
+		frame(1, 1, 14, 14, ColDark)
+		box(2, 2, 13, 4, 0xD8E8F8)
+		box(2, 5, 7, 13, ColWhite)
+		frame(2, 5, 7, 13, ColShadow)
+		box(8, 5, 13, 13, 0x101820)
+		frame(8, 5, 13, 13, ColShadow)
+		set(4, 8, 0x2060C0)
+		set(4, 10, 0x2060C0)
+		set(10, 8, 0x60C0FF)
+	case IcoImage:
+		box(1, 2, 14, 14, ColWhite)
+		frame(1, 2, 14, 14, ColDark)
+		box(10, 4, 12, 6, 0xF0C000)
+		for i := 0; i < 5; i++ {
+			for j := 0; j <= i; j++ {
+				set(3+j, 10-i, 0x208020)
+			}
+		}
+		box(3, 12, 12, 12, 0x806040)
+	case IcoGame:
+		box(1, 2, 14, 14, 0x6B4A2A)
+		frame(1, 2, 14, 14, 0x402010)
+		for xx := 2; xx < 14; xx++ {
+			set(xx, 2, 0x4CA030)
+			set(xx, 3, 0x4CA030)
+			set(xx, 4, 0x358020)
+		}
+		box(6, 6, 10, 10, 0xA0A0A0)
+		frame(6, 6, 10, 10, 0x606060)
+		set(7, 7, ColWhite)
+	case IcoGlitch:
+		box(1, 4, 14, 12, 0x181020)
+		frame(1, 4, 14, 12, ColDark)
+		for i := 0; i < 5; i++ {
+			col := []uint32{0xFF00C0, 0x00E0FF, 0xF0F000}[i%3]
+			box(2+i*2, 6+(i%3)*2, 3+i*2+2, 6+(i%3)*2+1, col)
+		}
+		box(6, 13, 9, 14, ColShadow)
+		box(5, 15, 10, 15, ColShadow)
 	default:
 		box(3, 3, 12, 12, ColFace)
 		frame(3, 3, 12, 12, ColDark)

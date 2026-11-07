@@ -64,6 +64,8 @@ func (d *Desktop) openDesktopPath(path string) {
 		d.openNotepad(path)
 	case ".html", ".htm":
 		d.openBrowser("file://" + path)
+	case ".png", ".bmp":
+		d.openImageViewer(path)
 	default:
 		d.MessageBox("桌面", "无法打开“"+filepath.Base(path)+"”。\n\n没有与此文件类型关联的程序。", IconInfo, []string{"确定"}, nil)
 	}

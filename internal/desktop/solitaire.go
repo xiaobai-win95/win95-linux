@@ -107,13 +107,49 @@ func (a *SolitaireApp) Menus(d *Desktop, w *Window) []Menu {
 		}},
 		{Label: "帮助(H)", Items: []MenuItem{
 			{Label: "关于纸牌(A)", Action: func() {
-				d.MessageBox("关于纸牌", "经典纸牌 (Klondike)\n\n把四种花色的牌从 A 到 K 依次移到右上角的接龙堆。\n\n· 拖动牌可以移动\n· 双击顶牌可自动送到接龙堆\n· 点牌堆发牌，发完后再点可重新发牌", IconInfo, []string{"确定"}, nil)
+				d.MessageBox("关于纸牌", "经典纸牌 (Klondike)\n\n把四种花色的牌从 A 到 K 依次移到右上角的接龙堆。\n\n· 拖动牌可以移动\n· 双击顶牌可自动送到接龙堆\n· 点牌堆发牌，发完后再点可重新发牌\n· 公平发牌：开局保证有牌可走，拒绝地狱开局", IconInfo, []string{"确定"}, nil)
 			}},
 		}},
 	}
 }
 
 func (a *SolitaireApp) newGame() {
+	// Fair deal: reject "hell openings" with no immediate move. Keep the
+	// best-scoring deal seen so far as a bounded fallback.
+	bestTotal, bestOpening := -1, 0
+	var bestStock []solCard
+	var bestTab [7][]solCard
+	for attempt := 0; attempt < 300; attempt++ {
+		a.dealRandom()
+		opening := a.solOpeningMoves()
+		total := opening + a.solFirstPassScore()
+		if opening >= 1 && total >= 4 {
+			bestStock = nil
+			break
+		}
+		if total > bestTotal || (total == bestTotal && opening > bestOpening) {
+			bestTotal, bestOpening = total, opening
+			bestStock = append([]solCard(nil), a.stock...)
+			for i := range bestTab {
+				bestTab[i] = append([]solCard(nil), a.tab[i]...)
+			}
+		}
+	}
+	if bestStock != nil {
+		a.stock = bestStock
+		a.tab = bestTab
+	}
+	a.score, a.moves = 0, 0
+	a.started = time.Now()
+	a.elapsed = 0
+	a.undo = nil
+	a.won, a.winShown = false, false
+	a.drag = nil
+	a.lastKey = ""
+	a.d.Invalidate()
+}
+
+func (a *SolitaireApp) dealRandom() {
 	deck := make([]solCard, 0, 52)
 	for suit := 0; suit < 4; suit++ {
 		for rank := 1; rank <= 13; rank++ {
@@ -138,14 +174,62 @@ func (a *SolitaireApp) newGame() {
 		}
 	}
 	a.stock = append(a.stock, deck[idx:]...)
-	a.score, a.moves = 0, 0
-	a.started = time.Now()
-	a.elapsed = 0
-	a.undo = nil
-	a.won, a.winShown = false, false
-	a.drag = nil
-	a.lastKey = ""
-	a.d.Invalidate()
+}
+
+// solOpeningMoves counts productive moves available before any draw:
+// aces to a foundation and tableau-top moves (each flips a card or empties
+// the first column).
+func (a *SolitaireApp) solOpeningMoves() int {
+	n := 0
+	for col := 0; col < 7; col++ {
+		pile := a.tab[col]
+		if len(pile) == 0 {
+			continue
+		}
+		top := pile[len(pile)-1]
+		if top.rank == 1 {
+			n += 2
+		}
+		for dst := 0; dst < 7; dst++ {
+			if dst != col && a.canStackTab(top, a.tab[dst]) {
+				n++
+			}
+		}
+	}
+	return n
+}
+
+// solFirstPassScore counts useful waste tops during the first draw-3 pass
+// through the stock, judged against the opening tableau.
+func (a *SolitaireApp) solFirstPassScore() int {
+	n := 0
+	for i := len(a.stock) - 3; i >= 0; i -= 3 {
+		cc := a.stock[i]
+		if cc.rank == 1 {
+			n += 2
+			continue
+		}
+		for col := 0; col < 7; col++ {
+			if a.canStackTab(cc, a.tab[col]) {
+				n++
+				break
+			}
+		}
+	}
+	if r := len(a.stock) % 3; r != 0 {
+		cc := a.stock[0]
+		if cc.rank == 1 {
+			n += 2
+		} else {
+			for col := 0; col < 7; col++ {
+				if a.canStackTab(cc, a.tab[col]) {
+					n++
+					break
+				}
+			}
+		}
+	}
+	return n
 }
 
 func (a *SolitaireApp) snapshot() solSnapshot {

@@ -59,7 +59,7 @@ func (d *Desktop) launchXFCEApp(app string) {
 		return
 	}
 	if _, err := os.Stat("/usr/bin/win95-xfce-app"); err != nil {
-		d.MessageBox("XFCE 应用", "系统缺少 win95-xfce-app 启动组件。\n\n请使用 v26.1 或更新的镜像。", IconError, []string{"确定"}, nil)
+		d.MessageBox("XFCE 应用", "系统缺少 win95-xfce-app 启动组件。\n\n请使用 v26.2 或更新的镜像。", IconError, []string{"确定"}, nil)
 		return
 	}
 	cmd := exec.Command("/usr/bin/win95-xfce-app", exe)

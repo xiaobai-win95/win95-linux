@@ -258,6 +258,7 @@ func Run(opt Options) error {
 	}
 	d := desktop.New(fb.w, fb.h, opt.Mode, host)
 	desktop.BootBeep()
+	d.MaybeShowWelcome()
 
 	events := make(chan inputEvent, 2048)
 	for _, dev := range devs {

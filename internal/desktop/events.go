@@ -11,6 +11,16 @@ func (d *Desktop) Mouse(ev MouseEvent) {
 		d.handleBSODInput()
 		return
 	}
+	if d.prank != nil && d.prank.stage == prankStageWarning {
+		d.lastInput = time.Now()
+		d.MouseX, d.MouseY = ev.X, ev.Y
+		d.hand = false
+		d.prank.mouse(d, ev)
+		return
+	}
+	if d.prank != nil && (ev.Kind == MouseDown || ev.Kind == MouseWheel) {
+		d.prank.noteInput()
+	}
 	if d.sleepPending || d.sleeping {
 		return
 	}
@@ -25,6 +35,10 @@ func (d *Desktop) Mouse(ev MouseEvent) {
 
 	if ev.Kind == MouseDown && ev.Button == 1 && len(d.notices) > 0 && d.noticeRect.Contains(gx, gy) {
 		d.dismissNotice()
+		return
+	}
+
+	if d.softKBMouse(ev) {
 		return
 	}
 
@@ -705,6 +719,14 @@ func (d *Desktop) Key(ev KeyEvent) {
 		d.handleBSODInput()
 		return
 	}
+	if d.prank != nil && d.prank.stage == prankStageWarning {
+		d.lastInput = time.Now()
+		d.prank.key(d, ev)
+		return
+	}
+	if d.prank != nil {
+		d.prank.noteInput()
+	}
 	if d.sleepPending || d.sleeping {
 		return
 	}
@@ -720,6 +742,10 @@ func (d *Desktop) Key(ev KeyEvent) {
 		return
 	}
 	d.lastInput = time.Now()
+	if ev.Ctrl && ev.Alt && (ev.Name == "K" || ev.Rune == 'k' || ev.Rune == 'K') {
+		d.toggleSoftKeyboard()
+		return
+	}
 	if d.ctx != nil {
 		d.ctxKey(ev)
 		return

@@ -8,6 +8,16 @@ import (
 )
 
 func (d *Desktop) Draw(c *ui.Canvas) {
+	if d.prank != nil {
+		d.prank.draw(d, c)
+		return
+	}
+	d.drawScene(c, true)
+}
+
+// drawScene renders the normal desktop without the prank overlay. The prank
+// takes a cursor-free snapshot of it for its full-screen transformations.
+func (d *Desktop) drawScene(c *ui.Canvas, withCursor bool) {
 	if d.bsod {
 		d.drawBSOD(c)
 		return
@@ -46,10 +56,13 @@ func (d *Desktop) Draw(c *ui.Canvas) {
 	}
 	d.drawNotifications(c)
 	d.drawFileDrag(c)
-	if d.hand {
-		ui.CursorHand(c, d.MouseX, d.MouseY)
-	} else {
-		ui.Cursor(c, d.MouseX, d.MouseY)
+	d.drawSoftKeyboard(c)
+	if withCursor {
+		if d.hand {
+			ui.CursorHand(c, d.MouseX, d.MouseY)
+		} else {
+			ui.Cursor(c, d.MouseX, d.MouseY)
+		}
 	}
 }
 
@@ -468,7 +481,7 @@ func (d *Desktop) subEntry(id string) *startEntry {
 
 func (d *Desktop) showAbout() {
 	d.MessageBox("关于 Windows 95 Linux",
-		"Windows 95 Linux 中文版\n版本 26.1 · ARM64 / UEFI\n\nWin95 风格桌面：纸牌、扫雷、画图、图形化下载器、拖放与截屏。\n双击 XFCE 终端或 Firefox 可在 tty2 后台启动，退出后自动返回。\n\n"+d.Host.Info,
+		"Windows 95 Linux 中文版\n版本 26.2 · ARM64 / UEFI\n\nWin95 风格桌面：纸牌、扫雷、方块世界、画图、PowerShell、浏览器、\n图片查看器、屏幕键盘、拖放与截屏（PNG + BMP）、六阶段苏尔科视觉整活。\n浏览器支持 JavaScript，首次启动会安装本地依赖包。\n双击 XFCE 终端或 Firefox 可在 tty2 后台启动，退出后自动返回。\n\n"+d.Host.Info,
 		IconInfo, []string{"确定"}, nil)
 }
 
@@ -539,19 +552,27 @@ func (d *Desktop) programEntries() []startEntry {
 		{id: "calc", label: "计算器", icon: ui.IcoCalc, enabled: true, action: func() { d.openCalc() }},
 		{id: "calendar", label: "日历", icon: ui.IcoCalendar, enabled: true, action: func() { d.openCalendar() }},
 		{id: "term", label: "终端", icon: ui.IcoTerminal, enabled: true, action: func() { d.openTerminal() }},
+		{id: "pshell", label: "Windows PowerShell", icon: ui.IcoShell, enabled: true, action: func() { d.openPowerShell() }},
+		{id: "ise", label: "Windows PowerShell ISE", icon: ui.IcoISE, enabled: true, action: func() { d.openISE() }},
 		{id: "files", label: "文件管理器", icon: ui.IcoFolder, enabled: true, action: func() { d.openFiles("/root") }},
 		{id: "browser", label: "网络浏览器", icon: ui.IcoBrowser, enabled: true, action: func() { d.openBrowser("") }},
 		{sep: true},
 		{id: "sol", label: "纸牌", icon: ui.IcoCards, enabled: true, action: func() { d.openSolitaire() }},
 		{id: "mines", label: "扫雷", icon: ui.IcoMine, enabled: true, action: func() { d.openMines() }},
+		{id: "blockworld", label: "方块世界 95", icon: ui.IcoGame, enabled: true, action: func() { d.openBlockWorld() }},
 		{id: "paint", label: "画图", icon: ui.IcoPaint, enabled: true, action: func() { d.openPaint() }},
+		{id: "imgview", label: "图片查看器", icon: ui.IcoImage, enabled: true, action: func() { d.openImageViewer("") }},
 		{sep: true},
 		{id: "download", label: "图形化下载器", icon: ui.IcoDownload, enabled: true, action: func() { d.openDownloader() }},
 		{id: "pkgman", label: "软件包管理器", icon: ui.IcoPackage, enabled: true, action: func() { d.openPkgMan() }},
 		{sep: true},
+		{id: "osk", label: "屏幕键盘", icon: ui.IcoKeyboard, enabled: true, action: func() { d.toggleSoftKeyboard() }},
+		{sep: true},
 		{id: "xfce-term", label: "XFCE 终端 (tty2)", icon: ui.IcoTerminal, enabled: true, action: func() { d.launchXFCEApp("xfce4-terminal") }},
 		{id: "firefox", label: "Firefox (tty2)", icon: ui.IcoBrowser, enabled: true, action: func() { d.launchXFCEApp("firefox") }},
 		{id: "sysinfo", label: "系统信息", icon: ui.IcoInfo, enabled: true, action: func() { d.showAbout() }},
+		{sep: true},
+		{id: "prank", label: "视觉整活：苏尔科…", icon: ui.IcoGlitch, danger: true, enabled: true, action: func() { d.openPrankDemo() }},
 	}
 	if d.Mode == ModeInstaller {
 		items = []startEntry{
@@ -583,6 +604,7 @@ func (d *Desktop) settingsEntries() []startEntry {
 		{id: "about", label: "关于本机", icon: ui.IcoInfo, enabled: true, action: func() { d.showAbout() }},
 		{id: "display", label: "显示属性(D)", icon: ui.IcoComputer, enabled: true, action: func() { d.openDisplayProperties() }},
 		{id: "shot", label: "截屏(S)  Print Screen", icon: ui.IcoComputer, enabled: true, action: func() { d.takeScreenshot() }},
+		{id: "osk", label: "屏幕键盘(K)  Ctrl+Alt+K", icon: ui.IcoKeyboard, enabled: true, action: func() { d.toggleSoftKeyboard() }},
 		{id: "pkgman", label: "添加/删除软件", icon: ui.IcoPackage, enabled: true, action: func() { d.openPkgMan() }},
 		{id: "files", label: "文件管理器", icon: ui.IcoFolder, enabled: true, action: func() { d.openFiles("/root") }},
 		{sep: true},

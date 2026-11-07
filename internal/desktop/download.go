@@ -248,7 +248,7 @@ func (a *DownloaderApp) worker(ctx context.Context, raw, dest string) {
 		a.finishError("无法创建请求：" + err.Error())
 		return
 	}
-	req.Header.Set("User-Agent", "Win95Linux/26.1 (wget-gui)")
+	req.Header.Set("User-Agent", "Win95Linux/26.2 (wget-gui)")
 	resp, err := client.Do(req)
 	if err != nil {
 		if ctx.Err() == context.Canceled {

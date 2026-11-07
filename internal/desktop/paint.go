@@ -3,6 +3,7 @@ package desktop
 import (
 	"encoding/binary"
 	"fmt"
+	"image"
 	"math"
 	"os"
 	"path/filepath"
@@ -62,7 +63,7 @@ type PaintApp struct {
 }
 
 func NewPaintApp(d *Desktop) *PaintApp {
-	return &PaintApp{d: d, color: 0x000000, brush: 3, status: "左键绘制；用“文件”菜单保存为 BMP"}
+	return &PaintApp{d: d, color: 0x000000, brush: 3, status: "左键绘制；文件菜单可打开 PNG/BMP 或保存为 BMP"}
 }
 
 func (a *PaintApp) Title() string           { return "画图" }
@@ -75,6 +76,7 @@ func (a *PaintApp) Menus(d *Desktop, w *Window) []Menu {
 	return []Menu{
 		{Label: "文件(F)", Items: []MenuItem{
 			{Label: "新建", Enabled: true, Action: func() { a.newImage(d) }},
+			{Label: "打开…", Accel: "Ctrl+O", Enabled: true, Action: func() { a.open(d) }},
 			{Label: "保存", Accel: "Ctrl+S", Enabled: true, Action: func() { a.save(d, false) }},
 			{Label: "另存为…", Enabled: true, Action: func() { a.save(d, true) }},
 			{Separator: true},
@@ -86,7 +88,7 @@ func (a *PaintApp) Menus(d *Desktop, w *Window) []Menu {
 		{Label: "帮助(H)", Items: []MenuItem{
 			{Label: "关于画图", Enabled: true, Action: func() {
 				d.MessageBox("关于画图",
-					"画图\n\n工具：铅笔、画刷、橡皮、直线、矩形、椭圆。\n下方调色板选择颜色，“笔宽”按钮调整粗细。\n\n图像以 24 位 BMP 格式保存在 /root/图片。",
+					"画图\n\n工具：铅笔、画刷、橡皮、直线、矩形、椭圆。\n下方调色板选择颜色，“笔宽”按钮调整粗细。\n\n可用“文件 → 打开”载入 PNG 或 BMP 图片，\n图像以 24 位 BMP 格式保存在 /root/图片。",
 					IconInfo, []string{"确定"}, nil)
 			}},
 		}},
@@ -385,7 +387,143 @@ func (a *PaintApp) Key(d *Desktop, w *Window, ev KeyEvent) bool {
 		a.save(d, false)
 		return true
 	}
+	if ev.Ctrl && (ev.Rune == 'o' || ev.Rune == 'O') {
+		a.open(d)
+		return true
+	}
 	return false
+}
+
+func (a *PaintApp) open(d *Desktop) {
+	if a.win == nil {
+		return
+	}
+	d.FileDialog(FileOpen, "/root/图片", "", func(path string, ok bool) {
+		if !ok || path == "" {
+			return
+		}
+		a.openPath(d, path)
+	})
+}
+
+func (a *PaintApp) openPath(d *Desktop, path string) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		d.MessageBox("画图", "无法打开文件：\n"+err.Error(), IconError, []string{"确定"}, nil)
+		return
+	}
+	ext := strings.ToLower(filepath.Ext(path))
+	img, err := decodeImageData(data, ext)
+	if err != nil {
+		d.MessageBox("画图", "无法打开图片：\n"+err.Error()+"\n\n仅支持 PNG 与 BMP。", IconError, []string{"确定"}, nil)
+		return
+	}
+	a.path = ""
+	a.showImage(d, path, toRGBA(img))
+}
+
+func (a *PaintApp) showImage(d *Desktop, path string, img *image.RGBA) {
+	w := a.win
+	if w == nil {
+		return
+	}
+	iw, ih := img.Bounds().Dx(), img.Bounds().Dy()
+	maxCW := d.W - 20 - 18
+	maxCH := d.taskbarTop() - 20 - 166
+	if maxCW < 64 {
+		maxCW = 64
+	}
+	if maxCH < 64 {
+		maxCH = 64
+	}
+	scale := 1.0
+	if iw > maxCW {
+		scale = float64(maxCW) / float64(iw)
+	}
+	if ih > maxCH {
+		if s := float64(maxCH) / float64(ih); s < scale {
+			scale = s
+		}
+	}
+	if scale < 1 {
+		iw = maxInt(1, int(float64(iw)*scale))
+		ih = maxInt(1, int(float64(ih)*scale))
+		img = scaleRGBA(img, iw, ih)
+	}
+	winW := iw + 18
+	winH := ih + 166
+	if winW < w.MinW {
+		winW = w.MinW
+	}
+	if winH < w.MinH {
+		winH = w.MinH
+	}
+	if winW > d.W-20 {
+		winW = d.W - 20
+	}
+	if winH > d.taskbarTop()-20 {
+		winH = d.taskbarTop() - 20
+	}
+	w.W, w.H = winW, winH
+	w.X = (d.W - winW) / 2
+	w.Y = (d.taskbarTop() - winH) / 2
+	if w.Y < 4 {
+		w.Y = 4
+	}
+	a.Resized(d, w, w.ClientRect())
+
+	for i := range a.pix {
+		a.pix[i] = 0xFFFFFF
+	}
+	ox := (a.cw - iw) / 2
+	oy := (a.ch - ih) / 2
+	if ox < 0 {
+		ox = 0
+	}
+	if oy < 0 {
+		oy = 0
+	}
+	for y := 0; y < ih; y++ {
+		ty := oy + y
+		if ty >= a.ch {
+			break
+		}
+		for x := 0; x < iw; x++ {
+			tx := ox + x
+			if tx >= a.cw {
+				break
+			}
+			o := y*img.Stride + x*4
+			a.pix[ty*a.cw+tx] = uint32(img.Pix[o])<<16 | uint32(img.Pix[o+1])<<8 | uint32(img.Pix[o+2])
+		}
+	}
+	a.status = fmt.Sprintf("已打开 %s（%d × %d）", filepath.Base(path), iw, ih)
+	d.Invalidate()
+}
+
+func scaleRGBA(src *image.RGBA, w, h int) *image.RGBA {
+	if w < 1 {
+		w = 1
+	}
+	if h < 1 {
+		h = 1
+	}
+	sw, sh := src.Bounds().Dx(), src.Bounds().Dy()
+	dst := image.NewRGBA(image.Rect(0, 0, w, h))
+	for y := 0; y < h; y++ {
+		sy := y * sh / h
+		srow := src.Pix[sy*src.Stride:]
+		drow := dst.Pix[y*dst.Stride:]
+		for x := 0; x < w; x++ {
+			sx := x * sw / w
+			so, do := sx*4, x*4
+			drow[do] = srow[so]
+			drow[do+1] = srow[so+1]
+			drow[do+2] = srow[so+2]
+			drow[do+3] = 0xFF
+		}
+	}
+	return dst
 }
 
 func (a *PaintApp) newImage(d *Desktop) {

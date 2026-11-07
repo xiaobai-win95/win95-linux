@@ -11,10 +11,11 @@ import (
 var prefsPath = "/root/.config/win95/desktop.json"
 
 type desktopPrefs struct {
-	Background int      `json:"background"`
-	SaverStyle int      `json:"saver_style"`
-	SaverWait  int      `json:"saver_wait_minutes"`
-	RunHistory []string `json:"run_history,omitempty"`
+	Background   int      `json:"background"`
+	SaverStyle   int      `json:"saver_style"`
+	SaverWait    int      `json:"saver_wait_minutes"`
+	RunHistory   []string `json:"run_history,omitempty"`
+	EULAAccepted bool     `json:"eula_accepted,omitempty"`
 }
 
 func (d *Desktop) loadPrefs() {
@@ -50,14 +51,16 @@ func (d *Desktop) loadPrefs() {
 			}
 		}
 	}
+	d.eulaAccepted = p.EULAAccepted
 }
 
 func (d *Desktop) savePrefs() {
 	p := desktopPrefs{
-		Background: d.background,
-		SaverStyle: d.saverStyle,
-		SaverWait:  int(d.saverWait / time.Minute),
-		RunHistory: append([]string{}, d.runHistory...),
+		Background:   d.background,
+		SaverStyle:   d.saverStyle,
+		SaverWait:    int(d.saverWait / time.Minute),
+		RunHistory:   append([]string{}, d.runHistory...),
+		EULAAccepted: d.eulaAccepted,
 	}
 	b, err := json.MarshalIndent(p, "", "  ")
 	if err != nil {

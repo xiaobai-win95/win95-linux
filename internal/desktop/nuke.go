@@ -33,8 +33,8 @@ type NukeAuthApp struct {
 
 func (a *NukeAuthApp) Title() string           { return "死手系统 - 身份验证" }
 func (a *NukeAuthApp) Icon() ui.IconKind       { return ui.IcoNuke }
-func (a *NukeAuthApp) DefaultSize() (int, int) { return 500, 274 }
-func (a *NukeAuthApp) MinSize() (int, int)     { return 500, 274 }
+func (a *NukeAuthApp) DefaultSize() (int, int) { return 500, 300 }
+func (a *NukeAuthApp) MinSize() (int, int)     { return 500, 300 }
 func (a *NukeAuthApp) Resizable() bool         { return false }
 
 func (a *NukeAuthApp) Paint(d *Desktop, w *Window, c *ui.Canvas, r ui.Rect) {
@@ -61,6 +61,7 @@ func (a *NukeAuthApp) Paint(d *Desktop, w *Window, c *ui.Canvas, r ui.Rect) {
 	f.Text(c, a.fieldR.Right()+14, a.fieldR.Y+6, "仅限授权人员", ui.ColShadow)
 
 	f.TextClip(c, r.X+18, r.Y+154, r.W-36, "警告：授权后将启动不可中断的模拟核反击倒计时。", 0xA00000)
+	f.TextClip(c, r.X+18, r.Y+198, r.W-36, "光敏性癫痫警告：倒计时画面含红色闪烁（约 1.5 次/秒）。", 0xC05000)
 	if a.err != "" {
 		f.TextClip(c, r.X+18, r.Y+176, r.W-36, a.err, ui.ColRed)
 	} else {
@@ -266,7 +267,7 @@ func (d *Desktop) triggerNuke() {
 
 func (d *Desktop) drawNuke(c *ui.Canvas) {
 	elapsed := time.Since(d.nukeAt)
-	flash := int(elapsed.Milliseconds()/90)%2 == 0
+	flash := int(elapsed.Milliseconds()/340)%2 == 0
 	bg := uint32(0x900000)
 	if flash {
 		bg = 0xC00000

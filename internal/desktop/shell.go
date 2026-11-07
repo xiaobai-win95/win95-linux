@@ -42,6 +42,7 @@ func (d *Desktop) setupShell() {
 		{label: "我的电脑", kind: ui.IcoComputer, key: "sys:computer", action: func() { d.openFiles("") }},
 		{label: "我的文档", kind: ui.IcoFolder, key: "sys:docs", isDir: true, action: func() { d.openFiles("/root/文档") }},
 		{label: "网络浏览器", kind: ui.IcoBrowser, key: "sys:browser", action: func() { d.openBrowser("") }},
+		{label: "方块世界 95", kind: ui.IcoGame, key: "sys:blockworld", action: func() { d.openBlockWorld() }},
 		{label: "XFCE 终端", kind: ui.IcoTerminal, key: "sys:xfce-term", action: func() { d.launchXFCEApp("xfce4-terminal") }},
 		{label: "Firefox", kind: ui.IcoBrowser, key: "sys:firefox", action: func() { d.launchXFCEApp("firefox") }},
 		{label: "XFCE 桌面", kind: ui.IcoComputer, key: "sys:xfce", action: func() { d.switchToXFCE() }},
@@ -131,8 +132,46 @@ func (d *Desktop) openTerminal() {
 	d.Open(a)
 }
 
+func (d *Desktop) openPowerShell() {
+	a := NewPShellApp(d)
+	w := d.Open(a)
+	a.win = w
+}
+
+func (d *Desktop) openISE() {
+	for _, w := range d.windows {
+		if ise, ok := w.App.(*PShellISEApp); ok {
+			d.bringToFront(w)
+			_ = ise
+			return
+		}
+	}
+	a := NewPShellISEApp(d)
+	w := d.Open(a)
+	a.win = w
+}
+
 func (d *Desktop) openFiles(path string) {
 	a := NewFileManagerApp(d, path)
+	w := d.Open(a)
+	a.win = w
+}
+
+func (d *Desktop) openImageViewer(path string) {
+	for _, w := range d.windows {
+		if v, ok := w.App.(*ImageViewerApp); ok {
+			if path != "" {
+				v.loadPath(path)
+			}
+			d.bringToFront(w)
+			d.Invalidate()
+			return
+		}
+	}
+	a := NewImageViewerApp(d)
+	if path != "" {
+		a.loadPath(path)
+	}
 	w := d.Open(a)
 	a.win = w
 }
@@ -172,6 +211,18 @@ func (d *Desktop) openMines() {
 	d.Open(NewMineApp())
 }
 
+func (d *Desktop) openBlockWorld() {
+	for _, w := range d.windows {
+		if _, ok := w.App.(*BlockWorldApp); ok {
+			d.bringToFront(w)
+			return
+		}
+	}
+	a := NewBlockWorldApp(d)
+	w := d.Open(a)
+	a.win = w
+}
+
 func (d *Desktop) openPaint() {
 	for _, w := range d.windows {
 		if _, ok := w.App.(*PaintApp); ok {
@@ -179,5 +230,7 @@ func (d *Desktop) openPaint() {
 			return
 		}
 	}
-	d.Open(NewPaintApp(d))
+	a := NewPaintApp(d)
+	w := d.Open(a)
+	a.win = w
 }
