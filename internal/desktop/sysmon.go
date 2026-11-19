@@ -5,7 +5,6 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"time"
 
 	"win95linux/internal/ui"
 )
@@ -156,25 +155,5 @@ func (d *Desktop) drawSysTray(c *ui.Canvas) {
 }
 
 func (d *Desktop) showSysMonitor() {
-	totalKB, availKB, _ := readMemInfo()
-	load := "不可用"
-	if b, err := os.ReadFile("/proc/loadavg"); err == nil {
-		f := strings.Fields(string(b))
-		if len(f) >= 3 {
-			load = f[0] + "  " + f[1] + "  " + f[2]
-		}
-	}
-	uptime := "不可用"
-	if b, err := os.ReadFile("/proc/uptime"); err == nil {
-		if f := strings.Fields(string(b)); len(f) > 0 {
-			if sec, err := strconv.ParseFloat(f[0], 64); err == nil {
-				uptime = time.Duration(sec * float64(time.Second)).Round(time.Second).String()
-			}
-		}
-	}
-	usedMB := (totalKB - availKB) / 1024
-	totalMB := totalKB / 1024
-	text := fmt.Sprintf("CPU 占用：%d%%\n内存占用：%d%%（%d MB / %d MB）\n网络状态：%s（任务栏指示灯）\n系统负载：%s\n运行时间：%s",
-		d.cpuPct, d.memPct, usedMB, totalMB, netStateText(d.netState), load, uptime)
-	d.MessageBox("系统监视器", text, IconInfo, []string{"确定"}, nil)
+	d.openTaskManager()
 }

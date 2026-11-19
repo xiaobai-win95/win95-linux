@@ -8,19 +8,20 @@ import (
 	"win95linux/internal/ui"
 )
 
-const trashDir = "/root/.trash"
+const trashDir = "/tmp/.trash"
 
 type iconPoint struct {
 	x, y int
 }
 
 type desktopIcon struct {
-	label  string
-	kind   ui.IconKind
-	key    string
-	path   string
-	isDir  bool
-	action func()
+	label    string
+	labelKey string
+	kind     ui.IconKind
+	key      string
+	path     string
+	isDir    bool
+	action   func()
 }
 
 func (d *Desktop) setupShell() {
@@ -39,17 +40,31 @@ func (d *Desktop) setupShell() {
 		return
 	}
 	d.icons = []*desktopIcon{
-		{label: "我的电脑", kind: ui.IcoComputer, key: "sys:computer", action: func() { d.openFiles("") }},
-		{label: "我的文档", kind: ui.IcoFolder, key: "sys:docs", isDir: true, action: func() { d.openFiles("/root/文档") }},
-		{label: "网络浏览器", kind: ui.IcoBrowser, key: "sys:browser", action: func() { d.openBrowser("") }},
-		{label: "方块世界 95", kind: ui.IcoGame, key: "sys:blockworld", action: func() { d.openBlockWorld() }},
-		{label: "XFCE 终端", kind: ui.IcoTerminal, key: "sys:xfce-term", action: func() { d.launchXFCEApp("xfce4-terminal") }},
-		{label: "Firefox", kind: ui.IcoBrowser, key: "sys:firefox", action: func() { d.launchXFCEApp("firefox") }},
-		{label: "XFCE 桌面", kind: ui.IcoComputer, key: "sys:xfce", action: func() { d.switchToXFCE() }},
-		{label: "回收站", kind: ui.IcoRecycle, key: "sys:recycle", action: func() { d.openRecycle() }},
+		{labelKey: "我的电脑", label: d.tr("我的电脑"), kind: ui.IcoComputer, key: "sys:computer", action: func() { d.openFiles("") }},
+		{labelKey: "切换到 XFCE 桌面", label: d.tr("切换到 XFCE 桌面"), kind: ui.IcoSetup, key: "sys:xfce", action: func() { d.switchToXFCE() }},
+		{labelKey: "任务管理器", label: d.tr("任务管理器"), kind: ui.IcoComputer, key: "sys:taskmgr", action: func() { d.openTaskManager() }},
+		{labelKey: "注册表编辑器", label: d.tr("注册表编辑器"), kind: ui.IcoSetup, key: "sys:regedit", action: func() { d.openRegistryEditor() }},
+		{labelKey: "我的文档", label: d.tr("我的文档"), kind: ui.IcoFolder, key: "sys:docs", isDir: true, action: func() { d.openFiles("/root/文档") }},
+		{labelKey: "网络浏览器", label: d.tr("网络浏览器"), kind: ui.IcoBrowser, key: "sys:browser", action: func() { d.openBrowser("") }},
+		{labelKey: "方块世界 95", label: d.tr("方块世界 95"), kind: ui.IcoGame, key: "sys:blockworld", action: func() { d.openBlockWorld() }},
+		{labelKey: "XFCE 终端", label: d.tr("XFCE 终端"), kind: ui.IcoTerminal, key: "sys:xfce-term", action: func() { d.openX11Proxy("xfce4-terminal") }},
+		{label: "Firefox", kind: ui.IcoBrowser, key: "sys:firefox", action: func() { d.openX11Proxy("firefox") }},
+		{label: "X11 代理", kind: ui.IcoComputer, key: "sys:x11proxy", action: func() { d.openX11Proxy("") }},
+		{labelKey: "设置中心", label: d.tr("设置中心"), kind: ui.IcoSetup, key: "sys:settings", action: func() { d.openSettings() }},
+		{labelKey: "回收站", label: d.tr("回收站"), kind: ui.IcoRecycle, key: "sys:recycle", action: func() { d.openRecycle() }},
 	}
 	d.baseIcons = append([]*desktopIcon{}, d.icons...)
 	d.refreshShortcuts(true)
+}
+
+func (d *Desktop) openTaskManager() {
+	for _, w := range d.windows {
+		if _, ok := w.App.(*TaskManagerApp); ok {
+			d.bringToFront(w)
+			return
+		}
+	}
+	d.Open(NewTaskManagerApp(d))
 }
 
 func (d *Desktop) openRecycle() {
@@ -129,7 +144,36 @@ func (d *Desktop) openCalendar() {
 
 func (d *Desktop) openTerminal() {
 	a := NewTerminalApp(d)
-	d.Open(a)
+	a.win = d.Open(a)
+}
+
+// openTerminalCommand runs argv in an interactive PTY terminal. A non-empty
+// key focuses an already running terminal instead of opening a duplicate.
+func (d *Desktop) openTerminalCommand(title string, argv []string, cwd, key string) *TerminalApp {
+	if key != "" {
+		for _, w := range d.windows {
+			if t, ok := w.App.(*TerminalApp); ok && t.key == key && !t.t.closed {
+				d.bringToFront(w)
+				return t
+			}
+		}
+	}
+	a := newTerminalApp(d, termOptions{argv: argv, cwd: cwd}, title, key)
+	a.win = d.Open(a)
+	return a
+}
+
+// openTerminalAt starts a shell in the given directory.
+func (d *Desktop) openTerminalAt(path string) {
+	if st, err := os.Stat(path); err != nil || !st.IsDir() {
+		path = "/root"
+	}
+	title := "终端"
+	if base := filepath.Base(path); base != "/" && base != "." {
+		title = "终端 - " + base
+	}
+	a := newTerminalApp(d, termOptions{cwd: path}, title, "")
+	a.win = d.Open(a)
 }
 
 func (d *Desktop) openPowerShell() {
@@ -199,6 +243,16 @@ func (d *Desktop) openPkgMan() {
 		}
 	}
 	d.Open(NewPkgManApp(d))
+}
+
+func (d *Desktop) openOTA() {
+	for _, w := range d.windows {
+		if _, ok := w.App.(*OTAApp); ok {
+			d.bringToFront(w)
+			return
+		}
+	}
+	d.Open(NewOTAApp(d))
 }
 
 func (d *Desktop) openMines() {

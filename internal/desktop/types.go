@@ -96,6 +96,18 @@ type MenuProvider interface {
 	Menus(d *Desktop, w *Window) []Menu
 }
 
+// ClientContextMenu lets an app supply its own right-click menu inside the
+// window client area. Coordinates are framebuffer coordinates.
+type ClientContextMenu interface {
+	ContextMenu(d *Desktop, w *Window, x, y int) []ctxItem
+}
+
+// ClientRightClick lets an app consume right-clicks inside its client area
+// before the shell offers a context menu (used by the X11 proxy).
+type ClientRightClick interface {
+	RightClick(d *Desktop, w *Window, x, y int) bool
+}
+
 // Animator is implemented by apps that need periodic updates (for example
 // JavaScript timers in the browser or game physics).
 type Animator interface {

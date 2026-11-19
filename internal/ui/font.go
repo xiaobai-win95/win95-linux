@@ -20,9 +20,17 @@ type Font struct {
 }
 
 var (
-	fontOnce sync.Once
-	fontInst *Font
+	fontOnce    sync.Once
+	fontInst    *Font
+	defaultBold bool
 )
+
+// SetDefaultBold selects the global body-text weight. The bitmap font has no
+// separate bold face, so bold is rendered with a one pixel right offset.
+func SetDefaultBold(v bool) { defaultBold = v }
+
+// DefaultBold reports the current global body-text weight.
+func DefaultBold() bool { return defaultBold }
 
 func DefaultFont() *Font {
 	fontOnce.Do(func() {
@@ -54,6 +62,9 @@ func loadFont() *Font {
 func (f *Font) glyphFor(r rune) glyph {
 	if g, ok := f.glyphs[r]; ok {
 		return g
+	}
+	if r == ' ' {
+		return glyph{w: 8, h: 16}
 	}
 	if g, ok := f.glyphs['?']; ok {
 		return g
@@ -88,19 +99,25 @@ func (f *Font) drawGlyph(c *Canvas, x, y int, g glyph, col uint32) {
 	}
 }
 
-// Text draws a string at x,y (top-left) with a 16px cell height.
-func (f *Font) Text(c *Canvas, x, y int, s string, col uint32) {
+func (f *Font) drawString(c *Canvas, x, y int, s string, col uint32, bold bool) {
 	for _, r := range s {
 		g := f.glyphFor(r)
 		f.drawGlyph(c, x, y, g, col)
+		if bold {
+			f.drawGlyph(c, x+1, y, g, col)
+		}
 		x += g.w
 	}
 }
 
-// TextBold draws text twice with a one pixel offset to fake a bold face.
+// Text draws a string at x,y (top-left) with a 16px cell height.
+func (f *Font) Text(c *Canvas, x, y int, s string, col uint32) {
+	f.drawString(c, x, y, s, col, defaultBold)
+}
+
+// TextBold draws text with a one pixel offset to fake a bold face.
 func (f *Font) TextBold(c *Canvas, x, y int, s string, col uint32) {
-	f.Text(c, x, y, s, col)
-	f.Text(c, x+1, y, s, col)
+	f.drawString(c, x, y, s, col, true)
 }
 
 // Scaled draws text at an integer pixel scale.

@@ -1,0 +1,18 @@
+# macOS
+.DS_Store
+
+# 本地 Go 工具链（约 271 MB，从 go.dev 安装即可）
+.toolchain/
+
+# 构建中间产物：解压后的内核/软件包、rootfs、EFI 镜像等（约 625 MB）
+build/
+
+# 交付产物：安装镜像、校验文件与预览图（约 131 MB）
+out/*
+!out/UTM配置说明.md
+
+# 上游下载缓存（约 227 MB，GitHub 单文件上限 100 MB）
+assets/cache/
+
+# 与 internal/ui/fontdata.bin 内容相同的生成副本
+assets/font/

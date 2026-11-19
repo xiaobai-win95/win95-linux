@@ -4,6 +4,7 @@ go 1.27.3
 
 require (
 	github.com/dop251/goja v0.0.0-20261105002551-2413f2132ac8
+	github.com/jezek/xgb v1.3.1
 	golang.org/x/net v0.61.0
 )
 

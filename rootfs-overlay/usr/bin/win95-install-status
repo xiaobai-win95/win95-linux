@@ -1,0 +1,89 @@
+#!/bin/sh
+# Publish installer progress for the Win95 desktop progress window.
+# Usage:
+#   win95-install-status begin "Arch Linux 安装" "正在准备…"
+#   win95-install-status set 42 "正在下载（120/791 MB）"
+#   win95-install-status log "pacman: installing gtk3"
+#   win95-install-status done "安装完成"
+#   win95-install-status fail "下载失败，详见日志"
+# The file lives in /run so it survives foreground/background hand-offs but
+# never becomes stale across a reboot.
+
+STATUS=/run/win95-install.status
+LOGFILE=/run/win95-install.log
+mkdir -p /run 2>/dev/null
+
+current_title() {
+	sed -n 's/^title=//p' "$STATUS" 2>/dev/null | head -n 1
+}
+
+write_status() {
+	_title=$1
+	_pct=$2
+	_msg=$3
+	_state=$4
+	_tmp="$STATUS.$$"
+	{
+		printf 'title=%s\n' "$_title"
+		printf 'pct=%s\n' "$_pct"
+		printf 'msg=%s\n' "$_msg"
+		printf 'state=%s\n' "$_state"
+	} >"$_tmp" 2>/dev/null || return 1
+	mv -f "$_tmp" "$STATUS" 2>/dev/null || rm -f "$_tmp"
+	# Keep a short phase history for the log pane, avoiding duplicates from
+	# the download loop which publishes the same message every two seconds.
+	if [ -n "$_msg" ]; then
+		last=$(tail -n 1 "$LOGFILE" 2>/dev/null)
+		if [ "$_msg" != "$last" ]; then
+			printf '%s\n' "$_msg" >>"$LOGFILE" 2>/dev/null
+		fi
+	fi
+}
+
+case "$1" in
+begin)
+	title=$2
+	[ -n "$title" ] || title="安装"
+	msg=$3
+	[ -n "$msg" ] || msg="正在准备…"
+	: >"$LOGFILE" 2>/dev/null
+	write_status "$title" 0 "$msg" running
+	chmod 0644 "$STATUS" "$LOGFILE" 2>/dev/null
+	;;
+set)
+	pct=$2
+	case "$pct" in
+	'' | *[!0-9]*) pct=0 ;;
+	esac
+	[ "$pct" -gt 100 ] && pct=100
+	title=$(current_title)
+	[ -n "$title" ] || title="安装"
+	msg=$3
+	write_status "$title" "$pct" "$msg" running
+	;;
+log)
+	[ -n "$2" ] && printf '%s\n' "$2" >>"$LOGFILE" 2>/dev/null
+	;;
+done)
+	title=$(current_title)
+	[ -n "$title" ] || title="安装"
+	msg=$2
+	[ -n "$msg" ] || msg="安装完成"
+	write_status "$title" 100 "$msg" done
+	;;
+fail)
+	title=$(current_title)
+	[ -n "$title" ] || title="安装"
+	msg=$2
+	[ -n "$msg" ] || msg="安装失败"
+	write_status "$title" 100 "$msg" failed
+	;;
+*)
+	echo "usage: win95-install-status begin TITLE [MESSAGE]" >&2
+	echo "       win95-install-status set PCT MESSAGE" >&2
+	echo "       win95-install-status log TEXT" >&2
+	echo "       win95-install-status done [MESSAGE]" >&2
+	echo "       win95-install-status fail [MESSAGE]" >&2
+	exit 2
+	;;
+esac

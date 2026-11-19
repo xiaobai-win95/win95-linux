@@ -47,7 +47,13 @@ type Desktop struct {
 	dirty         int32
 	clock         string
 	clockLoc      *time.Location
+	clockZone     string
 	lastSecond    int64
+	lang          string
+	theme         int
+	dateFmt       int
+	clock12       bool
+	weekMonday    bool
 
 	cpuPct, memPct int
 	cpuTotal       uint64
@@ -63,6 +69,8 @@ type Desktop struct {
 	saverStars   []saverStar
 	saverWindows []saverWindow
 	background   int
+	bgColor      uint32
+	bgColorSet   bool
 	runHistory   []string
 	eulaAccepted bool
 	shortcutMod  time.Time
@@ -113,12 +121,17 @@ func New(width, height int, mode Mode, host Host) *Desktop {
 		autoArrange:   true,
 		iconPositions: map[string]iconPoint{},
 		clockLoc:      loc,
+		clockZone:     "Asia/Shanghai",
+		lang:          "zh-CN",
 		lastInput:     time.Now(),
 		saverStyle:    saverMystify,
 		saverWait:     saverIdleDefault,
 	}
 	d.clock = time.Now().In(loc).Format("15:04")
 	d.loadPrefs()
+	d.loadWin95INI()
+	ui.ApplyPalette(ui.Palettes[d.theme])
+	d.clock = d.formatClock(time.Now())
 	d.sampleSystem()
 	d.setupShell()
 	d.Invalidate()
@@ -266,7 +279,7 @@ type Ticker interface {
 }
 
 func (d *Desktop) Tick(now time.Time) {
-	clock := now.In(d.clockLoc).Format("15:04")
+	clock := d.formatClock(now)
 	if clock != d.clock {
 		d.clock = clock
 		d.Invalidate()

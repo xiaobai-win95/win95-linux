@@ -73,10 +73,25 @@ func measureCtxMenu(items []ctxItem) (w, h int) {
 	return w, h
 }
 
+func (d *Desktop) translateCtxItems(items []ctxItem) []ctxItem {
+	out := make([]ctxItem, len(items))
+	copy(out, items)
+	for i := range out {
+		if !out[i].sep {
+			out[i].label = d.tr(out[i].label)
+		}
+		if len(out[i].children) > 0 {
+			out[i].children = d.translateCtxItems(out[i].children)
+		}
+	}
+	return out
+}
+
 func (d *Desktop) openContext(items []ctxItem, x, y int) {
 	if len(items) == 0 {
 		return
 	}
+	items = d.translateCtxItems(items)
 	w, h := measureCtxMenu(items)
 	if x+w > d.W-4 {
 		x = d.W - 4 - w

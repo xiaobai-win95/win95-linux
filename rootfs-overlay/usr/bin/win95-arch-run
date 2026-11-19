@@ -1,0 +1,18 @@
+#!/bin/sh
+# Run any command inside the Arch Linux ARM glibc chroot, e.g.
+#   win95-arch-run bash
+# The chroot shares /dev, /proc, /sys, /run, /tmp and the network with the host.
+
+ARCH_ROOT=/opt/archlinux
+
+if [ $# -eq 0 ]; then
+	echo "usage: win95-arch-run COMMAND [ARGS...]" >&2
+	exit 2
+fi
+
+if [ ! -x "$ARCH_ROOT/usr/bin/pacman" ]; then
+	/usr/bin/win95-arch-bootstrap || exit 1
+fi
+
+/usr/bin/win95-arch-mounts || exit 1
+exec chroot "$ARCH_ROOT" "$@"

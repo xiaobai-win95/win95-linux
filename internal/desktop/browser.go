@@ -1,8 +1,10 @@
 package desktop
 
 import (
+	"encoding/base64"
 	"fmt"
 	"html"
+	"image"
 	"io"
 	"mime"
 	"net/http"
@@ -10,6 +12,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -32,10 +35,36 @@ type bStyle struct {
 	node      *xhtml.Node
 }
 
+type bImage struct {
+	rgba *image.RGBA
+	w, h int
+}
+
+// bControl is an inline form control or image that occupies a span and is
+// painted as a real widget instead of text.
+type bControl struct {
+	tag         string
+	node        *xhtml.Node
+	label       string
+	value       string
+	placeholder string
+	inputType   string
+	checked     bool
+	disabled    bool
+	readonly    bool
+	hasBg       bool
+	colBg       uint32
+	hasFg       bool
+	colFg       uint32
+	w, h        int
+	img         *bImage
+}
+
 type bSpan struct {
 	x, w int
 	text string
 	st   bStyle
+	ctrl *bControl
 }
 
 type bLine struct {
@@ -53,6 +82,7 @@ type bDoc struct {
 type hSeg struct {
 	text string
 	st   bStyle
+	ctrl *bControl
 }
 
 type hBlock struct {
@@ -83,6 +113,7 @@ type hCtx struct {
 type htmlWalker struct {
 	blocks []hBlock
 	cur    hBlock
+	imgFn  func(*xhtml.Node) *bImage
 }
 
 func attr(n *xhtml.Node, name string) string {
@@ -155,10 +186,242 @@ func (w *htmlWalker) add(text string, ctx hCtx) {
 	w.cur.segs = append(w.cur.segs, hSeg{text: text, st: st})
 }
 
+func (w *htmlWalker) addControl(ctrl *bControl, ctx hCtx) {
+	st := bStyle{scale: 1, bold: ctx.bold, href: ctx.href, download: ctx.download, underline: ctx.underline, node: ctx.node}
+	if ctx.hasCol {
+		st.col = ctx.col
+		st.hasCol = true
+	}
+	w.cur.segs = append(w.cur.segs, hSeg{ctrl: ctrl, st: st})
+}
+
+func cssPx(s string) (int, bool) {
+	s = strings.ToLower(strings.TrimSpace(s))
+	if s == "" {
+		return 0, false
+	}
+	s = strings.TrimSuffix(s, "px")
+	v, err := strconv.Atoi(strings.TrimSpace(s))
+	if err != nil || v <= 0 || v > 8192 {
+		return 0, false
+	}
+	return v, true
+}
+
+func controlColor(n *xhtml.Node) (bg uint32, hasBg bool, fg uint32, hasFg bool) {
+	if c, ok := styleBackgroundOf(n); ok {
+		bg, hasBg = c, true
+	}
+	if c, ok := styleColorOf(n); ok {
+		fg, hasFg = c, true
+	}
+	return
+}
+
+func (w *htmlWalker) addImage(n *xhtml.Node, ctx hCtx) {
+	src := strings.TrimSpace(attr(n, "src"))
+	if src == "" {
+		src = strings.TrimSpace(attr(n, "data-src"))
+	}
+	if src == "" || strings.HasPrefix(strings.ToLower(src), "javascript:") {
+		src = ""
+	}
+	var img *bImage
+	if src != "" && w.imgFn != nil {
+		img = w.imgFn(n)
+	}
+	if img == nil {
+		alt := strings.TrimSpace(attr(n, "alt"))
+		if alt == "" {
+			alt = "图片"
+		}
+		w.add("[图片: "+alt+"]", ctx)
+		return
+	}
+	cw, ch := img.w, img.h
+	wSet, hSet := false, false
+	if v, ok := cssPx(attr(n, "width")); ok {
+		cw, wSet = v, true
+	} else if v, ok := cssPx(styleValue(n, "width")); ok {
+		cw, wSet = v, true
+	}
+	if v, ok := cssPx(attr(n, "height")); ok {
+		ch, hSet = v, true
+	} else if v, ok := cssPx(styleValue(n, "height")); ok {
+		ch, hSet = v, true
+	}
+	if wSet && !hSet {
+		ch = img.h * cw / img.w
+	} else if hSet && !wSet {
+		cw = img.w * ch / img.h
+	}
+	if ch < 1 {
+		ch = 1
+	}
+	if ch > 640 {
+		ch = 640
+		cw = img.w * ch / img.h
+	}
+	if cw < 1 {
+		cw = 1
+	}
+	ctrl := &bControl{tag: "img", node: n, w: cw, h: ch, img: img}
+	w.addControl(ctrl, ctx)
+}
+
+func (w *htmlWalker) addInput(n *xhtml.Node, ctx hCtx) {
+	typ := strings.ToLower(strings.TrimSpace(attr(n, "type")))
+	if typ == "" {
+		typ = "text"
+	}
+	if typ == "hidden" {
+		return
+	}
+	bg, hasBg, fg, hasFg := controlColor(n)
+	font := ui.DefaultFont()
+	ctrl := &bControl{node: n, hasBg: hasBg, colBg: bg, hasFg: hasFg, colFg: fg,
+		disabled: hasAttr(n, "disabled"), readonly: hasAttr(n, "readonly")}
+	switch typ {
+	case "submit", "button", "reset", "image":
+		label := strings.TrimSpace(attr(n, "value"))
+		if label == "" {
+			switch typ {
+			case "submit":
+				label = "提交"
+			case "reset":
+				label = "重置"
+			default:
+				label = "按钮"
+			}
+		}
+		ctrl.tag = "button"
+		ctrl.inputType = typ
+		ctrl.label = label
+		ctrl.w = font.Width(label) + 26
+		ctrl.h = 28
+		if ctrl.w < 60 {
+			ctrl.w = 60
+		}
+	case "checkbox", "radio":
+		ctrl.tag = typ
+		ctrl.checked = hasAttr(n, "checked") || strings.EqualFold(attr(n, "checked"), "true")
+		ctrl.value = attr(n, "value")
+		ctrl.w, ctrl.h = 16, 16
+	case "range":
+		ctrl.tag = "range"
+		ctrl.value = attr(n, "value")
+		ctrl.w, ctrl.h = 140, 20
+	default:
+		ctrl.tag = "input"
+		ctrl.inputType = typ
+		ctrl.value = attr(n, "value")
+		ctrl.placeholder = attr(n, "placeholder")
+		size := 20
+		if v, err := strconv.Atoi(strings.TrimSpace(attr(n, "size"))); err == nil && v >= 3 && v <= 120 {
+			size = v
+		}
+		ctrl.w = size*8 + 14
+		if ctrl.w < 80 {
+			ctrl.w = 80
+		}
+		ctrl.h = 24
+	}
+	w.addControl(ctrl, ctx)
+}
+
+func (w *htmlWalker) addButton(n *xhtml.Node, ctx hCtx) {
+	bg, hasBg, fg, hasFg := controlColor(n)
+	label := strings.TrimSpace(textContentOf(n))
+	if label == "" {
+		label = strings.TrimSpace(attr(n, "value"))
+	}
+	if label == "" {
+		label = "按钮"
+	}
+	ctrl := &bControl{tag: "button", node: n, label: label, inputType: strings.ToLower(attr(n, "type")),
+		hasBg: hasBg, colBg: bg, hasFg: hasFg, colFg: fg, disabled: hasAttr(n, "disabled")}
+	ctrl.w = ui.DefaultFont().Width(label) + 28
+	if ctrl.w < 64 {
+		ctrl.w = 64
+	}
+	ctrl.h = 28
+	w.addControl(ctrl, ctx)
+}
+
+func (w *htmlWalker) addSelect(n *xhtml.Node, ctx hCtx) {
+	bg, hasBg, fg, hasFg := controlColor(n)
+	ctrl := &bControl{tag: "select", node: n, hasBg: hasBg, colBg: bg, hasFg: hasFg, colFg: fg,
+		disabled: hasAttr(n, "disabled"), h: 24}
+	font := ui.DefaultFont()
+	var label, value string
+	first := ""
+	maxW := 0
+	var walkOpt func(*xhtml.Node)
+	walkOpt = func(p *xhtml.Node) {
+		for c := p.FirstChild; c != nil; c = c.NextSibling {
+			if c.Type != xhtml.ElementNode {
+				continue
+			}
+			if c.Data == "option" {
+				t := strings.TrimSpace(textContentOf(c))
+				v := attr(c, "value")
+				if v == "" {
+					v = t
+				}
+				if first == "" {
+					first = t
+				}
+				if w := font.Width(t); w > maxW {
+					maxW = w
+				}
+				if hasAttr(c, "selected") || strings.EqualFold(attr(c, "selected"), "true") {
+					label, value = t, v
+				}
+			} else if c.Data == "optgroup" {
+				walkOpt(c)
+			}
+		}
+	}
+	walkOpt(n)
+	if label == "" {
+		label, value = first, first
+	}
+	if label == "" {
+		label = "选择"
+	}
+	ctrl.label = label
+	ctrl.value = value
+	ctrl.w = maxW + 40
+	if ctrl.w < 110 {
+		ctrl.w = 110
+	}
+	w.addControl(ctrl, ctx)
+}
+
+func (w *htmlWalker) addTextarea(n *xhtml.Node, ctx hCtx) {
+	bg, hasBg, fg, hasFg := controlColor(n)
+	value := strings.Trim(textContentOf(n), "\r\n")
+	cols, rows := 40, 3
+	if v, err := strconv.Atoi(strings.TrimSpace(attr(n, "cols"))); err == nil && v >= 5 && v <= 120 {
+		cols = v
+	}
+	if v, err := strconv.Atoi(strings.TrimSpace(attr(n, "rows"))); err == nil && v >= 1 && v <= 30 {
+		rows = v
+	}
+	ctrl := &bControl{tag: "textarea", node: n, value: value, hasBg: hasBg, colBg: bg,
+		hasFg: hasFg, colFg: fg, placeholder: attr(n, "placeholder"),
+		disabled: hasAttr(n, "disabled"), readonly: hasAttr(n, "readonly"),
+		w: cols*8 + 14, h: rows*18 + 10}
+	if ctrl.w < 120 {
+		ctrl.w = 120
+	}
+	w.addControl(ctrl, ctx)
+}
+
 func (w *htmlWalker) flush(after int) {
 	nonEmpty := false
 	for _, s := range w.cur.segs {
-		if strings.TrimSpace(s.text) != "" {
+		if s.ctrl != nil || strings.TrimSpace(s.text) != "" {
 			nonEmpty = true
 			break
 		}
@@ -214,11 +477,7 @@ func (w *htmlWalker) walk(n *xhtml.Node, ctx hCtx) {
 		w.blocks = append(w.blocks, hBlock{rule: true, before: 8, after: 8})
 		return
 	case "img":
-		alt := strings.TrimSpace(attr(n, "alt"))
-		if alt == "" {
-			alt = "图片"
-		}
-		w.add("[图片: "+alt+"]", ctx)
+		w.addImage(n, ctx)
 		return
 	case "p":
 		w.begin(6, ctx)
@@ -324,29 +583,16 @@ func (w *htmlWalker) walk(n *xhtml.Node, ctx hCtx) {
 		w.walkChildren(n, c2)
 		return
 	case "select":
-		w.add("[下拉列表]", ctx)
+		w.addSelect(n, ctx)
 		return
 	case "textarea":
-		w.add("[文本区域]", ctx)
+		w.addTextarea(n, ctx)
 		return
 	case "input":
-		t := attr(n, "type")
-		if t == "submit" || t == "button" || t == "reset" {
-			v := attr(n, "value")
-			if v == "" {
-				v = "按钮"
-			}
-			w.add("["+v+"]", ctx)
-		} else if t == "checkbox" || t == "radio" {
-			w.add("[ ]", ctx)
-		} else {
-			w.add("[输入框]", ctx)
-		}
+		w.addInput(n, ctx)
 		return
 	case "button":
-		w.add("[", ctx)
-		w.walkChildren(n, ctx)
-		w.add("]", ctx)
+		w.addButton(n, ctx)
 		return
 	case "iframe":
 		w.add("[内嵌框架]", ctx)
@@ -423,7 +669,12 @@ func parseHTMLRoot(raw string) (*xhtml.Node, error) {
 }
 
 func layoutDOM(root *xhtml.Node, width int) *bDoc {
-	w := &htmlWalker{}
+	return layoutDOMImages(root, width, nil)
+}
+
+func layoutDOMImages(root *xhtml.Node, width int, imgFn func(*xhtml.Node) *bImage) *bDoc {
+	applyDocumentStyles(root)
+	w := &htmlWalker{imgFn: imgFn}
 	body := findBody(root)
 	if body == nil {
 		body = root
@@ -509,6 +760,10 @@ func (l *blockLayout) run() {
 		l.startX = l.x
 	}
 	for _, seg := range l.block.segs {
+		if seg.ctrl != nil {
+			l.addControl(seg.ctrl, seg.st)
+			continue
+		}
 		l.addText(seg.text, seg.st)
 	}
 	l.flushLine()
@@ -535,6 +790,36 @@ func (l *blockLayout) addSpan(text string, st bStyle, w int) {
 		l.line.h = h
 	}
 	l.line.spans = append(l.line.spans, bSpan{x: l.x, w: w, text: text, st: st})
+	l.x += w
+}
+
+func (l *blockLayout) addControl(ctrl *bControl, st bStyle) {
+	w, h := ctrl.w, ctrl.h
+	maxW := l.width - l.startX
+	if maxW < 0 {
+		maxW = 0
+	}
+	if w > maxW {
+		if ctrl.tag == "img" && ctrl.img != nil && ctrl.img.w > 0 {
+			h = h * maxW / w
+			if h < 1 {
+				h = 1
+			}
+		}
+		w = maxW
+	}
+	if ctrl.tag != "img" && ctrl.tag != "checkbox" && ctrl.tag != "radio" && w < 40 {
+		w = 40
+	}
+	ctrl.w, ctrl.h = w, h
+	if l.x+w > l.width && l.x > l.startX {
+		l.flushLine()
+		l.newLine()
+	}
+	if h > l.line.h {
+		l.line.h = h
+	}
+	l.line.spans = append(l.line.spans, bSpan{x: l.x, w: w, ctrl: ctrl, st: st})
 	l.x += w
 }
 
@@ -701,6 +986,7 @@ type linkHit struct {
 	href      string
 	download  bool
 	node      *xhtml.Node
+	ctrl      *bControl
 	clickable bool
 }
 
@@ -739,6 +1025,17 @@ type BrowserApp struct {
 	pressHref   string
 	pressNode   *xhtml.Node
 	pressDown   bool
+	pressCtrl   *bControl
+
+	focusNode   *xhtml.Node
+	focusCaret  int
+	focusSelAll bool
+	formHover   *bControl
+
+	imgMu      sync.Mutex
+	images     map[string]*bImage
+	imgPending map[string]bool
+	imgFailed  map[string]bool
 
 	scroll     VScroll
 	layoutW    int
@@ -749,7 +1046,9 @@ type BrowserApp struct {
 }
 
 func NewBrowserApp(d *Desktop, start string) *BrowserApp {
-	a := &BrowserApp{d: d, visited: make(map[string]bool), histIdx: -1}
+	a := &BrowserApp{d: d, visited: make(map[string]bool), histIdx: -1,
+		images: make(map[string]*bImage), imgPending: make(map[string]bool),
+		imgFailed: make(map[string]bool)}
 	if start == "" {
 		start = "about:home"
 	}
@@ -802,7 +1101,7 @@ func (a *BrowserApp) Menus(d *Desktop, w *Window) []Menu {
 			{Label: "浏览器帮助(A)", Enabled: true, Action: func() { a.Navigate("about:help") }},
 			{Label: "JavaScript 演示(D)", Enabled: true, Action: func() { a.Navigate("about:demo") }},
 			{Label: "关于(A)", Enabled: true, Action: func() {
-				d.MessageBox("关于网络浏览器", "Windows 95 Linux 网络浏览器\n版本 26.2\n\n支持 HTML 页面、超链接、本地文件、HTTP/HTTPS 访问、文件下载与 JavaScript（ECMAScript 5.1）。\n下载的文件保存在 "+downloadDir()+"。", IconInfo, []string{"确定"}, nil)
+				d.MessageBox("关于网络浏览器", "Windows 95 Linux 网络浏览器\n版本 26.3\n\n支持 HTML 页面、超链接、本地文件、HTTP/HTTPS 访问、文件下载与 JavaScript（ECMAScript 5.1）。\n下载的文件保存在 "+downloadDir()+"。", IconInfo, []string{"确定"}, nil)
 			}},
 		}},
 	}
@@ -830,6 +1129,9 @@ func (a *BrowserApp) Navigate(raw string) {
 		raw = "about:home"
 	}
 	raw = normalizeURL(raw)
+	if a.handleBrowserSpecial(raw) {
+		return
+	}
 	a.gen++
 	gen := a.gen
 	a.loading = true
@@ -860,6 +1162,9 @@ func (a *BrowserApp) openLink(href string, download bool) {
 
 func (a *BrowserApp) NavigateWith(raw string, forceDownload bool) {
 	raw = normalizeURL(raw)
+	if a.handleBrowserSpecial(raw) {
+		return
+	}
 	a.gen++
 	gen := a.gen
 	a.loading = true
@@ -958,6 +1263,170 @@ func (a *BrowserApp) contentWidth() int {
 	return 640
 }
 
+// imageForNode returns a decoded image for <img> nodes and starts a background
+// download on first sight. Once a download finishes the page is relaid out so
+// the placeholder grows into the real picture.
+func (a *BrowserApp) imageForNode(n *xhtml.Node) *bImage {
+	src := strings.TrimSpace(attr(n, "src"))
+	if src == "" {
+		src = strings.TrimSpace(attr(n, "data-src"))
+	}
+	if src == "" || strings.HasPrefix(strings.ToLower(src), "javascript:") {
+		return nil
+	}
+	key := src
+	if !strings.HasPrefix(strings.ToLower(src), "data:") {
+		key = stripFragment(resolveURL(a.curURL, src))
+	}
+	a.imgMu.Lock()
+	if img := a.images[key]; img != nil {
+		a.imgMu.Unlock()
+		return img
+	}
+	if a.imgPending[key] || a.imgFailed[key] {
+		a.imgMu.Unlock()
+		return nil
+	}
+	a.imgPending[key] = true
+	a.imgMu.Unlock()
+
+	gen := a.gen
+	go func() {
+		img, err := fetchImageResource(key)
+		a.d.Post(func() {
+			if a.closed {
+				return
+			}
+			a.imgMu.Lock()
+			delete(a.imgPending, key)
+			if err != nil {
+				a.imgFailed[key] = true
+			} else {
+				a.images[key] = img
+				if len(a.images) > 96 {
+					for k := range a.images {
+						if k != key {
+							delete(a.images, k)
+							break
+						}
+					}
+				}
+			}
+			a.imgMu.Unlock()
+			if err == nil && gen == a.gen {
+				a.rebuild()
+			}
+		})
+	}()
+	return nil
+}
+
+const browserImageLimit = 16 << 20
+
+func fetchImageResource(raw string) (*bImage, error) {
+	lower := strings.ToLower(raw)
+	var data []byte
+	ext := strings.ToLower(path.Ext(stripFragment(raw)))
+	if strings.HasPrefix(lower, "data:") {
+		comma := strings.IndexByte(raw, ',')
+		if comma < 0 {
+			return nil, fmt.Errorf("无效的 data URI")
+		}
+		head := lower[:comma]
+		payload := raw[comma+1:]
+		if strings.Contains(head, "base64") {
+			clean := strings.Map(func(r rune) rune {
+				if r == '\n' || r == '\r' || r == ' ' || r == '\t' {
+					return -1
+				}
+				return r
+			}, payload)
+			decoded, err := base64.StdEncoding.DecodeString(clean)
+			if err != nil {
+				if decoded, err = base64.RawStdEncoding.DecodeString(clean); err != nil {
+					return nil, fmt.Errorf("data URI 解码失败")
+				}
+			}
+			data = decoded
+		} else {
+			unescaped, err := url.PathUnescape(payload)
+			if err != nil {
+				return nil, err
+			}
+			data = []byte(unescaped)
+		}
+		if i := strings.Index(head, "image/"); i >= 0 {
+			mimeType := head[i+6:]
+			if j := strings.IndexAny(mimeType, ";"); j >= 0 {
+				mimeType = mimeType[:j]
+			}
+			if mimeType == "jpeg" {
+				mimeType = "jpg"
+			}
+			ext = "." + mimeType
+		}
+	} else {
+		client := &http.Client{Timeout: 20 * time.Second}
+		if strings.HasPrefix(lower, "file://") {
+			p := strings.TrimPrefix(raw, "file://")
+			if u, err := url.Parse(raw); err == nil {
+				p = u.Path
+			}
+			st, err := os.Stat(p)
+			if err != nil || st.IsDir() || st.Size() > browserImageLimit {
+				return nil, fmt.Errorf("无法读取图片")
+			}
+			b, err := os.ReadFile(p)
+			if err != nil {
+				return nil, err
+			}
+			data = b
+		} else if strings.HasPrefix(lower, "http://") || strings.HasPrefix(lower, "https://") {
+			req, err := http.NewRequest("GET", raw, nil)
+			if err != nil {
+				return nil, err
+			}
+			req.Header.Set("User-Agent", "Mozilla/5.0 (X11; Linux aarch64) Win95Browser/26.3")
+			req.Header.Set("Accept", "image/*,*/*;q=0.8")
+			resp, err := client.Do(req)
+			if err != nil {
+				return nil, err
+			}
+			defer resp.Body.Close()
+			if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+				return nil, fmt.Errorf("HTTP %d", resp.StatusCode)
+			}
+			b, err := io.ReadAll(io.LimitReader(resp.Body, browserImageLimit+1))
+			if err != nil {
+				return nil, err
+			}
+			if len(b) > browserImageLimit {
+				return nil, fmt.Errorf("图片过大")
+			}
+			if ctype, _, _ := mime.ParseMediaType(resp.Header.Get("Content-Type")); strings.HasPrefix(ctype, "image/") {
+				if e := strings.TrimPrefix(ctype, "image/"); e != "" && e != "jpeg" {
+					ext = "." + e
+				} else if e == "jpeg" {
+					ext = ".jpg"
+				}
+			}
+			data = b
+		} else {
+			return nil, fmt.Errorf("不支持的图片地址")
+		}
+	}
+	if len(data) == 0 {
+		return nil, fmt.Errorf("图片为空")
+	}
+	img, err := decodeImageData(data, ext)
+	if err != nil {
+		return nil, err
+	}
+	rgba := toRGBA(img)
+	b := rgba.Bounds()
+	return &bImage{rgba: rgba, w: b.Dx(), h: b.Dy()}, nil
+}
+
 func (a *BrowserApp) startPageDOM() {
 	a.stopPageJS()
 	if a.kind != pageHTML {
@@ -988,12 +1457,17 @@ func (a *BrowserApp) rebuild() {
 			a.title = a.curURL
 		}
 	} else if a.dom != nil {
-		a.doc = layoutDOM(a.dom, w)
+		a.doc = layoutDOMImages(a.dom, w, a.imageForNode)
+		if a.doc.title != "" {
+			a.title = a.doc.title
+		}
+	} else if root, err := parseHTMLRoot(a.raw); err == nil {
+		a.doc = layoutDOMImages(root, w, a.imageForNode)
 		if a.doc.title != "" {
 			a.title = a.doc.title
 		}
 	} else {
-		a.doc = layoutHTML(a.raw, w)
+		a.doc = layoutText(a.raw, w)
 		if a.doc.title != "" {
 			a.title = a.doc.title
 		}
@@ -1225,6 +1699,10 @@ func (a *BrowserApp) paintDoc(c *ui.Canvas, f *ui.Font, doc *bDoc, inner ui.Rect
 			continue
 		}
 		for _, sp := range line.spans {
+			if sp.ctrl != nil {
+				a.paintControl(c, f, sp.ctrl, inner.X+8+sp.x, y, line.h, inner)
+				continue
+			}
 			if sp.text == "" {
 				continue
 			}
@@ -1255,6 +1733,211 @@ func (a *BrowserApp) paintDoc(c *ui.Canvas, f *ui.Font, doc *bDoc, inner ui.Rect
 				c.HLine(x, y+2+16*scale, sp.w, col)
 			}
 		}
+	}
+}
+
+func drawPicture(c *ui.Canvas, img *image.RGBA, dst ui.Rect, clip ui.Rect) {
+	if img == nil || dst.W <= 0 || dst.H <= 0 {
+		return
+	}
+	b := img.Bounds()
+	sw, sh := b.Dx(), b.Dy()
+	if sw <= 0 || sh <= 0 {
+		return
+	}
+	x0, y0 := dst.X, dst.Y
+	x1, y1 := dst.Right(), dst.Bottom()
+	if x0 < clip.X {
+		x0 = clip.X
+	}
+	if y0 < clip.Y {
+		y0 = clip.Y
+	}
+	if x1 > clip.Right() {
+		x1 = clip.Right()
+	}
+	if y1 > clip.Bottom() {
+		y1 = clip.Bottom()
+	}
+	if x0 >= x1 || y0 >= y1 {
+		return
+	}
+	for y := y0; y < y1; y++ {
+		sy := b.Min.Y + (y-dst.Y)*sh/dst.H
+		row := img.Pix[sy*img.Stride:]
+		out := c.Pix[y*c.Stride:]
+		for x := x0; x < x1; x++ {
+			sx := b.Min.X + (x-dst.X)*sw/dst.W
+			o := sx * 4
+			al := row[o+3]
+			if al == 0 {
+				continue
+			}
+			r := uint32(row[o])
+			g := uint32(row[o+1])
+			bb := uint32(row[o+2])
+			if al != 255 {
+				bg := out[x]
+				r = (r*uint32(al) + ((bg>>16)&0xFF)*uint32(255-al)) / 255
+				g = (g*uint32(al) + ((bg>>8)&0xFF)*uint32(255-al)) / 255
+				bb = (bb*uint32(al) + (bg&0xFF)*uint32(255-al)) / 255
+			}
+			out[x] = r<<16 | g<<8 | bb
+		}
+	}
+}
+
+func (a *BrowserApp) paintControl(c *ui.Canvas, f *ui.Font, ctrl *bControl, x, y, lineH int, inner ui.Rect) {
+	if ctrl == nil {
+		return
+	}
+	w, h := ctrl.w, ctrl.h
+	if w < 1 {
+		w = 1
+	}
+	if h < 1 {
+		h = 1
+	}
+	top := y + (lineH-h)/2
+	r := ui.Rect{x, top, w, h}
+	fg := ui.ColText
+	if ctrl.hasFg {
+		fg = ctrl.colFg
+	}
+	switch ctrl.tag {
+	case "img":
+		if ctrl.img != nil {
+			drawPicture(c, ctrl.img.rgba, r, inner)
+		}
+	case "button":
+		bg := ui.ColFace
+		if ctrl.hasBg {
+			bg = ctrl.colBg
+		}
+		c.FillRect(r, bg)
+		if a.pressCtrl != nil && a.pressCtrl.node == ctrl.node {
+			c.Sunken(r)
+		} else {
+			c.Raised(r)
+		}
+		label := ctrl.label
+		tw := f.Width(label)
+		tx := r.X + (r.W-tw)/2
+		ty := r.Y + (r.H-16)/2
+		col := fg
+		if ctrl.disabled {
+			col = ui.ColShadow
+		}
+		f.TextClip(c, tx, ty, r.W-6, label, col)
+	case "input", "textarea":
+		bg := ui.ColWhite
+		if ctrl.hasBg {
+			bg = ctrl.colBg
+		}
+		c.FillRect(r, bg)
+		c.Sunken(r)
+		raw := controlValueOf(ctrl.node)
+		val := raw
+		if ctrl.inputType == "password" {
+			val = strings.Repeat("•", utf8.RuneCountInString(raw))
+		}
+		tx, ty := r.X+5, r.Y+4
+		if ctrl.tag == "textarea" {
+			lines := strings.Split(val, "\n")
+			maxLines := (r.H - 6) / 18
+			if maxLines < 1 {
+				maxLines = 1
+			}
+			for i := 0; i < len(lines) && i < maxLines; i++ {
+				f.TextClip(c, tx, ty+i*18, r.W-10, lines[i], fg)
+			}
+		} else if val == "" && ctrl.placeholder != "" {
+			col := ui.ColShadow
+			if ctrl.disabled {
+				col = ui.ColLight
+			}
+			f.TextClip(c, tx, ty, r.W-10, ctrl.placeholder, col)
+		} else {
+			selected := a.focusNode == ctrl.node && a.focusSelAll && ctrl.tag == "input"
+			if selected {
+				selW := f.Width(val)
+				if selW > r.W-10 {
+					selW = r.W - 10
+				}
+				c.FillRect(ui.Rect{tx - 2, ty - 1, selW + 4, 18}, ui.ColNavy)
+				fg = ui.ColWhite
+			}
+			f.TextClip(c, tx, ty, r.W-10, val, fg)
+			if a.focusNode == ctrl.node && ctrl.tag == "input" {
+				caret := val
+				runes := []rune(caret)
+				if a.focusCaret >= 0 && a.focusCaret < len(runes) {
+					caret = string(runes[:a.focusCaret])
+				}
+				cx := tx + f.Width(caret)
+				if cx < r.Right()-4 {
+					c.VLine(cx, ty, 16, ui.ColText)
+				}
+			}
+		}
+	case "checkbox", "radio":
+		ctrl.checked = ctrl.node != nil && hasAttr(ctrl.node, "checked")
+		c.FillRect(r, ui.ColWhite)
+		c.Sunken(r)
+		if ctrl.checked {
+			if ctrl.tag == "radio" {
+				c.FillRect(r.Inset(4), ui.ColNavy)
+			} else {
+				mx, my := r.X+r.W/2, r.Y+r.H/2
+				c.HLine(mx-3, my, 2, ui.ColText)
+				c.HLine(mx-1, my+1, 2, ui.ColText)
+				c.Set(mx+2, my-2, ui.ColText)
+				c.Set(mx+3, my-3, ui.ColText)
+			}
+		}
+	case "range":
+		c.FillRect(ui.Rect{r.X, r.Y + r.H/2 - 2, r.W, 4}, ui.ColShadow)
+		c.Sunken(ui.Rect{r.X, r.Y + r.H/2 - 2, r.W, 4})
+		pos := 50
+		if v, err := strconv.Atoi(strings.TrimSpace(ctrl.value)); err == nil {
+			minV, maxV := 0, 100
+			if ctrl.node != nil {
+				if v, err := strconv.Atoi(attr(ctrl.node, "min")); err == nil {
+					minV = v
+				}
+				if v, err := strconv.Atoi(attr(ctrl.node, "max")); err == nil && v > minV {
+					maxV = v
+				}
+			}
+			if maxV > minV {
+				pos = (v - minV) * 100 / (maxV - minV)
+			}
+		}
+		if pos < 0 {
+			pos = 0
+		}
+		if pos > 100 {
+			pos = 100
+		}
+		kx := r.X + pos*(r.W-12)/100
+		knob := ui.Rect{kx, r.Y + 1, 12, r.H - 2}
+		c.FillRect(knob, ui.ColFace)
+		c.Raised(knob)
+	case "select":
+		bg := ui.ColWhite
+		if ctrl.hasBg {
+			bg = ctrl.colBg
+		}
+		c.FillRect(r, bg)
+		c.Sunken(r)
+		col := fg
+		if ctrl.disabled {
+			col = ui.ColShadow
+		}
+		f.TextClip(c, r.X+5, r.Y+4, r.W-26, ctrl.label, col)
+		ax := r.Right() - 18
+		ui.Button(c, ui.Rect{ax, r.Y + 1, 17, r.H - 2}, "", false, !ctrl.disabled)
+		ui.Arrow(c, ax+5, r.Y+r.H/2-3, "down", ui.ColText)
 	}
 }
 
@@ -1338,12 +2021,31 @@ func (a *BrowserApp) Mouse(d *Desktop, w *Window, client ui.Rect, ev MouseEvent)
 		if ev.Kind == MouseMove && (a.hoverHref != "" || a.hoverNode != nil) {
 			a.hoverHref = ""
 			a.hoverNode = nil
+			a.formHover = nil
 			d.SetHand(false)
 			d.Invalidate()
 		}
 		return
 	}
 	hit := a.linkAt(ev.X, ev.Y)
+	if hit != nil && hit.ctrl != nil {
+		switch ev.Kind {
+		case MouseMove:
+			hand := hit.ctrl.tag == "button" || hit.href != ""
+			a.hoverHref = hit.href
+			a.hoverNode = hit.node
+			a.formHover = hit.ctrl
+			a.d.SetHand(hand)
+			return
+		case MouseDown:
+			a.addrEditing = false
+			a.controlDown(hit, ev, d)
+			return
+		case MouseUp:
+			a.controlUp(hit, ev, d)
+			return
+		}
+	}
 	if ev.Kind == MouseMove {
 		var href string
 		var node *xhtml.Node
@@ -1356,12 +2058,14 @@ func (a *BrowserApp) Mouse(d *Desktop, w *Window, client ui.Rect, ev MouseEvent)
 		if href != a.hoverHref || node != a.hoverNode {
 			a.hoverHref = href
 			a.hoverNode = node
+			a.formHover = nil
 			a.d.SetHand(hit != nil)
 			d.Invalidate()
 		}
 		return
 	}
 	if ev.Kind == MouseDown {
+		a.blurControl()
 		a.pressHref = ""
 		a.pressNode = nil
 		a.pressDown = false
@@ -1401,23 +2105,28 @@ func (a *BrowserApp) linkAt(gx, gy int) *linkHit {
 			continue
 		}
 		for _, sp := range line.spans {
-			if sp.st.href == "" && sp.st.node == nil {
+			if sp.ctrl == nil && sp.st.href == "" && sp.st.node == nil {
 				continue
 			}
-			clickable := false
+			clickable := sp.ctrl != nil
 			if js != nil && sp.st.node != nil {
-				clickable = js.nodeClickable(sp.st.node)
+				clickable = clickable || js.nodeClickable(sp.st.node)
 			}
-			if sp.st.href == "" && !clickable {
+			if sp.ctrl == nil && sp.st.href == "" && !clickable {
 				continue
 			}
 			x := a.innerR.X + 8 + sp.x
 			if gx >= x && gx < x+sp.w && gx < a.innerR.Right() {
+				node := sp.st.node
+				if sp.ctrl != nil && node == nil {
+					node = sp.ctrl.node
+				}
 				return &linkHit{
 					rect:      ui.Rect{x, y, sp.w, line.h},
 					href:      sp.st.href,
 					download:  sp.st.download,
-					node:      sp.st.node,
+					node:      node,
+					ctrl:      sp.ctrl,
 					clickable: clickable,
 				}
 			}
@@ -1429,6 +2138,11 @@ func (a *BrowserApp) linkAt(gx, gy int) *linkHit {
 func (a *BrowserApp) Key(d *Desktop, w *Window, ev KeyEvent) bool {
 	if a.setup != nil {
 		return false
+	}
+	if !a.addrEditing && a.focusNode != nil && !(ev.Ctrl && (ev.Rune == 'l' || ev.Rune == 'L' || ev.Name == "L")) {
+		if a.keyToControl(ev, d) {
+			return true
+		}
 	}
 	if a.addrEditing {
 		switch ev.Name {
@@ -1929,6 +2643,7 @@ const homePageHTML = `<!DOCTYPE html>
 <h2>互联网</h2>
 <p>在地址栏输入 <code>example.com</code> 或完整的 <code>https://</code> 网址即可访问网络（需要虚拟机具备网络连接）。</p>
 <p><a href="https://example.com/">访问 example.com</a></p>
+<p><a href="https://mcjs.link/">打开 mcjs.link 的 Minecraft</a>（需要 WebGL2，将通过 Firefox 运行）</p>
 <h2>JavaScript 支持</h2>
 <p>本版本内置 JavaScript 引擎（ECMAScript 5.1），首次启动会自动安装运行时依赖。页面脚本、DOM 操作、定时器与交互事件都可以使用。</p>
 <p><a href="about:demo">打开 JavaScript 演示页面</a> · <a href="about:help">阅读帮助</a></p>
@@ -1972,10 +2687,27 @@ const helpPageHTML = `<!DOCTYPE html>
 
 const demoPageHTML = `<!DOCTYPE html>
 <html lang="zh-CN">
-<head><title>JavaScript 演示</title></head>
+<head><title>JavaScript 演示</title>
+<style>
+  .demo-btn { background-color: #000080; color: #ffffff; font-weight: bold; }
+  .demo-ok { background-color: #008000; color: #ffffff; }
+  .demo-warn { background-color: #C00000; color: #ffffff; }
+  .demo-note { color: #6b6b6b; }
+</style>
+</head>
 <body>
 <h1>JavaScript 演示</h1>
 <p>这个页面完全由浏览器内置的 JavaScript 引擎驱动。点击下面的按钮试试看。</p>
+<hr>
+<h2>0. 图片与彩色按钮</h2>
+<p><img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAPAAAACMCAIAAADN17N/AAAETUlEQVR4nOzcvW4TTRSH8d28zh28FDRpaEK7NRSBwgU1QrILboKW20ACCiojIa5gC4j4aGjcUKR3S4WE0qQwMtKAEkjitWfXM7u/M81YgrGz++ivx0dnPZo8WxZK9aX2wgbQgAY0oAENaEADuj2gR0UZthJaQktoCS2hk0poDs2hOTSH5tAcmkNzaA7NoTk0h+bQHJpDc2gOzaE5NIfm0By6TYcehY1SMWt2fxy2F2v6rg7b+FVOni+hDOVuUO4A63LyAtCAjgP07N64wb/+tabvaw7NoVN06A1o3vh/ARrQ7QK9DZdxmQY0oCMAnc4qJy85NIfeyqFnRxEidnpcS2gJLaEvJvSeeBbPO4/niOcAGtBbAW2WwyyHWY5LZjlKCS2hJfT5hDYPbR7aPLR5aPPQ5qHNQ5uHvmYemkNzaA7NoTk0h+bQHPoSh55+qJM6h0Nz6DQcupTQEjqBhF6F9Md65ycAGtDRgE5qARrQEYDeJmIjxvOq9Td5ZR469XnoeRlnEq0oimoZk54LNbvb+HNOP0X+PIBOHeiINHfA9PpYR0cZ0BkAHZ3mbpi+GuuWUA5tO6VaqFap1YfOsg89L1qJ59XJ5bgqdgOcLsdAuxzt0dzN+X7brsFv282Pb4dtg6qOTsJW9bZydejDx4dhu3Ytwkb1t4bk0Pn8pfNlFz4wL8ZVWXNoDt2FQ1ubLUADGtCABnSqQHPoFB26WLomf10TCS2hB5jQHJpDc2gOzaE5NIdu4NCuyabXhHJQDspBOShHqsoB6BSBrv6re/MuHJpDd+XQpYSW0J0kNOWgHL1SjtX09qjO+nxAA/oc0K0y11eac3XoW1+/nz35El6tW4vTG2HboA6efgtb9py0PQeg86wH1c2wXbdef17cOfw/vMrjMZdqv56fRR72r/Zrj2Al9wjWcOpa/g7e/nnCcvHwxJdCXwpT/FJobbaG1Icegm6WhYSW0BK6PwkNaEADGtCAThVoDs2hOTSH5tCpOvTIjcrjRl25Fo9OODSH7olDo/k3zRy6dw4toSV07gkNaEADGtCABnQOQHNoDs2hOTSHTtWhy8mbpbuU+l2S0BJaQg8zoTn0dQ4toSW0hJbQu0pofWh9aH1ofWh9aH3oXPvQElpCS2gJvauE5tAcmkNzaA7NoTk0h+bQHJpDN3Po0emPcXfvZln/WD/ZqUMbAGAQAIKmc3T+DtZBUEgEggRx7ge4vEM7tEMXhwYaaKCBBhpooIEGGmiggQYaaKCBBhpooIEGGuhJ0Oe+n+3QDu3QDu3Qmw4NNNBAAw000EADDTTQQAMNNNBAAw000EADDTTQQAMNNNBAAw000EADDTTQQAMNNNBAAw000EADDTTQQAMNNNBAAw000EADDTTQQAMNNNBAAw000EADDTTQQAMNNNBAAw000EADDTTQQAMNNNBAAw000EADDTTQQAMNNNBAAw000EADDTTQfdAxACfvczNwKPFTAAAAAElFTkSuQmCC" width="240" height="140" alt="方块世界插画"></p>
+<p class="demo-note">上面的图片来自 data URI；下面的按钮颜色来自页面内的 CSS 类。</p>
+<p>
+  <button class="demo-btn" onclick="document.getElementById('colorOut').style.color='#000080'">经典蓝</button>
+  <button class="demo-ok" onclick="document.getElementById('colorOut').style.color='#008000'">成功绿</button>
+  <button class="demo-warn" onclick="document.getElementById('colorOut').style.color='#C00000'">警告红</button>
+</p>
+<p id="colorOut" style="font-weight:bold">这段文字的颜色由彩色按钮控制。</p>
 <hr>
 <h2>1. 计数器</h2>
 <p id="countOut" style="color:#000080">点击次数：0</p>
@@ -1988,9 +2720,16 @@ const demoPageHTML = `<!DOCTYPE html>
 <p id="secret" style="color:#008000">你找到了隐藏的段落！</p>
 <button onclick="toggleSecret()">显示 / 隐藏</button>
 <h2>4. 读取输入框</h2>
-<p>输入框内容：<input id="name" value="Windows 95" size="20"></p>
-<button onclick="greet()">显示问候</button>
+<p>输入框内容：<input id="name" value="Windows 95" size="20" oninput="liveGreet()"></p>
+<p>密码框：<input id="pass" type="password" value="123456" size="16"></p>
+<p>多行文本：<textarea id="notes" rows="2" cols="36">在这里输入多行文字。</textarea></p>
+<p><input type="checkbox" id="agree" onclick="toggleAgree()"> 我同意使用这个演示页面</p>
+<p>
+  <button class="demo-btn" onclick="greet()">显示问候</button>
+  <button onclick="document.getElementById('name').value=''; liveGreet();">清空</button>
+</p>
 <p id="greeting" style="color:#800000"></p>
+<p id="agreeOut" class="demo-note">未勾选</p>
 <h2>5. 定时器</h2>
 <p id="clock" style="color:#000080">计时器未启动。</p>
 <button onclick="startClock()">启动计时器</button>
@@ -2016,7 +2755,17 @@ function toggleSecret() {
 }
 function greet() {
   var name = document.getElementById("name").value;
-  document.getElementById("greeting").textContent = "你好，" + name + "！";
+  var notes = document.getElementById("notes").value;
+  document.getElementById("greeting").textContent =
+    "你好，" + name + "！备注：" + (notes || "（无）");
+}
+function liveGreet() {
+  var name = document.getElementById("name").value;
+  document.getElementById("greeting").textContent = name ? "正在输入：" + name : "";
+}
+function toggleAgree() {
+  var on = document.getElementById("agree").checked;
+  document.getElementById("agreeOut").textContent = on ? "已勾选" : "未勾选";
 }
 var clockTimer = null;
 var ticks = 0;

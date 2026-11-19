@@ -363,10 +363,13 @@ func (d *Desktop) runCommand(input string) bool {
 		d.openDownloader()
 		return true
 	case "firefox":
-		d.launchXFCEApp("firefox")
+		d.openX11Proxy("firefox")
 		return true
 	case "xfce4-terminal", "xfce-terminal", "xfce-term":
-		d.launchXFCEApp("xfce4-terminal")
+		d.openX11Proxy("xfce4-terminal")
+		return true
+	case "x11proxy", "x11", "x11-proxy":
+		d.openX11Proxy("")
 		return true
 	case "control", "display", "显示属性":
 		d.openDisplayProperties()

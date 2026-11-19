@@ -17,17 +17,18 @@ type DisplayApp struct {
 	d   *Desktop
 	win *Window
 
-	tab       int
-	bg        int
-	style     int
-	wait      int
-	origBg    int
-	origStyle int
-	origWait  int
-	committed bool
-	comboOpen int // 0 none, 1 saver, 2 wait
-	bgScroll  VScroll
-	press     string
+	tab         int
+	bg          int
+	style       int
+	wait        int
+	origBg      int
+	origStyle   int
+	origWait    int
+	origBgColor bool
+	committed   bool
+	comboOpen   int // 0 none, 1 saver, 2 wait
+	bgScroll    VScroll
+	press       string
 
 	okR, cancelR, applyR, previewR ui.Rect
 	bgListR                        ui.Rect
@@ -37,13 +38,14 @@ type DisplayApp struct {
 
 func (d *Desktop) openDisplayProperties() {
 	a := &DisplayApp{
-		d:         d,
-		bg:        d.background,
-		style:     d.saverStyle,
-		wait:      int(d.saverWait / time.Minute),
-		origBg:    d.background,
-		origStyle: d.saverStyle,
-		origWait:  int(d.saverWait / time.Minute),
+		d:           d,
+		bg:          d.background,
+		style:       d.saverStyle,
+		wait:        int(d.saverWait / time.Minute),
+		origBg:      d.background,
+		origStyle:   d.saverStyle,
+		origWait:    int(d.saverWait / time.Minute),
+		origBgColor: d.bgColorSet,
 	}
 	a.win = d.OpenModal(a)
 }
@@ -396,6 +398,7 @@ func (a *DisplayApp) apply() {
 		a.wait = 1
 	}
 	a.d.background = a.bg
+	a.d.bgColorSet = false
 	a.d.saverStyle = a.style
 	a.d.saverWait = time.Duration(a.wait) * time.Minute
 	a.d.savePrefs()
@@ -404,6 +407,7 @@ func (a *DisplayApp) apply() {
 
 func (a *DisplayApp) restore() {
 	a.d.background = a.origBg
+	a.d.bgColorSet = a.origBgColor
 	a.d.saverStyle = a.origStyle
 	a.d.saverWait = time.Duration(a.origWait) * time.Minute
 	a.d.Invalidate()

@@ -1,0 +1,72 @@
+#!/bin/sh
+# Install the components used by the nested X11 proxy: Xvfb, one terminal,
+# Firefox and CJK fonts. Progress is published through win95-install-status so
+# the Win95 desktop can show it without switching virtual consoles.
+
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+
+TITLE="X11 嵌套代理组件"
+STATUS=/usr/bin/win95-install-status
+LOG=/var/log/win95-x11-setup.log
+
+[ "$(id -u)" = "0" ] || {
+	echo "win95-x11-setup: must run as root" >&2
+	exit 1
+}
+
+mkdir -p /var/log
+: >"$LOG" 2>/dev/null || true
+
+log() {
+	echo "$(date '+%F %T') $*" >>"$LOG" 2>/dev/null
+}
+
+status() {
+	[ -x "$STATUS" ] && "$STATUS" "$@" >/dev/null 2>&1
+}
+
+fail() {
+	log "FAILED: $1"
+	status fail "$1"
+	echo "win95-x11-setup: $1" >&2
+	exit 1
+}
+
+status begin "$TITLE" "正在更新软件包索引…"
+log "apk update"
+if ! apk update >>"$LOG" 2>&1; then
+	fail "软件包索引更新失败，请检查网络与 Alpine 软件源"
+fi
+
+status set 15 "正在安装 Xvfb 与 X11 运行库…"
+log "apk add xvfb dbus dbus-x11"
+if ! apk add --no-progress xvfb dbus dbus-x11 >>"$LOG" 2>&1; then
+	fail "Xvfb/X11 运行库安装失败，详情见 $LOG"
+fi
+
+status set 48 "正在安装 xfce4-terminal 与中文字体…"
+log "apk add xfce4-terminal font-wqy-zenhei"
+if ! apk add --no-progress xfce4-terminal font-wqy-zenhei >>"$LOG" 2>&1; then
+	fail "终端或字体安装失败，详情见 $LOG"
+fi
+
+status set 78 "正在安装 Firefox 与 Mesa 图形库…"
+log "apk add firefox mesa-dri-gallium mesa-gl"
+if ! apk add --no-progress firefox mesa-dri-gallium mesa-gl >>"$LOG" 2>&1; then
+	fail "Firefox 安装失败，详情见 $LOG"
+fi
+
+status set 92 "正在校验组件…"
+for bin in /usr/bin/Xvfb /usr/bin/xfce4-terminal /usr/bin/firefox; do
+	if [ ! -x "$bin" ]; then
+		fail "缺少组件：$bin"
+	fi
+done
+if ! ls /usr/share/fonts/*/wqy* /usr/share/fonts/wqy* >/dev/null 2>&1; then
+	log "warning: wqy font file not found by glob; fc-list will be used"
+fi
+
+log "installation complete"
+status done "X11 嵌套代理组件安装完成"
+exit 0

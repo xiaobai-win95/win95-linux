@@ -1,4 +1,4 @@
-/* Windows 95 Linux browser DOM compatibility layer (26.2).
+/* Windows 95 Linux browser DOM compatibility layer (26.3).
    Runs before page scripts; kept small on purpose. */
 (function () {
   function $(sel, root) { return (root || document).querySelector(sel); }
@@ -20,7 +20,7 @@
   window.ready = window.ready || ready;
   window.el = window.el || el;
   window.Win95 = {
-    version: "26.2",
+    version: "26.3",
     engine: "goja",
     isBrowser: true
   };

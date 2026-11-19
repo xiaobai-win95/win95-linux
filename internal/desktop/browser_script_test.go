@@ -81,8 +81,8 @@ document.getElementById("v").textContent =
 	if len(a.js.errors) > 0 {
 		t.Fatalf("script errors: %v", a.js.errors)
 	}
-	if got := textContentOf(findID(a.dom, "v")); got != "v26.2|26.2|7" {
-		t.Fatalf("window/global binding = %q, want v26.2|26.2|7", got)
+	if got := textContentOf(findID(a.dom, "v")); got != "v26.3|26.3|7" {
+		t.Fatalf("window/global binding = %q, want v26.3|26.3|7", got)
 	}
 }
 
@@ -98,7 +98,7 @@ func TestDemoPageRunsWithoutErrors(t *testing.T) {
 	if len(a.js.errors) > 0 {
 		t.Fatalf("demo page script errors: %v", a.js.errors)
 	}
-	if got := textContentOf(findID(a.dom, "ver")); !strings.Contains(got, "26.2") || !strings.Contains(got, "goja") {
+	if got := textContentOf(findID(a.dom, "ver")); !strings.Contains(got, "26.3") || !strings.Contains(got, "goja") {
 		t.Fatalf("demo version line = %q", got)
 	}
 }

@@ -250,3 +250,36 @@ func TestBackgroundStylesDrawWithoutPanic(t *testing.T) {
 		}
 	}
 }
+
+func TestWindowBlocksDesktopIconClick(t *testing.T) {
+	d := testDesktop(t)
+	if len(d.icons) == 0 {
+		t.Fatal("desktop has no icons")
+	}
+	ix, iy := d.iconPos(0)
+	cx, cy := ix+43, iy+38
+	w := d.Open(NewCalcApp())
+	w.X, w.Y, w.W, w.H = 0, 0, 320, 300
+	d.active = nil
+	d.selected = -1
+	d.lastIcon = -1
+	d.Mouse(MouseEvent{Kind: MouseDown, Button: 1, X: cx, Y: cy})
+	d.Mouse(MouseEvent{Kind: MouseUp, Button: 1, X: cx, Y: cy})
+	if d.selected >= 0 {
+		t.Fatalf("icon %d under a window was selected", d.selected)
+	}
+	if d.active != w {
+		t.Fatal("click on window did not activate it")
+	}
+}
+
+func TestUncoveredIconStillClickable(t *testing.T) {
+	d := testDesktop(t)
+	ix, iy := d.iconPos(0)
+	cx, cy := ix+43, iy+38
+	d.Mouse(MouseEvent{Kind: MouseDown, Button: 1, X: cx, Y: cy})
+	d.Mouse(MouseEvent{Kind: MouseUp, Button: 1, X: cx, Y: cy})
+	if d.selected != 0 {
+		t.Fatalf("selected = %d, want 0", d.selected)
+	}
+}

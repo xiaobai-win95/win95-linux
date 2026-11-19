@@ -3,15 +3,11 @@
 package desktop
 
 import (
-	"archive/tar"
-	"bufio"
-	"compress/gzip"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
-	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -19,18 +15,21 @@ import (
 	"time"
 
 	"win95linux/internal/gpt"
+	"win95linux/internal/ota"
+	"win95linux/internal/tarutil"
 )
 
 const (
-	payloadDir      = "/payload"
-	payloadRootfs   = payloadDir + "/rootfs.tar.gz"
-	installerLabel  = "WIN95INST"
-	targetESPLabel  = "WIN95ESP"
-	targetRootLabel = "WIN95ROOT"
-	minDiskBytes    = int64(1 << 30)
-	mib             = uint64(1 << 20)
-	espSizeBytes    = 256 * mib
-	alignSectors    = uint64(2048)
+	payloadDir       = "/payload"
+	payloadRootfs    = payloadDir + "/rootfs.tar.gz"
+	installerLabel   = "WIN95INST"
+	targetESPLabel   = "WIN95ESP"
+	targetSuperLabel = "WIN95SUPER"
+	superMountDir    = "/mnt/win95-super"
+	minDiskBytes     = int64(1 << 30)
+	mib              = uint64(1 << 20)
+	espSizeBytes     = 256 * mib
+	alignSectors     = uint64(2048)
 )
 
 func readSys(path string) string {
@@ -115,7 +114,7 @@ func installSystem(target diskInfo, progress func(installProgress)) (installResu
 	}
 
 	report(0, -1, "正在准备目标磁盘...")
-	for _, dir := range []string{"/mnt/win95-esp", "/mnt/win95-root"} {
+	for _, dir := range []string{"/mnt/win95-esp", superMountDir} {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			return result, fmt.Errorf("创建挂载点失败: %v", err)
 		}
@@ -155,15 +154,15 @@ func installSystem(target diskInfo, progress func(installProgress)) (installResu
 
 	espStart := alignSectors
 	espSectors := espSizeBytes / gpt.SectorSize
-	rootStart := alignUp(espStart+espSectors, alignSectors)
-	rootEnd := totalSectors - 34
-	if rootEnd <= rootStart || (rootEnd-rootStart+1)*gpt.SectorSize < 384*mib {
+	superStart := alignUp(espStart+espSectors, alignSectors)
+	superEnd := totalSectors - 34
+	if superEnd <= superStart || (superEnd-superStart+1)*gpt.SectorSize < 384*mib {
 		return result, errors.New("目标磁盘空间不足以容纳系统")
 	}
 	report(1, -1, "正在写入 GPT 分区表...")
 	table, err := gpt.Write(target.path, totalSectors, []gpt.NewPartition{
 		{Name: targetESPLabel, TypeGUID: gpt.TypeESP, FirstLBA: espStart, LastLBA: espStart + espSectors - 1},
-		{Name: targetRootLabel, TypeGUID: gpt.TypeLinuxData, FirstLBA: rootStart, LastLBA: rootEnd},
+		{Name: targetSuperLabel, TypeGUID: gpt.TypeLinuxData, FirstLBA: superStart, LastLBA: superEnd},
 	})
 	if err != nil {
 		return result, fmt.Errorf("写入分区表失败: %v", err)
@@ -173,7 +172,7 @@ func installSystem(target diskInfo, progress func(installProgress)) (installResu
 	if err != nil {
 		return result, err
 	}
-	rootDev, err := waitPartition(target.path, 2)
+	superDev, err := waitPartition(target.path, 2)
 	if err != nil {
 		return result, err
 	}
@@ -182,8 +181,8 @@ func installSystem(target diskInfo, progress func(installProgress)) (installResu
 	if err := runTool("/sbin/mkfs.fat", "-F", "32", "-n", targetESPLabel, espDev); err != nil {
 		return result, err
 	}
-	report(3, -1, "正在格式化 Linux 系统分区（ext4）...")
-	if err := runTool("/sbin/mke2fs", "-t", "ext4", "-F", "-L", targetRootLabel, "-m", "0", rootDev); err != nil {
+	report(3, -1, "正在格式化共享超级分区（ext4 / A/B 双槽）...")
+	if err := runTool("/sbin/mke2fs", "-t", "ext4", "-F", "-L", targetSuperLabel, "-m", "0", superDev); err != nil {
 		return result, err
 	}
 	syscall.Sync()
@@ -198,15 +197,25 @@ func installSystem(target diskInfo, progress func(installProgress)) (installResu
 	unmounted := false
 	defer func() {
 		if !unmounted {
-			_ = syscall.Unmount("/mnt/win95-root", syscall.MNT_DETACH)
+			_ = syscall.Unmount(superMountDir, syscall.MNT_DETACH)
 			_ = syscall.Unmount("/mnt/win95-esp", syscall.MNT_DETACH)
 		}
 	}()
-	if err := syscall.Mount(rootDev, "/mnt/win95-root", "ext4", 0, ""); err != nil {
-		return result, fmt.Errorf("挂载系统分区失败: %v", err)
+	if err := syscall.Mount(superDev, superMountDir, "ext4", 0, ""); err != nil {
+		return result, fmt.Errorf("挂载超级分区失败: %v", err)
+	}
+	for _, dir := range []string{
+		filepath.Join(superMountDir, ota.SlotsDir, ota.SlotA),
+		filepath.Join(superMountDir, ota.OtaDir),
+		filepath.Join(superMountDir, ota.CacheDir),
+	} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return result, fmt.Errorf("创建超级分区目录失败: %v", err)
+		}
 	}
 
-	if err := extractRootfs(payloadRootfs, "/mnt/win95-root", func(pct int, msg string) {
+	slotA := filepath.Join(superMountDir, ota.SlotsDir, ota.SlotA)
+	if err := tarutil.ExtractTarGz(payloadRootfs, slotA, func(pct int, msg string) {
 		report(4, pct, msg)
 	}); err != nil {
 		return result, err
@@ -229,12 +238,12 @@ func installSystem(target diskInfo, progress func(installProgress)) (installResu
 		return result, fmt.Errorf("复制引导程序失败: %v", err)
 	}
 
-	rootUUID := strings.ToLower(table.Partitions[1].UniqueGUID)
-	result.rootUUID = rootUUID
+	superUUID := strings.ToLower(table.Partitions[1].UniqueGUID)
+	result.rootUUID = superUUID
 	entry := "title Windows 95 Linux 中文版\n" +
 		"linux /Image\n" +
 		"initrd /initrd\n" +
-		"options win95.root=PARTUUID=" + rootUUID + " rootwait quiet loglevel=3 console=tty0 consoleblank=0 net.ifnames=0\n"
+		"options win95.super=PARTUUID=" + superUUID + " rootwait quiet loglevel=3 console=tty0 consoleblank=0 net.ifnames=0\n"
 	if err := os.WriteFile("/mnt/win95-esp/loader/entries/win95.conf", []byte(entry), 0o644); err != nil {
 		return result, err
 	}
@@ -243,23 +252,31 @@ func installSystem(target diskInfo, progress func(installProgress)) (installResu
 		return result, err
 	}
 
-	fstab := fmt.Sprintf("PARTUUID=%s / ext4 rw,relatime 0 1\n"+
+	fstab := fmt.Sprintf("PARTUUID=%s /mnt/win95-super ext4 rw,relatime,nofail 0 0\n"+
 		"proc /proc proc defaults 0 0\n"+
 		"sysfs /sys sysfs defaults 0 0\n"+
 		"devtmpfs /dev devtmpfs mode=0755,nosuid 0 0\n"+
 		"devpts /dev/pts devpts gid=5,mode=0620 0 0\n"+
 		"tmpfs /tmp tmpfs mode=1777,nosuid,nodev 0 0\n"+
-		"tmpfs /run tmpfs mode=0755,nosuid,nodev 0 0\n", rootUUID)
-	if err := os.MkdirAll("/mnt/win95-root/etc", 0o755); err != nil {
+		"tmpfs /run tmpfs mode=0755,nosuid,nodev 0 0\n", superUUID)
+	if err := os.MkdirAll(filepath.Join(slotA, "etc"), 0o755); err != nil {
 		return result, err
 	}
-	if err := os.WriteFile("/mnt/win95-root/etc/fstab", []byte(fstab), 0o644); err != nil {
+	if err := os.MkdirAll(filepath.Join(slotA, "mnt", "win95-super"), 0o755); err != nil {
 		return result, err
+	}
+	if err := os.WriteFile(filepath.Join(slotA, "etc", "fstab"), []byte(fstab), 0o644); err != nil {
+		return result, err
+	}
+
+	version := ota.ReadVersionFile(filepath.Join(slotA, "etc", "win95-version")).Version
+	if err := ota.WriteState(superMountDir, ota.NewState(superUUID, version)); err != nil {
+		return result, fmt.Errorf("写入 OTA 状态失败: %v", err)
 	}
 
 	report(6, 95, "正在同步磁盘数据...")
 	syscall.Sync()
-	_ = syscall.Unmount("/mnt/win95-root", syscall.MNT_DETACH)
+	_ = syscall.Unmount(superMountDir, syscall.MNT_DETACH)
 	_ = syscall.Unmount("/mnt/win95-esp", syscall.MNT_DETACH)
 	unmounted = true
 	syscall.Sync()
@@ -342,145 +359,4 @@ func copyFile(src, dst string) error {
 		return err
 	}
 	return out.Close()
-}
-
-type countingReader struct {
-	r     io.Reader
-	n     int64
-	total int64
-	last  time.Time
-	cb    func(int)
-}
-
-func (c *countingReader) Read(p []byte) (int, error) {
-	n, err := c.r.Read(p)
-	c.n += int64(n)
-	if c.total > 0 {
-		if time.Since(c.last) > 120*time.Millisecond {
-			c.last = time.Now()
-			pct := int(c.n * 100 / c.total)
-			if pct > 99 {
-				pct = 99
-			}
-			if c.cb != nil {
-				c.cb(pct)
-			}
-		}
-	}
-	return n, err
-}
-
-func safeJoin(dest, name string) (string, error) {
-	name = strings.TrimPrefix(name, "./")
-	clean := path.Clean(name)
-	if clean == "." || strings.HasPrefix(clean, "../") || strings.HasPrefix(clean, "/") {
-		return "", fmt.Errorf("不安全的归档路径: %s", name)
-	}
-	target := filepath.Join(dest, filepath.FromSlash(clean))
-	rel, err := filepath.Rel(dest, target)
-	if err != nil || strings.HasPrefix(rel, "..") {
-		return "", fmt.Errorf("不安全的归档路径: %s", name)
-	}
-	return target, nil
-}
-
-func extractRootfs(archive, dest string, progress func(int, string)) error {
-	f, err := os.Open(archive)
-	if err != nil {
-		return fmt.Errorf("打开系统归档失败: %v", err)
-	}
-	defer f.Close()
-	st, err := f.Stat()
-	if err != nil {
-		return err
-	}
-	cr := &countingReader{r: f, total: st.Size(), last: time.Now(), cb: func(pct int) {
-		if progress != nil {
-			progress(pct, "")
-		}
-	}}
-	gz, err := gzip.NewReader(bufio.NewReaderSize(cr, 1<<20))
-	if err != nil {
-		return fmt.Errorf("解压系统归档失败: %v", err)
-	}
-	defer gz.Close()
-	tr := tar.NewReader(gz)
-	lastMsg := time.Now()
-	files := 0
-	for {
-		hdr, err := tr.Next()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return fmt.Errorf("读取系统归档失败: %v", err)
-		}
-		if path.Clean(strings.TrimPrefix(hdr.Name, "./")) == "." {
-			continue
-		}
-		target, err := safeJoin(dest, hdr.Name)
-		if err != nil {
-			return err
-		}
-		mode := os.FileMode(hdr.Mode) & 0o777
-		switch hdr.Typeflag {
-		case tar.TypeDir:
-			if err := os.MkdirAll(target, 0o755); err != nil {
-				return err
-			}
-			_ = os.Chmod(target, mode)
-			_ = os.Lchown(target, 0, 0)
-		case tar.TypeReg, tar.TypeRegA:
-			if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
-				return err
-			}
-			_ = os.Remove(target)
-			out, err := os.OpenFile(target, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
-			if err != nil {
-				return err
-			}
-			if _, err := io.Copy(out, tr); err != nil {
-				out.Close()
-				return fmt.Errorf("写入 %s 失败: %v", hdr.Name, err)
-			}
-			out.Close()
-			_ = os.Chmod(target, mode)
-			_ = os.Lchown(target, 0, 0)
-			if !hdr.ModTime.IsZero() {
-				_ = os.Chtimes(target, hdr.ModTime, hdr.ModTime)
-			}
-		case tar.TypeSymlink:
-			if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
-				return err
-			}
-			_ = os.Remove(target)
-			if err := os.Symlink(hdr.Linkname, target); err != nil {
-				return fmt.Errorf("创建符号链接 %s 失败: %v", hdr.Name, err)
-			}
-			_ = os.Lchown(target, 0, 0)
-		case tar.TypeLink:
-			linkTarget, err := safeJoin(dest, hdr.Linkname)
-			if err != nil {
-				continue
-			}
-			_ = os.Remove(target)
-			if err := os.Link(linkTarget, target); err != nil {
-				return fmt.Errorf("创建硬链接 %s 失败: %v", hdr.Name, err)
-			}
-		case tar.TypeFifo:
-			_ = os.MkdirAll(filepath.Dir(target), 0o755)
-			_ = syscall.Mkfifo(target, uint32(mode))
-		default:
-			continue
-		}
-		files++
-		if time.Since(lastMsg) > 2*time.Second && progress != nil {
-			lastMsg = time.Now()
-			progress(-1, fmt.Sprintf("已解压 %d 个文件", files))
-		}
-	}
-	if progress != nil {
-		progress(100, fmt.Sprintf("已解压 %d 个文件", files))
-	}
-	return nil
 }

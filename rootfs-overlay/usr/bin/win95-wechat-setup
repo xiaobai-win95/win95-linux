@@ -1,0 +1,458 @@
+#!/bin/sh
+# First-run installer for WeChat Linux (official ARM64 deb) inside the Arch
+# Linux ARM glibc chroot. Downloads come from Tencent and the TUNA mirror.
+# Console output stays ASCII; user-facing progress uses Win95 balloons.
+
+ARCH_ROOT=/opt/archlinux
+CACHE=/var/cache/win95
+DEB="$CACHE/WeChatLinux_arm64.deb"
+# The deb must be visible inside the chroot; /var/cache/win95 is not bind
+# mounted, so the installer copies it to the chroot's /tmp first.
+CHROOT_DEB=/tmp/win95-wechat.deb
+MARKER="$ARCH_ROOT/opt/wechat/.win95-ok"
+URL="https://dldir1v6.qq.com/weixin/Universal/Linux/WeChatLinux_arm64.deb"
+URL2="https://dldir1.qq.com/weixin/Universal/Linux/WeChatLinux_arm64.deb"
+LOG=/var/log/win95-wechat-setup.log
+NOTIFY=/usr/bin/win95-notify
+STATUS=/usr/bin/win95-install-status
+TITLE=${WIN95_INSTALL_TITLE:-微信安装}
+DEB_TOTAL=211858460
+
+log() {
+	echo "$(date '+%F %T') $*" | tee -a "$LOG"
+}
+
+notify() {
+	[ -x "$NOTIFY" ] || return 0
+	"$NOTIFY" "$1" "$2" >/dev/null 2>&1
+}
+
+status() {
+	[ -x "$STATUS" ] || return 0
+	"$STATUS" "$@" >/dev/null 2>&1
+}
+
+# A v26.2 install only dropped /opt/wechat and never ran ldconfig, and the
+# manual extraction users tried left libandromeda.so unreachable. The marker
+# is written only after the library search path and ldd checks pass, so an old
+# or half-broken tree is reinstalled instead of being reported as ready.
+wechat_healthy() {
+	[ -x "$ARCH_ROOT/opt/wechat/wechat" ] || return 1
+	[ -f "$MARKER" ] || return 1
+	find "$ARCH_ROOT/opt/wechat" -name 'libandromeda.so*' 2>/dev/null | grep -q . || return 1
+	return 0
+}
+
+deb_size() {
+	wc -c <"$DEB" 2>/dev/null || echo 0
+}
+
+# monitor_download START END FILE publishes one progress sample for a
+# background download; the caller loops until the transfer writes its status.
+monitor_download() {
+	start=$1
+	end=$2
+	file=$3
+	size=$(wc -c <"$file" 2>/dev/null || echo 0)
+	span=$((end - start))
+	pct=$((start + size * span / DEB_TOTAL))
+	[ "$pct" -gt "$end" ] && pct=$end
+	mb=$((size / 1048576))
+	tmb=$((DEB_TOTAL / 1048576))
+	status set "$pct" "正在下载微信安装包（$mb / $tmb MB）"
+}
+
+# fetch URL keeps a partial file so a rerun resumes. Error output is logged
+# because the GUI runs this script detached. curl is preferred: BusyBox wget
+# cannot validate TLS and its requests are rejected by some servers.
+fetch() {
+	url=$1
+	log "download attempt: $url size=$(deb_size)"
+	exitfile="$CACHE/win95-wechat-fetch.exit"
+	rm -f "$exitfile"
+	if command -v curl >/dev/null 2>&1; then
+		(curl -fL -C - --connect-timeout 20 --speed-time 90 --speed-limit 512 \
+			-o "$DEB" -w 'curl http=%{http_code} bytes=%{size_download}\n' \
+			"$url" 2>>"$LOG" >>"$LOG"; echo $? >"$exitfile") &
+		pid=$!
+	elif command -v wget >/dev/null 2>&1; then
+		(wget -c -T 60 -O "$DEB" "$url" 2>>"$LOG"; echo $? >"$exitfile") &
+		pid=$!
+	else
+		log "ERROR: neither wget nor curl is available"
+		return 1
+	fi
+	while [ ! -f "$exitfile" ]; do
+		monitor_download 5 45 "$DEB"
+		sleep 2
+	done
+	st=$(cat "$exitfile" 2>/dev/null || echo 1)
+	rm -f "$exitfile"
+	wait "$pid" 2>/dev/null || true
+	log "attempt result: status=$st size=$(deb_size)"
+	return "$st"
+}
+
+# run_pacman_progress START END LABEL ARGS... runs pacman in the chroot and
+# turns its "(n/m) installing" lines (or percent bars) into window progress.
+run_pacman_progress() {
+	start=$1
+	end=$2
+	label=$3
+	shift 3
+	pp="$CACHE/pacman-wechat.log"
+	pexit="$CACHE/pacman-wechat.exit"
+	: >"$pp"
+	rm -f "$pexit"
+	(chroot "$ARCH_ROOT" /usr/bin/pacman "$@" >>"$pp" 2>&1; echo $? >"$pexit") &
+	pid=$!
+	while [ ! -f "$pexit" ]; do
+		count=$(tr '\r' '\n' <"$pp" 2>/dev/null | grep -oE '\( *[0-9]+/[0-9]+\)' | tail -n 1)
+		pct=""
+		detail=""
+		if [ -n "$count" ]; then
+			done_n=${count#*(}
+			done_n=${done_n%%/*}
+			done_n=$(echo "$done_n" | tr -d ' ')
+			done_m=${count##*/}
+			done_m=${done_m%)*}
+			detail="$done_n/$done_m"
+			if [ "$done_m" -gt 0 ] 2>/dev/null; then
+				pct=$((start + done_n * (end - start) / done_m))
+			fi
+		else
+			frac=$(tr '\r' '\n' <"$pp" 2>/dev/null | grep -oE '[0-9]{1,3}%' | tail -n 1)
+			if [ -n "$frac" ]; then
+				pct=$((start + ${frac%\%} * (end - start) / 100))
+				detail="$frac"
+			fi
+		fi
+		if [ -n "$pct" ] && [ -n "$detail" ]; then
+			status set "$pct" "$label（$detail）"
+		fi
+		sleep 2
+	done
+	st=$(cat "$pexit" 2>/dev/null || echo 1)
+	rm -f "$pexit"
+	wait "$pid" 2>/dev/null || true
+	cat "$pp" >>"$LOG" 2>/dev/null || true
+	return "$st"
+}
+
+if [ "$(id -u)" != "0" ]; then
+	echo "win95-wechat-setup: must run as root" >&2
+	exit 1
+fi
+
+if wechat_healthy; then
+	echo "WeChat is already installed."
+	exit 0
+fi
+
+if [ -x "$ARCH_ROOT/opt/wechat/wechat" ] || [ -f "$MARKER" ]; then
+	log "existing WeChat tree is incomplete; reinstalling"
+fi
+
+mkdir -p "$CACHE"
+
+avail=$(df -Pk /opt | awk 'NR==2 {print $4}')
+if [ -n "$avail" ] && [ "$avail" -lt 5000000 ]; then
+	echo "Not enough free space: ${avail} KiB available, about 5000000 KiB needed." >&2
+	notify "微信" "磁盘空间不足：首次安装约需 5GB。"
+	status fail "磁盘空间不足：首次安装约需 5GB。"
+	exit 1
+fi
+
+status begin "$TITLE" "正在准备微信安装…"
+
+# 1. Display stack: Xvfb for the nested X11 proxy + Mesa software GL.
+if [ ! -x /usr/bin/Xvfb ]; then
+	echo "Installing Xvfb/Mesa components with apk ..."
+	log "installing Alpine Xvfb packages"
+	status set 3 "正在安装 Xvfb 与 Mesa 图形组件…"
+	notify "微信" "正在安装 Xvfb 与 Mesa 图形组件，请稍候。"
+	if ! apk update >>"$LOG" 2>&1 || ! apk add --no-cache \
+		xvfb dbus dbus-x11 font-wqy-zenhei xclip \
+		mesa mesa-egl mesa-gles mesa-gl mesa-dri-gallium >>"$LOG" 2>&1; then
+		echo "apk install failed; see $LOG" >&2
+		notify "微信" "Xvfb 组件安装失败，请查看 $LOG。"
+		status fail "Xvfb 组件安装失败，详见 $LOG。"
+		exit 1
+	fi
+fi
+status set 10 "图形组件已就绪"
+
+# 2. glibc world.
+if [ ! -x "$ARCH_ROOT/usr/bin/pacman" ]; then
+	echo "Installing Arch Linux ARM (glibc) ..."
+	notify "微信" "正在安装 Arch Linux ARM（glibc），约 800MB，请保持网络连接。"
+	if ! WIN95_INSTALL_TITLE="$TITLE" /usr/bin/win95-arch-bootstrap >>"$LOG" 2>&1; then
+		echo "Arch bootstrap failed; see $LOG" >&2
+		notify "微信" "Arch Linux 安装失败，请查看 $LOG。"
+		status fail "Arch Linux 安装失败，详见 $LOG。"
+		exit 1
+	fi
+fi
+/usr/bin/win95-arch-mounts || exit 1
+log "free space on /opt: $(df -Pk /opt | awk 'NR==2 {print $4}') KiB"
+
+# 3. Official WeChat ARM64 package. Resume is supported, including when a
+# previous run left a partial file.
+status begin "$TITLE" "正在准备下载微信安装包…"
+size=$(deb_size)
+# A complete deb starts with the "!<arch>" ar magic. A file that is large but
+# lacks it is a stale partial transfer and must be downloaded again.
+if [ "$size" -ge 200000000 ]; then
+	magic=$(head -c 8 "$DEB" 2>/dev/null)
+	if [ "$magic" != '!<arch>' ]; then
+		log "cached deb has no ar magic; removing $size-byte file"
+		rm -f "$DEB"
+		size=0
+	fi
+fi
+if [ "$size" -lt 200000000 ]; then
+	echo "Downloading WeChat for ARM64 (about 200 MiB) ..."
+	status set 5 "正在下载微信 ARM64 安装包…"
+	notify "微信" "正在下载微信 ARM64 官方安装包（约 200MB），保持网络连接。"
+	if ! command -v curl >/dev/null 2>&1 && command -v apk >/dev/null 2>&1; then
+		log "installing curl with apk"
+		if command -v timeout >/dev/null 2>&1; then
+			timeout 90 apk add --no-cache curl >>"$LOG" 2>&1 || true
+		else
+			apk add --no-cache curl >>"$LOG" 2>&1 || true
+		fi
+	fi
+	if ! fetch "$URL"; then
+		echo "Primary host failed; trying the alternate download host." >&2
+		log "primary host failed; trying $URL2"
+		if ! fetch "$URL2"; then
+			echo "Download failed; rerun to resume. See $LOG" >&2
+			notify "微信" "微信安装包下载失败，详细原因已写入 $LOG，重试可断点续传。"
+			status fail "微信安装包下载失败，详见 $LOG；重试可断点续传。"
+			exit 1
+		fi
+	fi
+fi
+
+size=$(deb_size)
+if [ "$size" -lt 200000000 ]; then
+	echo "WeChat package is incomplete ($size bytes); rerun to resume." >&2
+	notify "微信" "安装包不完整（$size 字节），请重试以断点续传。"
+	status fail "安装包不完整（$size 字节），请重试以断点续传。"
+	exit 1
+fi
+status set 46 "微信安装包已下载完成"
+
+# 4. Runtime libraries from the TUNA mirror.
+# A previously interrupted bootstrap can leave pacman without its local
+# database or without a CA bundle; repair those before touching pacman.
+if [ -x /usr/bin/win95-arch-repair ] && ! /usr/bin/win95-arch-repair --check 2>/dev/null; then
+	log "pacman database/certificate check failed; running repair"
+	status begin "$TITLE" "正在修复 Arch 证书与 pacman 数据库…"
+	if ! WIN95_INSTALL_TITLE="$TITLE" /usr/bin/win95-arch-repair >>"$LOG" 2>&1; then
+		log "repair failed; reinstalling the Arch base rootfs"
+		status begin "$TITLE" "修复失败，正在重装 Arch 基础系统…"
+		if ! WIN95_INSTALL_TITLE="$TITLE" /usr/bin/win95-arch-bootstrap >>"$LOG" 2>&1; then
+			echo "Arch repair and reinstall both failed; see $LOG" >&2
+			notify "微信" "Arch 子系统损坏且无法自动修复，请查看 $LOG。"
+			status fail "Arch 子系统损坏且无法自动修复，详见 $LOG。"
+			exit 1
+		fi
+	fi
+fi
+
+# The repair tool restores the packaged local database when the base tarball
+# is cached. Without it the database is empty, and installing packages would
+# fight over files that already exist; re-extract the base rootfs instead.
+if [ -f /run/win95-arch-db-empty ]; then
+	log "pacman local database is empty; reinstalling the Arch base rootfs"
+	status begin "$TITLE" "pacman 数据库缺失，正在重装 Arch 基础系统…"
+	if ! WIN95_INSTALL_TITLE="$TITLE" /usr/bin/win95-arch-bootstrap >>"$LOG" 2>&1; then
+		echo "Arch base reinstall failed; see $LOG" >&2
+		notify "微信" "Arch 基础系统重装失败，请查看 $LOG。"
+		status fail "Arch 基础系统重装失败，详见 $LOG。"
+		exit 1
+	fi
+fi
+
+echo "Installing WeChat runtime libraries with pacman ..."
+status begin "$TITLE" "正在用 pacman 安装微信运行库（清华镜像）…"
+notify "微信" "正在用 pacman 安装微信运行库（清华镜像）。"
+run_pacman_progress 48 54 "正在同步软件源" -Sy --noconfirm || true
+
+# WeChat is a Qt/Chromium hybrid. Besides the usual GTK stack it needs the
+# xcb-util family (cursor/icccm/image/keysyms/render-util), libxkbcommon-x11
+# and the Qt5 modules the official deb links against; without them Qt aborts
+# before main() with a plugin error. patchelf, libarchive and xz are needed
+# later in this script, so they are part of the core set.
+PKGS_CORE="gtk3 glib2 dbus fontconfig freetype2 ttf-dejavu noto-fonts-cjk
+alsa-lib libpulse zlib libsecret libcups nss nspr
+libx11 libxcb libxext libxrender libxi libxfixes libxcursor
+libxrandr libxinerama libxcomposite libxdamage libsm libice
+libxtst libxss libxkbcommon libxkbcommon-x11 libglvnd mesa libdrm
+at-spi2-core pango cairo gdk-pixbuf2 harfbuzz libnotify libepoxy
+libpng libjpeg-turbo libwebp libtiff expat libffi pcre2
+xcb-util-cursor xcb-util-image xcb-util-keysyms xcb-util-renderutil xcb-util-wm
+qt5-base qt5-svg qt5-x11extras qt5-declarative
+libarchive xz zstd patchelf xorg-xauth xorg-xhost xorg-xrandr xorg-xrdb
+xdg-utils"
+
+# shellcheck disable=SC2086
+if ! run_pacman_progress 54 86 "正在安装微信运行库" -S --noconfirm --needed $PKGS_CORE; then
+	echo "pacman dependency install failed; repairing and retrying once." >&2
+	log "first pacman install failed; repairing then retrying with --overwrite"
+	status begin "$TITLE" "运行库安装失败，正在修复后重试…"
+	WIN95_INSTALL_TITLE="$TITLE" /usr/bin/win95-arch-repair >>"$LOG" 2>&1 || true
+	# shellcheck disable=SC2086
+	if ! run_pacman_progress 54 86 "正在重试安装微信运行库" -S --noconfirm --needed --overwrite '*' $PKGS_CORE; then
+		echo "pacman dependency install failed; see $LOG" >&2
+		notify "微信" "运行库安装失败，请查看 $LOG。"
+		status fail "运行库安装失败，详见 $LOG。"
+		exit 1
+	fi
+fi
+
+# Sound and tray helpers are optional: a missing package must not abort the
+# whole install, WeChat runs without them.
+PKGS_OPT="pipewire wireplumber gst-plugins-base gst-plugins-good libappindicator-gtk3 libcanberra"
+# shellcheck disable=SC2086
+if ! run_pacman_progress 86 89 "正在安装可选音频组件" -S --noconfirm --needed $PKGS_OPT; then
+	log "optional audio/tray packages failed to install; continuing"
+fi
+status set 90 "运行库安装完成，正在解压微信…"
+
+if [ ! -x "$ARCH_ROOT/usr/bin/bsdtar" ] || [ ! -x "$ARCH_ROOT/usr/bin/patchelf" ]; then
+	echo "bsdtar or patchelf is missing after pacman; see $LOG" >&2
+	notify "微信" "缺少 bsdtar 或 patchelf，请查看 $LOG。"
+	status fail "缺少 bsdtar 或 patchelf，详见 $LOG。"
+	exit 1
+fi
+
+# 5. Unpack the deb exactly like dpkg -x would. The deb lives on the Alpine
+# side and is not visible inside the chroot, so copy it into the chroot's /tmp
+# and extract there. Removing /opt/wechat first guarantees that no stale
+# library from an older manual extraction hides a missing file.
+echo "Copying WeChat package into the Arch chroot ..."
+status set 91 "正在把安装包复制到 Arch 子系统…"
+mkdir -p "$ARCH_ROOT/tmp"
+rm -f "$ARCH_ROOT$CHROOT_DEB"
+if ! cp -f "$DEB" "$ARCH_ROOT$CHROOT_DEB"; then
+	echo "Copying the deb into the chroot failed; see $LOG" >&2
+	notify "微信" "安装包复制到 Arch 子系统失败，可能磁盘空间不足。"
+	status fail "安装包复制失败，可能磁盘空间不足。"
+	exit 1
+fi
+chmod 0644 "$ARCH_ROOT$CHROOT_DEB"
+
+echo "Extracting WeChat into the Arch chroot ..."
+notify "微信" "正在解压微信到 glibc 子系统。"
+if ! chroot "$ARCH_ROOT" /bin/sh -c '
+set -e
+deb=/tmp/win95-wechat.deb
+[ -x /usr/bin/bsdtar ] || { echo "bsdtar missing"; exit 2; }
+member=$(/usr/bin/bsdtar -tf "$deb" | grep -E "(^|/)data\.tar(\.(xz|gz|zst|bz2))?$" | head -n 1)
+[ -n "$member" ] || { echo "data.tar member not found in deb"; exit 3; }
+echo "extracting $member"
+rm -rf /opt/wechat
+/usr/bin/bsdtar -xOf "$deb" "$member" | /usr/bin/bsdtar -xf - -C /
+ln -snf /opt/wechat/wechat /usr/bin/wechat
+' wechat-extract >>"$LOG" 2>&1; then
+	rm -f "$ARCH_ROOT$CHROOT_DEB"
+	rm -rf "$ARCH_ROOT/opt/wechat"
+	echo "Extraction failed; see $LOG" >&2
+	notify "微信" "微信解压失败，请查看 $LOG。"
+	status fail "微信解压失败，详见 $LOG。"
+	exit 1
+fi
+rm -f "$ARCH_ROOT$CHROOT_DEB"
+
+if [ ! -x "$ARCH_ROOT/opt/wechat/wechat" ]; then
+	echo "WeChat binary is missing after extraction." >&2
+	notify "微信" "解压后未找到微信主程序，请查看 $LOG。"
+	status fail "解压后未找到微信主程序，详见 $LOG。"
+	exit 1
+fi
+
+# libandromeda.so is Tencent's core runtime. If the package layout keeps it in
+# a subdirectory, ldconfig alone is not enough for an executable whose RUNPATH
+# is only $ORIGIN, so also link every nested library next to the main binary.
+andro=$(find "$ARCH_ROOT/opt/wechat" -name 'libandromeda.so*' 2>/dev/null | head -n 1)
+if [ -z "$andro" ]; then
+	log "libandromeda.so is absent from the extracted tree:"
+	ls -la "$ARCH_ROOT/opt/wechat" >>"$LOG" 2>&1 || true
+	echo "libandromeda.so is missing from the package; see $LOG" >&2
+	notify "微信" "安装包内未找到 libandromeda.so，安装包可能不完整。"
+	status fail "安装包内未找到 libandromeda.so，详见 $LOG。"
+	exit 1
+fi
+log "found libandromeda: $andro"
+
+# 6. Dynamic-loader repair. patchelf --clear-execstack drops the executable
+# stack mark that newer kernels refuse, and the explicit RUNPATH plus ldconfig
+# make every bundled library resolvable from /opt/wechat (or its subfolders).
+status set 95 "正在修正动态库路径与可执行栈标记…"
+fixscript="$ARCH_ROOT/tmp/win95-wechat-fix.sh"
+cat >"$fixscript" <<'FIX'
+#!/bin/sh
+set -e
+cd /opt/wechat
+rpath='$ORIGIN:$ORIGIN/lib:$ORIGIN/lib64:/opt/wechat:/opt/wechat/lib:/opt/wechat/lib64'
+
+find . -mindepth 2 -type f -name '*.so*' | while IFS= read -r f; do
+	b=$(basename "$f")
+	[ -e "./$b" ] || ln -sfn "$f" "./$b" 2>/dev/null || true
+done
+
+find . -type f \( -name '*.so' -o -name '*.so.*' -o -perm -u+x \) | while IFS= read -r f; do
+	/usr/bin/patchelf --clear-execstack "$f" >/dev/null 2>&1 || true
+	/usr/bin/patchelf --set-rpath "$rpath" "$f" >/dev/null 2>&1 || true
+done
+
+mkdir -p /etc/ld.so.conf.d
+{
+	echo /opt/wechat
+	find /opt/wechat -type f -name '*.so*' -printf '%h\n' 2>/dev/null | sort -u | grep -v '^/opt/wechat$' || true
+} > /etc/ld.so.conf.d/wechat.conf
+if [ -x /usr/bin/ldconfig ]; then
+	/usr/bin/ldconfig
+else
+	ldconfig
+fi
+FIX
+chmod 0755 "$fixscript"
+if ! chroot "$ARCH_ROOT" /bin/sh /tmp/win95-wechat-fix.sh >>"$LOG" 2>&1; then
+	rm -f "$fixscript"
+	echo "Dynamic loader repair failed; see $LOG" >&2
+	notify "微信" "动态库路径修复失败，请查看 $LOG。"
+	status fail "动态库路径修复失败，详见 $LOG。"
+	exit 1
+fi
+rm -f "$fixscript"
+
+# 7. Verify that the loader can resolve every direct dependency, including
+# libandromeda itself. A non-empty "not found" list means the window would
+# never open, so fail now with the names instead of pretending success.
+status set 97 "正在检查微信运行库依赖…"
+ldd_out=$(chroot "$ARCH_ROOT" /bin/sh -c '
+for f in /opt/wechat/wechat $(find /opt/wechat -name "libandromeda.so*" -print); do
+	[ -f "$f" ] && ldd "$f" 2>&1
+done
+' 2>&1 || true)
+printf '%s\n' "$ldd_out" >>"$LOG"
+missing=$(printf '%s\n' "$ldd_out" | awk '/not found/ {print $1}' | sort -u | tr '\n' ' ')
+if [ -n "$missing" ]; then
+	echo "Missing shared libraries: $missing" >&2
+	notify "微信" "仍缺少运行库：$missing（详见 $LOG）。"
+	status fail "仍缺少运行库：$missing（详见 $LOG）。"
+	exit 1
+fi
+
+printf 'ok %s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" >"$MARKER"
+chmod 0644 "$MARKER"
+rm -f "$DEB"
+echo "WeChat installation complete."
+log "wechat installed; marker written"
+/usr/bin/win95-arch-umount >/dev/null 2>&1 || true
+status done "微信安装完成，正在启动微信。"
+notify "微信已安装" "正在 X11 嵌套代理中启动微信。首次登录请用手机扫码。"
+exit 0

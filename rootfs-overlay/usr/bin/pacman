@@ -1,0 +1,28 @@
+#!/bin/sh
+# Real pacman inside the Arch Linux ARM glibc chroot.
+# Downloads come from the Tsinghua (TUNA) mirror configured at bootstrap.
+
+ARCH_ROOT=/opt/archlinux
+
+if [ "$(id -u)" != "0" ]; then
+	echo "pacman: must run as root" >&2
+	exit 1
+fi
+
+if [ ! -x "$ARCH_ROOT/usr/bin/pacman" ]; then
+	echo "Arch Linux ARM is not installed yet; bootstrapping now."
+	/usr/bin/win95-arch-bootstrap || exit 1
+elif [ -x /usr/bin/win95-arch-repair ] && ! /usr/bin/win95-arch-repair --check 2>/dev/null; then
+	echo "Repairing the Arch Linux installation (pacman database / CA certificates / mount table) ..."
+	if ! WIN95_INSTALL_TITLE="Arch Linux 修复" /usr/bin/win95-arch-repair; then
+		echo "Repair failed; reinstalling the Arch base rootfs ..." >&2
+		/usr/bin/win95-arch-bootstrap || exit 1
+	fi
+	if [ -f /run/win95-arch-db-empty ]; then
+		echo "pacman database is empty; reinstalling the Arch base rootfs ..." >&2
+		/usr/bin/win95-arch-bootstrap || exit 1
+	fi
+fi
+
+/usr/bin/win95-arch-mounts || exit 1
+exec chroot "$ARCH_ROOT" /usr/bin/pacman "$@"

@@ -1,0 +1,299 @@
+#!/bin/sh
+# Bootstrap a real Arch Linux ARM (glibc) root filesystem under /opt/archlinux.
+# Package downloads come from the Tsinghua (TUNA) mirror.
+# All console text is ASCII on purpose: the text console has no CJK font.
+
+ARCH_ROOT=/opt/archlinux
+CACHE=/var/cache/win95
+TARBALL="$CACHE/ArchLinuxARM-aarch64-latest.tar.gz"
+URL="https://mirrors.tuna.tsinghua.edu.cn/archlinuxarm/os/ArchLinuxARM-aarch64-latest.tar.gz"
+MIRROR="https://mirrors.tuna.tsinghua.edu.cn/archlinuxarm"
+LOG=/var/log/win95-arch-bootstrap.log
+NOTIFY=/usr/bin/win95-notify
+STATUS=/usr/bin/win95-install-status
+# Size of the current ArchLinuxARM-aarch64-latest.tar.gz; only used to draw a
+# percentage while downloading. clamps at 99% if the mirror file changes.
+TOTAL_SIZE=829367415
+TITLE=${WIN95_INSTALL_TITLE:-Arch Linux 安装}
+
+log() {
+	echo "$(date '+%F %T') $*" | tee -a "$LOG"
+}
+
+notify() {
+	[ -x "$NOTIFY" ] || return 0
+	"$NOTIFY" "$1" "$2" >/dev/null 2>&1
+}
+
+status() {
+	[ -x "$STATUS" ] || return 0
+	"$STATUS" "$@" >/dev/null 2>&1
+}
+
+# ensure_curl installs Alpine's curl when possible. BusyBox wget speaks HTTPS
+# through its own minimal TLS stack, which several mirrors reject with 403 and
+# which never validates certificates; curl has a normal OpenSSL stack and also
+# reports the HTTP status in the log.
+ensure_curl() {
+	command -v curl >/dev/null 2>&1 && return 0
+	if command -v apk >/dev/null 2>&1; then
+		log "installing curl with apk"
+		if command -v timeout >/dev/null 2>&1; then
+			timeout 90 apk add --no-cache curl >>"$LOG" 2>&1
+		else
+			apk add --no-cache curl >>"$LOG" 2>&1
+		fi
+		if command -v curl >/dev/null 2>&1; then
+			log "curl installed"
+			return 0
+		fi
+	fi
+	log "curl unavailable; falling back to BusyBox wget"
+	return 1
+}
+
+# monitor_download START END LABEL FILE publishes one progress sample for a
+# download that is running in the background. The caller loops until the
+# transfer writes its exit status, which avoids relying on kill -0 for a child
+# that may already be a zombie.
+monitor_download() {
+	start=$1
+	end=$2
+	label=$3
+	file=$4
+	size=$(wc -c <"$file" 2>/dev/null || echo 0)
+	span=$((end - start))
+	pct=$((start + size * span / TOTAL_SIZE))
+	[ "$pct" -gt "$end" ] && pct=$end
+	mb=$((size / 1048576))
+	tmb=$((TOTAL_SIZE / 1048576))
+	status set "$pct" "$label（$mb / $tmb MB）"
+}
+
+# fetch LABEL URL MODE writes the archive to $TARBALL, resuming a partial
+# download. MODE "nocert" skips TLS verification (useful when the VM clock is
+# wrong); MODE "http" is only used for mirrors that still serve plain HTTP.
+# The transfer's own error output goes to the log, because the GUI launches
+# this script detached and otherwise loses the reason for a failure.
+fetch() {
+	label=$1
+	url=$2
+	mode=$3
+	log "download attempt: $label $url ($mode)"
+	status set 5 "$label：正在连接…"
+	exitfile="$CACHE/win95-fetch.exit"
+	rm -f "$exitfile"
+	if command -v curl >/dev/null 2>&1; then
+		if [ "$mode" = "nocert" ]; then
+			(curl -k -fL -C - --connect-timeout 20 --speed-time 90 --speed-limit 512 \
+				-o "$TARBALL" -w 'curl http=%{http_code} bytes=%{size_download}\n' \
+				"$url" 2>>"$LOG" >>"$LOG"; echo $? >"$exitfile") &
+		else
+			(curl -fL -C - --connect-timeout 20 --speed-time 90 --speed-limit 512 \
+				-o "$TARBALL" -w 'curl http=%{http_code} bytes=%{size_download}\n' \
+				"$url" 2>>"$LOG" >>"$LOG"; echo $? >"$exitfile") &
+		fi
+		pid=$!
+	elif command -v wget >/dev/null 2>&1; then
+		if [ "$mode" = "nocert" ]; then
+			(wget -c -T 60 --no-check-certificate -O "$TARBALL" "$url" 2>>"$LOG"; echo $? >"$exitfile") &
+		else
+			(wget -c -T 60 -O "$TARBALL" "$url" 2>>"$LOG"; echo $? >"$exitfile") &
+		fi
+		pid=$!
+	else
+		log "ERROR: neither wget nor curl is available"
+		return 1
+	fi
+	while [ ! -f "$exitfile" ]; do
+		monitor_download 5 55 "$label" "$TARBALL"
+		sleep 2
+	done
+	st=$(cat "$exitfile" 2>/dev/null || echo 1)
+	rm -f "$exitfile"
+	wait "$pid" 2>/dev/null || true
+	log "attempt result: $label status=$st size=$(wc -c <"$TARBALL" 2>/dev/null || echo 0)"
+	return "$st"
+}
+
+# try_sources walks the mirror list until one download succeeds. TUNA stays
+# first because pacman itself uses it; the others only bootstrap the base
+# system when TUNA's anti-abuse rules, regional blocking or a broken route
+# reject the VM.
+try_sources() {
+	for src in \
+		"TUNA HTTPS|https" \
+		"TUNA HTTPS (skip cert check)|nocert" \
+		"TUNA HTTP|http" \
+		"USTC HTTPS|https" \
+		"BFSU HTTPS|https" \
+		"FL US HTTPS|https" \
+		"Arch Linux ARM HTTP|http"; do
+		label=${src%%|*}
+		mode=${src##*|}
+		case "$label" in
+		TUNA*)
+			if [ "$mode" = "http" ]; then
+				url="http://mirrors.tuna.tsinghua.edu.cn/archlinuxarm/os/ArchLinuxARM-aarch64-latest.tar.gz"
+			else
+				url="$URL"
+			fi
+			;;
+		USTC*) url="https://mirrors.ustc.edu.cn/archlinuxarm/os/ArchLinuxARM-aarch64-latest.tar.gz" ;;
+		BFSU*) url="https://mirrors.bfsu.edu.cn/archlinuxarm/os/ArchLinuxARM-aarch64-latest.tar.gz" ;;
+		FL*) url="https://fl.us.mirror.archlinuxarm.org/os/ArchLinuxARM-aarch64-latest.tar.gz" ;;
+		Arch*) url="http://os.archlinuxarm.org/os/ArchLinuxARM-aarch64-latest.tar.gz" ;;
+		esac
+		if fetch "$label" "$url" "$mode"; then
+			return 0
+		fi
+	done
+	return 1
+}
+
+if [ "$(id -u)" != "0" ]; then
+	echo "win95-arch-bootstrap: must run as root" >&2
+	exit 1
+fi
+
+mkdir -p "$CACHE" "$ARCH_ROOT"
+
+if [ -x "$ARCH_ROOT/usr/bin/pacman" ] && [ -d "$ARCH_ROOT/etc" ]; then
+	if [ -x /usr/bin/win95-arch-repair ] && /usr/bin/win95-arch-repair --check 2>/dev/null; then
+		echo "Arch Linux ARM is already installed in $ARCH_ROOT."
+		exit 0
+	fi
+	if [ -x /usr/bin/win95-arch-repair ]; then
+		echo "Arch Linux ARM is incomplete; repairing the existing installation ..."
+		WIN95_INSTALL_TITLE="$TITLE" /usr/bin/win95-arch-repair || log "repair of the existing installation failed"
+		if /usr/bin/win95-arch-repair --check 2>/dev/null; then
+			echo "Arch Linux ARM repaired."
+			/usr/bin/win95-arch-umount >/dev/null 2>&1 || true
+			exit 0
+		fi
+	fi
+fi
+
+status begin "$TITLE" "正在准备 Arch Linux ARM…"
+
+# The tarball is about 800 MiB and unpacks to roughly 2 GiB.
+avail=$(df -Pk /opt | awk 'NR==2 {print $4}')
+if [ -n "$avail" ] && [ "$avail" -lt 3500000 ]; then
+	echo "Not enough free space: ${avail} KiB available, about 3500000 KiB needed." >&2
+	notify "Arch Linux" "磁盘空间不足：需要约 3.5GB 可用空间。"
+	exit 1
+fi
+
+NAME=$(basename "$TARBALL")
+
+if [ -s "$TARBALL" ] && gzip -t "$TARBALL" 2>/dev/null; then
+	echo "Using the cached archive in $CACHE."
+	log "using cached archive $(wc -c <"$TARBALL") bytes"
+else
+	# Offline/manual import: if the archive was downloaded on the host and
+	# copied into the VM, accept it from the usual user folders.
+	for src in "/root/下载/$NAME" "/root/桌面/$NAME" "/root/$NAME"; do
+		if [ -s "$src" ] && gzip -t "$src" 2>/dev/null; then
+			log "importing archive from $src"
+			mkdir -p "$CACHE"
+			if ! mv -f "$src" "$TARBALL" 2>/dev/null; then
+				cp -f "$src" "$TARBALL" 2>/dev/null || true
+			fi
+			break
+		fi
+	done
+fi
+
+if [ -s "$TARBALL" ] && gzip -t "$TARBALL" 2>/dev/null; then
+	echo "Using the cached archive in $CACHE."
+	log "using cached archive $(wc -c <"$TARBALL") bytes"
+else
+	ensure_curl
+	echo "Downloading Arch Linux ARM (about 800 MiB). Progress: $LOG"
+	status set 5 "正在从清华镜像下载 Arch Linux ARM…"
+	notify "Arch Linux" "正在从清华镜像下载 Arch Linux ARM（约 800MB），请保持网络连接。"
+	if ! try_sources; then
+		echo "Download failed from all mirrors; see $LOG" >&2
+		log "all download sources failed"
+		notify "Arch Linux" "下载失败（镜像返回 403 等错误），详情见 $LOG；也可把压缩包放进 /root/下载 后重试。"
+		status fail "下载失败：镜像拒绝连接，详见 $LOG；也可把压缩包放进 /root/下载 后重试。"
+		exit 1
+	fi
+fi
+
+# A truncated download would fail here, before we touch the target tree.
+if ! gzip -t "$TARBALL"; then
+	echo "Archive is corrupt; removing it so the next run downloads again." >&2
+	log "archive failed gzip -t; removing $TARBALL"
+	rm -f "$TARBALL"
+	notify "Arch Linux" "下载的压缩包不完整，已自动删除，请重试。"
+	exit 1
+fi
+
+echo "Extracting Arch Linux ARM into $ARCH_ROOT ..."
+log "extracting $TARBALL"
+status set 58 "正在解压 Arch Linux ARM（约 2GB，需要几分钟）…"
+mkdir -p "$ARCH_ROOT"
+if ! tar -xzf "$TARBALL" -C "$ARCH_ROOT"; then
+	echo "Extraction failed." >&2
+	notify "Arch Linux" "解压失败，请检查磁盘空间。"
+	status fail "解压失败，请检查磁盘空间。"
+	exit 1
+fi
+status set 72 "解压完成，正在初始化 pacman…"
+
+cat >"$ARCH_ROOT/etc/pacman.d/mirrorlist" <<EOF
+# Tsinghua University TUNA mirror for Arch Linux ARM
+Server = $MIRROR/\$arch/\$repo
+EOF
+
+# Keep the stock package list but make sure every repository reads the mirror.
+for repo in core extra alarm; do
+	if ! grep -q "^\[$repo\]" "$ARCH_ROOT/etc/pacman.conf"; then
+		printf '\n[%s]\nInclude = /etc/pacman.d/mirrorlist\n' "$repo" >>"$ARCH_ROOT/etc/pacman.conf"
+	fi
+done
+
+# Prefer the mirrorlist Include over any hard-coded upstream servers.
+sed -i 's|^Server *=.*|# Server line replaced by TUNA mirrorlist|' "$ARCH_ROOT/etc/pacman.conf"
+
+if [ -f /etc/resolv.conf ]; then
+	cp -f /etc/resolv.conf "$ARCH_ROOT/etc/resolv.conf" 2>/dev/null || true
+fi
+
+log "free space on /opt before pacman: $(df -Pk /opt | awk 'NR==2 {print $4}') KiB"
+if ! /usr/bin/win95-arch-mounts; then
+	log "warning: win95-arch-mounts failed; chroot may lack /dev or /proc"
+fi
+
+# Make the Chinese locale available to glibc programs inside the chroot.
+if [ -f "$ARCH_ROOT/etc/locale.gen" ]; then
+	sed -i 's/^#\s*\(zh_CN\.UTF-8 UTF-8\)/\1/' "$ARCH_ROOT/etc/locale.gen"
+	chroot "$ARCH_ROOT" /usr/bin/locale-gen >>"$LOG" 2>&1 || true
+fi
+
+if [ ! -x "$ARCH_ROOT/usr/bin/pacman" ]; then
+	echo "Bootstrap finished but pacman is missing." >&2
+	notify "Arch Linux" "安装后未找到 pacman，请查看 $LOG。"
+	status fail "安装后未找到 pacman，请查看日志。"
+	exit 1
+fi
+
+# win95-arch-repair creates the pacman database directories, restores the
+# local database if the extraction left it incomplete, repairs the CA bundle
+# and syncs TUNA, falling back to HTTP when TLS is unavailable.
+echo "Checking pacman database, certificates and TUNA mirror ..."
+status set 78 "正在校验证书与 pacman 数据库…"
+if ! WIN95_INSTALL_TITLE="$TITLE" /usr/bin/win95-arch-repair >>"$LOG" 2>&1; then
+	echo "pacman database sync failed; see $LOG" >&2
+	notify "Arch Linux" "pacman 同步失败，请查看 $LOG。"
+	status fail "pacman 同步失败，详见 $LOG。"
+	exit 1
+fi
+
+echo "Arch Linux ARM is ready. Run: pacman -Syu"
+log "bootstrap complete"
+/usr/bin/win95-arch-umount >/dev/null 2>&1 || true
+status done "Arch Linux ARM 已就绪，可在终端运行 pacman。"
+notify "Arch Linux 已就绪" "glibc 子系统已安装，可在终端运行 pacman；pacman 使用清华镜像。"
+exit 0

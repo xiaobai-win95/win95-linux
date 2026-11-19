@@ -21,9 +21,27 @@ func wanted(cp uint32) bool {
 	switch {
 	case cp >= 0x20 && cp <= 0x7e:
 		return true
-	case cp >= 0xa0 && cp <= 0xff:
+	case cp >= 0xa0 && cp <= 0x24f: // Latin-1 + extended A/B
+		return true
+	case cp >= 0x370 && cp <= 0x3ff: // Greek
+		return true
+	case cp >= 0x400 && cp <= 0x52f: // Cyrillic
+		return true
+	case cp >= 0x590 && cp <= 0x5ff: // Hebrew
+		return true
+	case cp >= 0x600 && cp <= 0x6ff: // Arabic
+		return true
+	case cp >= 0x900 && cp <= 0x97f: // Devanagari
+		return true
+	case cp >= 0xe00 && cp <= 0xe7f: // Thai
+		return true
+	case cp >= 0x1100 && cp <= 0x11ff: // Hangul Jamo
+		return true
+	case cp >= 0x1e00 && cp <= 0x1eff: // Latin extended additional
 		return true
 	case cp >= 0x2000 && cp <= 0x206f:
+		return true
+	case cp >= 0x20a0 && cp <= 0x20bf: // currency
 		return true
 	case cp >= 0x2190 && cp <= 0x21ff:
 		return true
@@ -33,7 +51,11 @@ func wanted(cp uint32) bool {
 		return true
 	case cp >= 0x3000 && cp <= 0x303f:
 		return true
+	case cp >= 0x3040 && cp <= 0x30ff: // Hiragana + Katakana
+		return true
 	case cp >= 0x4e00 && cp <= 0x9fff:
+		return true
+	case cp >= 0xac00 && cp <= 0xd7a3: // Hangul syllables
 		return true
 	case cp >= 0xff00 && cp <= 0xffef:
 		return true

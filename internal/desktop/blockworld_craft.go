@@ -95,10 +95,13 @@ func (a *BlockWorldApp) hasRoomFor(b bwBlock, n int) bool {
 func (a *BlockWorldApp) nearTable() bool {
 	cx := int((a.px + bwPW/2) / bwTile)
 	cy := int((a.py + bwPH/2) / bwTile)
+	cz := int((a.pz + bwPW/2) / bwTile)
 	for dy := -4; dy <= 4; dy++ {
-		for dx := -4; dx <= 4; dx++ {
-			if a.world.At(cx+dx, cy+dy) == bwCraftingTable {
-				return true
+		for dz := -4; dz <= 4; dz++ {
+			for dx := -4; dx <= 4; dx++ {
+				if a.world.At3(cx+dx, cy+dy, cz+dz) == bwCraftingTable {
+					return true
+				}
 			}
 		}
 	}
@@ -180,10 +183,17 @@ func (a *BlockWorldApp) toggleCraft(d *Desktop) {
 
 func (a *BlockWorldApp) toggle3D(d *Desktop) {
 	a.view3D = !a.view3D
+	a.mining = false
+	a.mineProg = 0
+	a.mouseLooking = false
 	if a.view3D {
-		a.setStatus("3D 立体视角已开启（按 V 切回平面）")
+		if a.pz <= 0 || a.pz >= float64(a.world.D*bwTile) {
+			a.pz = float64(bwMidZ*bwTile) + (bwTile-bwPW)/2
+		}
+		a.updateHover3()
+		a.setStatus("第一人称 3D 视角已开启（V 切回剖面）")
 	} else {
-		a.setStatus("已切回平面视角")
+		a.setStatus("已切回二维剖面视角")
 	}
 	if d != nil {
 		d.Invalidate()

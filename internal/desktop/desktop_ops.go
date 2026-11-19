@@ -66,6 +66,10 @@ func (d *Desktop) openDesktopPath(path string) {
 		d.openBrowser("file://" + path)
 	case ".png", ".bmp":
 		d.openImageViewer(path)
+	case ".sh":
+		d.runScript(path, "/bin/sh")
+	case ".bash":
+		d.runScript(path, "/bin/bash")
 	default:
 		d.MessageBox("桌面", "无法打开“"+filepath.Base(path)+"”。\n\n没有与此文件类型关联的程序。", IconInfo, []string{"确定"}, nil)
 	}
@@ -90,6 +94,18 @@ func (d *Desktop) rightClick(x, y int) {
 		d.bringToFront(w)
 		if w.TitleRect().Contains(x, y) {
 			d.openContext(d.windowMenuItems(w), x, y)
+			return
+		}
+		if cm, ok := w.App.(ClientRightClick); ok && w.ClientRect().Contains(x, y) {
+			if cm.RightClick(d, w, x, y) {
+				return
+			}
+		}
+		if cm, ok := w.App.(ClientContextMenu); ok && w.ClientRect().Contains(x, y) {
+			if items := cm.ContextMenu(d, w, x, y); len(items) > 0 {
+				d.openContext(items, x, y)
+				return
+			}
 		}
 		return
 	}
@@ -362,29 +378,6 @@ func (d *Desktop) renameIcon(idx int) {
 	})
 }
 
-func moveToTrash(path string) (string, error) {
-	trash := trashDir
-	if err := os.MkdirAll(trash, 0o755); err != nil {
-		return "", err
-	}
-	base := filepath.Base(path)
-	dest := filepath.Join(trash, base)
-	for i := 1; i < 10000; i++ {
-		if _, err := os.Lstat(dest); os.IsNotExist(err) {
-			break
-		}
-		if i == 1 {
-			dest = filepath.Join(trash, fmt.Sprintf("%s-%d", base, time.Now().Unix()))
-		} else {
-			dest = filepath.Join(trash, fmt.Sprintf("%s-%d-%d", base, time.Now().Unix(), i))
-		}
-	}
-	if err := os.Rename(path, dest); err != nil {
-		return "", err
-	}
-	return dest, nil
-}
-
 func (d *Desktop) deleteIcon(idx int) {
 	d.closeContext()
 	if idx < 0 || idx >= len(d.icons) {
@@ -426,13 +419,15 @@ func (d *Desktop) showIconProperties(idx int) {
 	case "sys:browser":
 		b.WriteString("类型：程序\n说明：打开网络浏览器。")
 	case "sys:xfce":
-		b.WriteString("类型：程序\n说明：切换到 XFCE 图形桌面。")
+		b.WriteString("类型：程序\n说明：关闭 Win95 桌面并启动完整的 Xorg/XFCE 会话；注销后自动返回。")
+	case "sys:x11proxy":
+		b.WriteString("类型：程序\n说明：在 Win95 窗口内显示 Xvfb :1 虚拟桌面。")
 	case "sys:xfce-term":
-		b.WriteString("类型：程序\n说明：在 tty2 启动 Xorg 和 XFCE 终端，关闭后自动返回 Win95。")
+		b.WriteString("类型：程序\n说明：在 X11 嵌套代理中启动 XFCE 终端。")
 	case "sys:firefox":
-		b.WriteString("类型：程序\n说明：在 tty2 启动 Xorg 和 Firefox，关闭后自动返回 Win95。")
+		b.WriteString("类型：程序\n说明：在 X11 嵌套代理中启动 Firefox。")
 	case "sys:recycle":
-		b.WriteString("类型：系统文件夹\n位置：/root/.trash")
+		b.WriteString("类型：系统文件夹\n位置：" + trashDir)
 	case "sys:setup":
 		b.WriteString("类型：程序\n说明：打开安装向导。")
 	case "sys:setuphelp":

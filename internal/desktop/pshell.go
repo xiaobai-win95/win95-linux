@@ -30,6 +30,15 @@ type PShellApp struct {
 	status string
 	closed bool
 
+	// Live pseudo-terminal output: complete lines go to a.lines while the
+	// unfinished tail stays in streamLine so progress bars that use CR redraw
+	// in place instead of flooding the console.
+	streamLine  string
+	streamState int // 0 normal, 1 ESC, 2 CSI, 3 OSC, 4 OSC-ESC
+	streamCR    bool
+	termCols    int
+	termRows    int
+
 	textR   ui.Rect
 	statusR ui.Rect
 	press   string
@@ -43,7 +52,7 @@ func NewPShellApp(d *Desktop) *PShellApp {
 		stick:   true,
 	}
 	a.lines = []psLine{
-		{text: "Windows PowerShell 26.2", col: psColPrompt, bold: true},
+		{text: "Windows PowerShell 26.3", col: psColPrompt, bold: true},
 		{text: "版权所有 (C) 2026 Windows 95 Linux 项目。保留所有权利。", col: psColDim},
 		{text: ""},
 		{text: "正在尝试新的跨平台 PowerShell：本控制台内置常用 cmdlet，", col: psColDim},
@@ -87,7 +96,7 @@ func (a *PShellApp) Menus(d *Desktop, w *Window) []Menu {
 			{Separator: true},
 			{Label: "关于 PowerShell(A)", Enabled: true, Action: func() {
 				d.MessageBox("关于 Windows PowerShell",
-					"Windows PowerShell 26.2\nWindows 95 Linux 中文版\n\n内置 cmdlet 子集与管道支持。\n未识别的命令通过 /bin/sh 执行。\n\nCtrl+Alt+K 可打开屏幕键盘。",
+					"Windows PowerShell 26.3\nWindows 95 Linux 中文版\n\n内置 cmdlet 子集与管道支持。\n未识别的命令在伪终端中执行：输出实时显示，可交互输入。\n外部命令默认不超时；$PSCommandTimeout = 秒数 可设置上限，0 表示不限制。\n\nCtrl+Alt+K 可打开屏幕键盘。",
 					IconInfo, []string{"确定"}, nil)
 			}},
 		}},
@@ -104,6 +113,7 @@ func (a *PShellApp) layout(client ui.Rect) {
 	if a.textR.H < 16 {
 		a.textR.H = 16
 	}
+	a.sess.setTermSize(a.textR.W/8, a.textR.H/16)
 }
 
 type psSeg struct {
@@ -160,6 +170,12 @@ func (a *PShellApp) buildRows(width int) (rows []psRow, caretRow, caretX int) {
 		for _, sp := range psWrapSpans(text, width) {
 			runes := []rune(text)
 			rows = append(rows, psRow{segs: []psSeg{{text: string(runes[sp[0]:sp[1]]), col: col, bold: ln.bold}}})
+		}
+	}
+	if a.busy && a.streamLine != "" {
+		runes := []rune(a.streamLine)
+		for _, sp := range psWrapSpans(a.streamLine, width) {
+			rows = append(rows, psRow{segs: []psSeg{{text: string(runes[sp[0]:sp[1]]), col: psColText}}})
 		}
 	}
 	caretRow, caretX = -1, 0
@@ -302,6 +318,8 @@ func (a *PShellApp) copyAll() {
 	if !a.busy {
 		b.WriteString(a.sess.Prompt())
 		b.WriteString(string(a.input))
+	} else if a.streamLine != "" {
+		b.WriteString(a.streamLine)
 	}
 	if s := b.String(); s != "" {
 		clipboardWrite(strings.TrimRight(s, "\n"))
@@ -327,6 +345,205 @@ func (a *PShellApp) clearScreen() {
 	a.scroll.Pos = 0
 	a.stick = true
 	a.d.Invalidate()
+}
+
+// appendStream feeds live pseudo-terminal output into the console. ANSI
+// escape sequences are stripped, CR redraws the current line (progress bars),
+// and BS edits it. It runs on the UI goroutine through Desktop.Post.
+func (a *PShellApp) appendStream(chunk string) {
+	if a.closed {
+		return
+	}
+	for _, r := range chunk {
+		switch a.streamState {
+		case 1: // ESC
+			switch r {
+			case '[':
+				a.streamState = 2
+			case ']':
+				a.streamState = 3
+			default:
+				a.streamState = 0
+			}
+			continue
+		case 2: // CSI
+			if r >= 0x40 && r <= 0x7e {
+				a.streamState = 0
+			}
+			continue
+		case 3: // OSC
+			if r == 0x07 {
+				a.streamState = 0
+			} else if r == 0x1b {
+				a.streamState = 4
+			}
+			continue
+		case 4: // OSC terminated by ESC backslash
+			a.streamState = 3
+			if r == '\\' {
+				a.streamState = 0
+			}
+			continue
+		}
+		if a.streamCR {
+			a.streamCR = false
+			if r == '\n' {
+				a.lines = append(a.lines, psLine{text: a.streamLine, col: psColText})
+				a.streamLine = ""
+				continue
+			}
+			a.streamLine = ""
+		}
+		switch r {
+		case 0x1b:
+			a.streamState = 1
+		case '\r':
+			a.streamCR = true
+		case '\n':
+			a.lines = append(a.lines, psLine{text: a.streamLine, col: psColText})
+			a.streamLine = ""
+		case '\b':
+			runes := []rune(a.streamLine)
+			if len(runes) > 0 {
+				a.streamLine = string(runes[:len(runes)-1])
+			}
+		case '\t':
+			a.streamLine += "    "
+		default:
+			if r >= 32 {
+				a.streamLine += string(r)
+			}
+		}
+	}
+	a.trimLines()
+	a.stick = true
+	a.d.Invalidate()
+}
+
+func (a *PShellApp) trimLines() {
+	const maxLines = 5000
+	if len(a.lines) > maxLines {
+		a.lines = append([]psLine(nil), a.lines[len(a.lines)-maxLines:]...)
+	}
+}
+
+func (a *PShellApp) flushStream() {
+	if a.streamLine != "" {
+		a.lines = append(a.lines, psLine{text: a.streamLine, col: psColText})
+	}
+	a.streamLine = ""
+	a.streamState = 0
+	a.streamCR = false
+	a.trimLines()
+}
+
+// streamKey forwards one keystroke to the running pseudo terminal. Ctrl+C is
+// handled by the session so it both reaches the child and falls back to a hard
+// kill when the child ignores the interrupt.
+func (a *PShellApp) streamKey(ev KeyEvent) bool {
+	if ev.Ctrl && strings.EqualFold(ev.Name, "V") {
+		s := clipboardRead()
+		if s == "" {
+			return true
+		}
+		s = strings.ReplaceAll(s, "\r\n", "\r")
+		s = strings.ReplaceAll(s, "\n", "\r")
+		a.sess.writeProc([]byte(s))
+		return true
+	}
+	var b []byte
+	switch ev.Name {
+	case "Enter":
+		b = []byte{'\r'}
+	case "Backspace":
+		b = []byte{0x7f}
+	case "Tab":
+		b = []byte{'\t'}
+	case "Escape":
+		b = []byte{0x1b}
+	case "Up":
+		b = []byte("\x1b[A")
+	case "Down":
+		b = []byte("\x1b[B")
+	case "Right":
+		b = []byte("\x1b[C")
+	case "Left":
+		b = []byte("\x1b[D")
+	case "Home":
+		b = []byte("\x1b[H")
+	case "End":
+		b = []byte("\x1b[F")
+	case "Insert":
+		b = []byte("\x1b[2~")
+	case "Delete":
+		b = []byte("\x1b[3~")
+	case "PgUp":
+		b = []byte("\x1b[5~")
+	case "PgDn":
+		b = []byte("\x1b[6~")
+	case "F1":
+		b = []byte("\x1bOP")
+	case "F2":
+		b = []byte("\x1bOQ")
+	case "F3":
+		b = []byte("\x1bOR")
+	case "F4":
+		b = []byte("\x1bOS")
+	case "F5":
+		b = []byte("\x1b[15~")
+	case "F6":
+		b = []byte("\x1b[17~")
+	case "F7":
+		b = []byte("\x1b[18~")
+	case "F8":
+		b = []byte("\x1b[19~")
+	case "F9":
+		b = []byte("\x1b[20~")
+	case "F10":
+		b = []byte("\x1b[21~")
+	case "F11":
+		b = []byte("\x1b[23~")
+	case "F12":
+		b = []byte("\x1b[24~")
+	}
+	if len(b) == 0 && ev.Ctrl {
+		switch strings.ToUpper(ev.Name) {
+		case "C":
+			a.sess.cancelCurrent()
+			a.status = "已发送 Ctrl+C"
+			return true
+		case "D":
+			b = []byte{0x04}
+		case "Z":
+			b = []byte{0x1a}
+		case "L":
+			b = []byte{0x0c}
+		case "A":
+			b = []byte{0x01}
+		case "E":
+			b = []byte{0x05}
+		case "U":
+			b = []byte{0x15}
+		case "K":
+			b = []byte{0x0b}
+		case "W":
+			b = []byte{0x17}
+		default:
+			if len(ev.Name) == 1 && ev.Name[0] >= 'A' && ev.Name[0] <= 'Z' {
+				b = []byte{ev.Name[0] & 0x1f}
+			}
+		}
+	}
+	if len(b) == 0 && !ev.Ctrl && ev.Rune >= 32 {
+		b = []byte(string(ev.Rune))
+	}
+	if len(b) == 0 {
+		return false
+	}
+	if ev.Alt && ev.Rune != 0 {
+		b = append([]byte{0x1b}, b...)
+	}
+	return a.sess.writeProc(b)
 }
 
 func (a *PShellApp) insertText(s string) {
@@ -373,14 +590,20 @@ func (a *PShellApp) submit() {
 		return
 	}
 	a.busy = true
-	a.status = "正在执行…"
+	a.status = "正在执行…（Ctrl+C 中断）"
+	a.streamLine = ""
+	a.streamState = 0
+	a.streamCR = false
+	a.sess.setStream(a.appendStream)
 	a.d.Invalidate()
 	go func() {
 		lines, clear, exit := a.sess.Execute(line)
+		a.sess.setStream(nil)
 		a.d.Post(func() {
 			if a.closed {
 				return
 			}
+			a.flushStream()
 			if clear {
 				a.lines = nil
 			}
@@ -459,6 +682,16 @@ func (a *PShellApp) complete() {
 
 func (a *PShellApp) Key(d *Desktop, w *Window, ev KeyEvent) bool {
 	if a.busy {
+		if ev.Ctrl && ev.Shift && strings.EqualFold(ev.Name, "C") {
+			a.copyAll()
+			return true
+		}
+		if a.sess.hasProc() {
+			if a.streamKey(ev) {
+				a.d.Invalidate()
+			}
+			return true
+		}
 		if ev.Ctrl && strings.EqualFold(ev.Name, "C") {
 			a.sess.cancelCurrent()
 			a.status = "正在取消…"
@@ -608,7 +841,7 @@ func (a *PShellApp) Key(d *Desktop, w *Window, ev KeyEvent) bool {
 
 func (a *PShellApp) Close() {
 	a.closed = true
-	a.sess.cancelCurrent()
+	a.sess.killCurrent()
 }
 
 // SeedText is used by the offscreen preview to show realistic console output.

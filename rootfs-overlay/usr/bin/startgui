@@ -5,6 +5,42 @@ cd /root
 XFCE_REQUEST=/run/win95-xfce.request
 XFCE_LOG=/var/log/xfce.log
 
+# eudev installs udevd outside PATH (/lib/udev/udevd), so searching PATH alone
+# silently leaves udev stopped. Without udev tags libinput finds no devices and
+# XFCE comes up with a dead pointer and keyboard.
+find_udevd() {
+	for p in /sbin/udevd /lib/udev/udevd /usr/lib/udev/udevd /usr/sbin/udevd; do
+		[ -x "$p" ] && { echo "$p"; return 0; }
+	done
+	command -v udevd 2>/dev/null
+}
+
+start_udev() {
+	udevd_bin=$(find_udevd)
+	if [ -z "$udevd_bin" ]; then
+		echo "udevd not found; libinput will not see input devices" >>"$XFCE_LOG"
+		return 1
+	fi
+	if ! pidof udevd >/dev/null 2>&1; then
+		rm -f /run/udev/control
+		"$udevd_bin" --daemon >>"$XFCE_LOG" 2>&1
+		i=0
+		while [ ! -S /run/udev/control ] && [ "$i" -lt 30 ]; do
+			sleep 0.1
+			i=$((i + 1))
+		done
+	fi
+	if [ ! -S /run/udev/control ]; then
+		echo "udevd control socket is missing; input devices will not be tagged" >>"$XFCE_LOG"
+		return 1
+	fi
+	if command -v udevadm >/dev/null 2>&1; then
+		udevadm trigger --action=add >>"$XFCE_LOG" 2>&1
+		udevadm settle --timeout=10 >>"$XFCE_LOG" 2>&1
+	fi
+	return 0
+}
+
 start_xfce() {
 	vt=$(tty 2>/dev/null | sed -n 's|^/dev/tty\([0-9][0-9]*\)$|\1|p')
 	[ -n "$vt" ] || vt=1
@@ -23,32 +59,69 @@ start_xfce() {
 	mkdir -p /run/user/0 /run/udev /tmp/.X11-unix
 	chmod 0700 /run/user/0
 	chmod 1777 /tmp/.X11-unix
-	if command -v udevd >/dev/null 2>&1; then
-		if ! pidof udevd >/dev/null 2>&1; then
-			udevd --daemon >>"$XFCE_LOG" 2>&1
-		fi
-		udevadm trigger --action=add >>"$XFCE_LOG" 2>&1
-		udevadm settle >>"$XFCE_LOG" 2>&1
-	fi
+	start_udev
 
 	# Cross-TTY clipboard sharing needs xclip on the X side. It is part of
 	# the normal package list; this covers sessions installed before it was.
 	if ! command -v xclip >/dev/null 2>&1; then
 		apk add xclip >>"$XFCE_LOG" 2>&1
 	fi
+	# xinput makes a dead libinput session diagnosable from the log. It is
+	# tiny; failure to install (offline) must not block the desktop.
+	if ! command -v xinput >/dev/null 2>&1; then
+		apk add xinput >>"$XFCE_LOG" 2>&1
+	fi
+
+	# Record what Xorg will see. If XFCE comes up without a pointer or
+	# keyboard, this log names the cause instead of leaving a dead desktop.
+	{
+		echo "=== $(date '+%F %T') input devices ==="
+		ls -l /dev/input 2>&1
+		grep -E '^(N|H|B):' /proc/bus/input/devices 2>/dev/null
+		for f in /dev/input/event*; do
+			[ -e "$f" ] || continue
+			echo "--- udev tags for $f"
+			udevadm info --query=property --name="$f" 2>/dev/null |
+				grep -E '^(DEVNAME|ID_INPUT|ID_INPUT_KEY|ID_INPUT_KEYBOARD|ID_INPUT_MOUSE|ID_INPUT_TOUCHPAD|ID_INPUT_TABLET)='
+		done
+	} >>"$XFCE_LOG"
+	unset DISPLAY XAUTHORITY
 
 	echo "Starting XFCE on tty$vt (log: $XFCE_LOG)" >/dev/tty1 2>/dev/null
 	echo "=== $(date '+%F %T') startxfce4 on vt$vt ===" >>"$XFCE_LOG"
 
+	cat >/run/win95-xfce-session.sh <<'EOF'
+#!/bin/sh
+export DISPLAY=:0
+export XDG_VTNR="${XDG_VTNR:-1}" XDG_RUNTIME_DIR=/run/user/0 XDG_SESSION_TYPE=x11
+export LANG=zh_CN.UTF-8 LANGUAGE=zh_CN:zh
+export LIBGL_ALWAYS_SOFTWARE=1 GALLIUM_DRIVER=llvmpipe
+exec /usr/bin/startxfce4
+EOF
+	chmod 0755 /run/win95-xfce-session.sh
+
 	export LANG=zh_CN.UTF-8 LANGUAGE=zh_CN:zh
 	export XDG_VTNR="$vt" XDG_RUNTIME_DIR=/run/user/0 XDG_SESSION_TYPE=x11
+	export LIBGL_ALWAYS_SOFTWARE=1 GALLIUM_DRIVER=llvmpipe
+	# Log the devices Xorg actually accepted; a session with an empty list
+	# means libinput failed even though the desktop itself started.
+	(
+		sleep 8
+		if command -v xinput >/dev/null 2>&1; then
+			echo "=== $(date '+%F %T') xinput list ===" >>"$XFCE_LOG"
+			DISPLAY=:0 xinput list >>"$XFCE_LOG" 2>&1
+		fi
+	) &
+	# -ac keeps local clients working even if a stale cookie survives a
+	# previous session; this is a single-user appliance VM.
 	if command -v dbus-run-session >/dev/null 2>&1; then
-		dbus-run-session -- startx /usr/bin/startxfce4 -- "vt$vt" -keeptty -nolisten tcp >>"$XFCE_LOG" 2>&1
+		dbus-run-session -- startx /run/win95-xfce-session.sh -- "vt$vt" -keeptty -ac -nolisten tcp >>"$XFCE_LOG" 2>&1
 	else
-		startx /usr/bin/startxfce4 -- "vt$vt" -keeptty -nolisten tcp >>"$XFCE_LOG" 2>&1
+		startx /run/win95-xfce-session.sh -- "vt$vt" -keeptty -ac -nolisten tcp >>"$XFCE_LOG" 2>&1
 	fi
 	rc=$?
 	echo "=== $(date '+%F %T') startxfce4 exited ($rc) ===" >>"$XFCE_LOG"
+	grep -iE 'libinput|input|\(EE\)|pointer|keyboard' /var/log/Xorg.0.log 2>/dev/null | tail -n 30 >>"$XFCE_LOG"
 	# After an XFCE logout, bring the console back to the Win95 desktop.
 	command -v chvt >/dev/null 2>&1 && chvt "$vt"
 }

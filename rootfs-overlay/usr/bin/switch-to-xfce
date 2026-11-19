@@ -8,10 +8,19 @@ LOG=/var/log/switch-to-xfce.log
 REQUEST=/run/win95-xfce.request
 PIDFILE=/run/win95gui.pid
 SELF=/usr/bin/switch-to-xfce
-PACKAGES="xorg-server xinit xf86-input-libinput xf86-video-fbdev xfce4 xfce4-terminal eudev dbus dbus-x11 font-wqy-zenhei xclip"
+PACKAGES="xorg-server xinit xf86-input-libinput xf86-video-fbdev xfce4 xfce4-terminal eudev dbus dbus-x11 font-wqy-zenhei xclip xinput mesa mesa-egl mesa-gles mesa-gl mesa-dri-gallium"
 
 log() {
 	echo "$(date '+%F %T') $*" >>"$LOG"
+}
+
+# eudev keeps udevd in /lib/udev, outside PATH. Checking only PATH reported a
+# complete install as missing and made the switch script bail out.
+has_udev() {
+	for p in /sbin/udevd /lib/udev/udevd /usr/lib/udev/udevd /usr/sbin/udevd; do
+		[ -x "$p" ] && return 0
+	done
+	command -v udevd >/dev/null 2>&1
 }
 
 deps_missing() {
@@ -19,7 +28,7 @@ deps_missing() {
 	[ -x /usr/bin/xinit ] || return 0
 	[ -x /usr/bin/startxfce4 ] || return 0
 	[ -f /usr/lib/xorg/modules/input/libinput_drv.so ] || return 0
-	command -v udevd >/dev/null 2>&1 || return 0
+	has_udev || return 0
 	return 1
 }
 

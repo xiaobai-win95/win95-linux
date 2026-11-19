@@ -93,7 +93,7 @@ func (d *Desktop) drawWindow(c *ui.Canvas, w *Window) {
 		tcol = ui.ColLight
 	}
 	textW := title.W - 3*22 - 30
-	f.TextClip(c, title.X+24, title.Y+4, textW, w.App.Title(), tcol)
+	f.TextClip(c, title.X+24, title.Y+4, textW, d.tr(w.App.Title()), tcol)
 
 	minR, maxR, closeR := d.titleButtons(w)
 	ui.SmallButton(c, minR, "_", w.pressedBtn == "min")
@@ -156,14 +156,14 @@ func (d *Desktop) drawTaskbar(c *ui.Canvas) {
 	ui.Button(c, start, "", d.startOpen, true)
 	ui.FlagLogo(c, start.X+7, start.Y+5, 16)
 	f := ui.DefaultFont()
-	f.TextBold(c, start.X+28, start.Y+5, "开始", ui.ColText)
+	f.TextBold(c, start.X+28, start.Y+5, d.tr("开始"), ui.ColText)
 
 	clock := d.clockRect()
 	for _, tb := range d.taskbarButtons() {
 		pressed := tb.w == d.active && !tb.w.Minimized
 		ui.Button(c, tb.r, "", pressed, true)
 		ui.DrawIcon16(c, tb.w.App.Icon(), tb.r.X+4, tb.r.Y+5)
-		f.TextClip(c, tb.r.X+24, tb.r.Y+5, tb.r.W-28, tb.w.App.Title(), ui.ColText)
+		f.TextClip(c, tb.r.X+24, tb.r.Y+5, tb.r.W-28, d.tr(tb.w.App.Title()), ui.ColText)
 	}
 
 	d.drawSysTray(c)
@@ -254,22 +254,22 @@ type startEntry struct {
 
 func (d *Desktop) menuEntries() []startEntry {
 	entries := []startEntry{
-		{id: "prog", label: "程序(P)", icon: ui.IcoFolderOpen, enabled: true, children: d.programEntries()},
-		{id: "docs", label: "文档(D)", icon: ui.IcoFolder, enabled: true, children: d.documentEntries()},
-		{id: "settings", label: "设置(S)", icon: ui.IcoSetup, enabled: true, children: d.settingsEntries()},
-		{id: "find", label: "查找(F)", icon: ui.IcoFolderOpen, enabled: true, action: func() { d.openFind() }},
-		{id: "help", label: "帮助(H)", icon: ui.IcoInfo, enabled: true, action: func() { d.showAbout() }},
-		{id: "run", label: "运行(R)…", icon: ui.IcoSetup, enabled: true, action: func() { d.openRunDialog() }},
+		{id: "prog", label: d.tr("程序(P)"), icon: ui.IcoFolderOpen, enabled: true, children: d.programEntries()},
+		{id: "docs", label: d.tr("文档(D)"), icon: ui.IcoFolder, enabled: true, children: d.documentEntries()},
+		{id: "settings", label: d.tr("设置(S)"), icon: ui.IcoSetup, enabled: true, children: d.settingsEntries()},
+		{id: "find", label: d.tr("查找(F)"), icon: ui.IcoFolderOpen, enabled: true, action: func() { d.openFind() }},
+		{id: "help", label: d.tr("帮助(H)"), icon: ui.IcoInfo, enabled: true, action: func() { d.showAbout() }},
+		{id: "run", label: d.tr("运行(R)…"), icon: ui.IcoSetup, enabled: true, action: func() { d.openRunDialog() }},
 		{id: "nuke", label: "死手系统（核反击）…", icon: ui.IcoNuke, danger: true, enabled: true, action: func() { d.openDeadHand() }},
 		{sep: true},
 	}
 	if d.Mode == ModeDesktop {
-		entries = append(entries, startEntry{id: "sleep", label: "睡眠(S)…", icon: ui.IcoComputer, enabled: true, action: func() { d.showSleep() }})
+		entries = append(entries, startEntry{id: "sleep", label: d.tr("睡眠(S)…"), icon: ui.IcoComputer, enabled: true, action: func() { d.showSleep() }})
 	}
 	entries = append(entries,
-		startEntry{id: "logoff", label: "注销(L)…", icon: ui.IcoComputer, enabled: true, action: func() { d.showLogoff() }},
-		startEntry{id: "restart", label: "重新启动(R)…", icon: ui.IcoSetup, enabled: true, action: func() { d.showRestart() }},
-		startEntry{id: "shutdown", label: "关闭计算机(U)…", icon: ui.IcoComputer, enabled: true, action: func() { d.showShutdown() }},
+		startEntry{id: "logoff", label: d.tr("注销(L)…"), icon: ui.IcoComputer, enabled: true, action: func() { d.showLogoff() }},
+		startEntry{id: "restart", label: d.tr("重新启动(R)…"), icon: ui.IcoSetup, enabled: true, action: func() { d.showRestart() }},
+		startEntry{id: "shutdown", label: d.tr("关闭计算机(U)…"), icon: ui.IcoComputer, enabled: true, action: func() { d.showShutdown() }},
 	)
 	return entries
 }
@@ -481,7 +481,7 @@ func (d *Desktop) subEntry(id string) *startEntry {
 
 func (d *Desktop) showAbout() {
 	d.MessageBox("关于 Windows 95 Linux",
-		"Windows 95 Linux 中文版\n版本 26.2 · ARM64 / UEFI\n\nWin95 风格桌面：纸牌、扫雷、方块世界、画图、PowerShell、浏览器、\n图片查看器、屏幕键盘、拖放与截屏（PNG + BMP）、六阶段苏尔科视觉整活。\n浏览器支持 JavaScript，首次启动会安装本地依赖包。\n双击 XFCE 终端或 Firefox 可在 tty2 后台启动，退出后自动返回。\n\n"+d.Host.Info,
+		"Windows 95 Linux 中文版\n版本 26.3 · ARM64 / UEFI\n\nWin95 风格桌面：多语言与设置中心、纸牌、扫雷、三维弹球、\n真正的 3D 体素方块世界、画图、PowerShell、JavaScript 浏览器、\n图片查看器、屏幕键盘、系统更新（OTA）、拖放与截屏（PNG + BMP）、\n苏尔科视觉整活。\nArch Linux ARM glibc 子系统与真实 pacman（清华 TUNA 源），\n可从开始菜单安装并启动官方微信 ARM64 版。\n浏览器支持图片、彩色控件与表单；mcjs.link 的 Minecraft 通过\n嵌套在 Win95 窗口里的 Firefox（Mesa WebGL2）运行。\nX11 嵌套代理用 Xvfb :1 + XGetImage/XTest，在 Win95 窗口里\n直接操作 X11 程序；需要完整桌面时，双击桌面的\n“切换到 XFCE 桌面”交给 Xorg/XFCE，注销后返回 Win95。\n\n"+d.Host.Info,
 		IconInfo, []string{"确定"}, nil)
 }
 
@@ -548,28 +548,37 @@ func (d *Desktop) showDangerMenu() {
 
 func (d *Desktop) programEntries() []startEntry {
 	items := []startEntry{
-		{id: "notepad", label: "记事本", icon: ui.IcoNotepad, enabled: true, action: func() { d.openNotepad("") }},
-		{id: "calc", label: "计算器", icon: ui.IcoCalc, enabled: true, action: func() { d.openCalc() }},
-		{id: "calendar", label: "日历", icon: ui.IcoCalendar, enabled: true, action: func() { d.openCalendar() }},
-		{id: "term", label: "终端", icon: ui.IcoTerminal, enabled: true, action: func() { d.openTerminal() }},
+		{id: "notepad", label: d.tr("记事本"), icon: ui.IcoNotepad, enabled: true, action: func() { d.openNotepad("") }},
+		{id: "calc", label: d.tr("计算器"), icon: ui.IcoCalc, enabled: true, action: func() { d.openCalc() }},
+		{id: "calendar", label: d.tr("日历"), icon: ui.IcoCalendar, enabled: true, action: func() { d.openCalendar() }},
+		{id: "term", label: d.tr("终端"), icon: ui.IcoTerminal, enabled: true, action: func() { d.openTerminal() }},
 		{id: "pshell", label: "Windows PowerShell", icon: ui.IcoShell, enabled: true, action: func() { d.openPowerShell() }},
 		{id: "ise", label: "Windows PowerShell ISE", icon: ui.IcoISE, enabled: true, action: func() { d.openISE() }},
-		{id: "files", label: "文件管理器", icon: ui.IcoFolder, enabled: true, action: func() { d.openFiles("/root") }},
-		{id: "browser", label: "网络浏览器", icon: ui.IcoBrowser, enabled: true, action: func() { d.openBrowser("") }},
+		{id: "files", label: d.tr("文件管理器"), icon: ui.IcoFolder, enabled: true, action: func() { d.openFiles("/root") }},
+		{id: "browser", label: d.tr("网络浏览器"), icon: ui.IcoBrowser, enabled: true, action: func() { d.openBrowser("") }},
+		{id: "taskmgr", label: d.tr("任务管理器"), icon: ui.IcoComputer, enabled: true, action: func() { d.openTaskManager() }},
+		{id: "regedit", label: d.tr("注册表编辑器"), icon: ui.IcoSetup, enabled: true, action: func() { d.openRegistryEditor() }},
+		{id: "x11proxy", label: "X11 嵌套代理", icon: ui.IcoComputer, enabled: true, action: func() { d.openX11Proxy("") }},
+		{id: "xfce-desktop", label: "切换到 XFCE 桌面", icon: ui.IcoSetup, enabled: true, action: func() { d.switchToXFCE() }},
+		{id: "wechat", label: "微信 WeChat", icon: ui.IcoNetwork, enabled: true, action: func() { d.openWeChat() }},
 		{sep: true},
-		{id: "sol", label: "纸牌", icon: ui.IcoCards, enabled: true, action: func() { d.openSolitaire() }},
-		{id: "mines", label: "扫雷", icon: ui.IcoMine, enabled: true, action: func() { d.openMines() }},
-		{id: "blockworld", label: "方块世界 95", icon: ui.IcoGame, enabled: true, action: func() { d.openBlockWorld() }},
-		{id: "paint", label: "画图", icon: ui.IcoPaint, enabled: true, action: func() { d.openPaint() }},
-		{id: "imgview", label: "图片查看器", icon: ui.IcoImage, enabled: true, action: func() { d.openImageViewer("") }},
+		{id: "sol", label: d.tr("纸牌"), icon: ui.IcoCards, enabled: true, action: func() { d.openSolitaire() }},
+		{id: "mines", label: d.tr("扫雷"), icon: ui.IcoMine, enabled: true, action: func() { d.openMines() }},
+		{id: "blockworld", label: d.tr("方块世界 95"), icon: ui.IcoGame, enabled: true, action: func() { d.openBlockWorld() }},
+		{id: "pinball", label: d.tr("三维弹球"), icon: ui.IcoGame, enabled: true, action: func() { d.openPinball() }},
+		{id: "paint", label: d.tr("画图"), icon: ui.IcoPaint, enabled: true, action: func() { d.openPaint() }},
+		{id: "imgview", label: d.tr("图片查看器"), icon: ui.IcoImage, enabled: true, action: func() { d.openImageViewer("") }},
 		{sep: true},
-		{id: "download", label: "图形化下载器", icon: ui.IcoDownload, enabled: true, action: func() { d.openDownloader() }},
-		{id: "pkgman", label: "软件包管理器", icon: ui.IcoPackage, enabled: true, action: func() { d.openPkgMan() }},
+		{id: "download", label: d.tr("图形化下载器"), icon: ui.IcoDownload, enabled: true, action: func() { d.openDownloader() }},
+		{id: "pkgman", label: d.tr("软件包管理器"), icon: ui.IcoPackage, enabled: true, action: func() { d.openPkgMan() }},
+		{id: "ota", label: "系统更新", icon: ui.IcoPackage, enabled: true, action: func() { d.openOTA() }},
+		{id: "arch", label: "Arch Linux (glibc / pacman)", icon: ui.IcoPackage, enabled: true, action: func() { d.installArch() }},
+		{id: "settings", label: d.tr("设置中心"), icon: ui.IcoSetup, enabled: true, action: func() { d.openSettings() }},
 		{sep: true},
-		{id: "osk", label: "屏幕键盘", icon: ui.IcoKeyboard, enabled: true, action: func() { d.toggleSoftKeyboard() }},
+		{id: "osk", label: d.tr("屏幕键盘"), icon: ui.IcoKeyboard, enabled: true, action: func() { d.toggleSoftKeyboard() }},
 		{sep: true},
-		{id: "xfce-term", label: "XFCE 终端 (tty2)", icon: ui.IcoTerminal, enabled: true, action: func() { d.launchXFCEApp("xfce4-terminal") }},
-		{id: "firefox", label: "Firefox (tty2)", icon: ui.IcoBrowser, enabled: true, action: func() { d.launchXFCEApp("firefox") }},
+		{id: "xfce-term", label: "XFCE 终端（X11 窗口）", icon: ui.IcoTerminal, enabled: true, action: func() { d.openX11Proxy("xfce4-terminal") }},
+		{id: "firefox", label: "Firefox（X11 窗口）", icon: ui.IcoBrowser, enabled: true, action: func() { d.openX11Proxy("firefox") }},
 		{id: "sysinfo", label: "系统信息", icon: ui.IcoInfo, enabled: true, action: func() { d.showAbout() }},
 		{sep: true},
 		{id: "prank", label: "视觉整活：苏尔科…", icon: ui.IcoGlitch, danger: true, enabled: true, action: func() { d.openPrankDemo() }},
@@ -601,14 +610,17 @@ func (d *Desktop) documentEntries() []startEntry {
 
 func (d *Desktop) settingsEntries() []startEntry {
 	return []startEntry{
-		{id: "about", label: "关于本机", icon: ui.IcoInfo, enabled: true, action: func() { d.showAbout() }},
-		{id: "display", label: "显示属性(D)", icon: ui.IcoComputer, enabled: true, action: func() { d.openDisplayProperties() }},
+		{id: "settings", label: d.tr("设置中心"), icon: ui.IcoSetup, enabled: true, action: func() { d.openSettings() }},
+		{id: "about", label: d.tr("关于本机"), icon: ui.IcoInfo, enabled: true, action: func() { d.showAbout() }},
+		{id: "display", label: d.tr("显示属性(D)"), icon: ui.IcoComputer, enabled: true, action: func() { d.openDisplayProperties() }},
 		{id: "shot", label: "截屏(S)  Print Screen", icon: ui.IcoComputer, enabled: true, action: func() { d.takeScreenshot() }},
-		{id: "osk", label: "屏幕键盘(K)  Ctrl+Alt+K", icon: ui.IcoKeyboard, enabled: true, action: func() { d.toggleSoftKeyboard() }},
+		{id: "osk", label: d.tr("屏幕键盘") + "  Ctrl+Alt+K", icon: ui.IcoKeyboard, enabled: true, action: func() { d.toggleSoftKeyboard() }},
 		{id: "pkgman", label: "添加/删除软件", icon: ui.IcoPackage, enabled: true, action: func() { d.openPkgMan() }},
-		{id: "files", label: "文件管理器", icon: ui.IcoFolder, enabled: true, action: func() { d.openFiles("/root") }},
+		{id: "ota", label: "Windows 更新", icon: ui.IcoPackage, enabled: true, action: func() { d.openOTA() }},
+		{id: "files", label: d.tr("文件管理器"), icon: ui.IcoFolder, enabled: true, action: func() { d.openFiles("/root") }},
 		{sep: true},
-		{id: "xfce", label: "切换到 XFCE 桌面", icon: ui.IcoComputer, enabled: true, action: func() { d.switchToXFCE() }},
+		{id: "x11proxy", label: "X11 嵌套代理", icon: ui.IcoComputer, enabled: true, action: func() { d.openX11Proxy("") }},
+		{id: "xfce-desktop", label: "切换到 XFCE 桌面", icon: ui.IcoSetup, enabled: true, action: func() { d.switchToXFCE() }},
 		{id: "danger", label: "危险操作…", icon: ui.IcoInfo, enabled: true, action: func() { d.showDangerMenu() }},
 	}
 }
@@ -626,5 +638,5 @@ func (d *Desktop) showInstallHelp() {
 }
 
 func (d *Desktop) statusClock() string {
-	return fmt.Sprintf("%s %s", time.Now().In(d.clockLoc).Format("2006-01-02"), d.clock)
+	return fmt.Sprintf("%s %s\n%s", d.formatDate(time.Now()), d.clock, d.clockZone)
 }

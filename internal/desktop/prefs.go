@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"win95linux/internal/ui"
 )
 
 var prefsPath = "/root/.config/win95/desktop.json"
@@ -16,6 +18,12 @@ type desktopPrefs struct {
 	SaverWait    int      `json:"saver_wait_minutes"`
 	RunHistory   []string `json:"run_history,omitempty"`
 	EULAAccepted bool     `json:"eula_accepted,omitempty"`
+	Lang         string   `json:"language,omitempty"`
+	Theme        int      `json:"theme,omitempty"`
+	DateFmt      int      `json:"date_format,omitempty"`
+	Clock12      bool     `json:"clock_12h,omitempty"`
+	WeekMonday   bool     `json:"week_monday,omitempty"`
+	ClockZone    string   `json:"clock_zone,omitempty"`
 }
 
 func (d *Desktop) loadPrefs() {
@@ -52,6 +60,24 @@ func (d *Desktop) loadPrefs() {
 		}
 	}
 	d.eulaAccepted = p.EULAAccepted
+	if p.Lang != "" {
+		d.lang = desktopLanguages[languageIndex(p.Lang)].Code
+	}
+	if p.Theme >= 0 && p.Theme < len(ui.Palettes) {
+		d.theme = p.Theme
+	}
+	if p.DateFmt >= 0 && p.DateFmt < len(dateFormatChoices) {
+		d.dateFmt = p.DateFmt
+	}
+	d.clock12 = p.Clock12
+	d.weekMonday = p.WeekMonday
+	if p.ClockZone != "" {
+		if loc, err := time.LoadLocation(p.ClockZone); err == nil {
+			d.clockLoc = loc
+			d.clockZone = p.ClockZone
+		}
+	}
+	osSetLocale(d.lang)
 }
 
 func (d *Desktop) savePrefs() {
@@ -61,6 +87,12 @@ func (d *Desktop) savePrefs() {
 		SaverWait:    int(d.saverWait / time.Minute),
 		RunHistory:   append([]string{}, d.runHistory...),
 		EULAAccepted: d.eulaAccepted,
+		Lang:         d.lang,
+		Theme:        d.theme,
+		DateFmt:      d.dateFmt,
+		Clock12:      d.clock12,
+		WeekMonday:   d.weekMonday,
+		ClockZone:    d.clockZone,
 	}
 	b, err := json.MarshalIndent(p, "", "  ")
 	if err != nil {
@@ -76,6 +108,7 @@ func (d *Desktop) savePrefs() {
 	if err := os.Rename(tmp, prefsPath); err != nil {
 		_ = os.Remove(tmp)
 	}
+	d.syncINIFromDesktop()
 }
 
 func (d *Desktop) addRunHistory(cmd string) {

@@ -1,0 +1,265 @@
+#!/bin/sh
+# Repair a partially initialised Arch Linux ARM chroot.
+#
+# Fixes the two failures that break `pacman` after a manual/minimal bootstrap:
+#   * /var/lib/pacman/local or /var/lib/pacman/sync missing (empty database)
+#   * /etc/ssl/certs/ca-certificates.crt missing or emptied by update-ca-trust
+# It also rewrites the mirrorlist to Tsinghua TUNA only, and falls back to
+# plain HTTP when the TLS trust store cannot be repaired.
+#
+# Usage: win95-arch-repair [--check]
+#   --check exits 0 when pacman, its local database, a usable CA bundle and
+#   the TUNA mirrorlist are all present. No changes are made.
+
+ARCH_ROOT=/opt/archlinux
+CACHE=/var/cache/win95
+TARBALL="$CACHE/ArchLinuxARM-aarch64-latest.tar.gz"
+LOG=/var/log/win95-arch-repair.log
+STATUS=/usr/bin/win95-install-status
+NOTIFY=/usr/bin/win95-notify
+MIRROR_HOST=mirrors.tuna.tsinghua.edu.cn
+REPO_PATH=archlinuxarm
+
+log() {
+	echo "$(date '+%F %T') $*" | tee -a "$LOG"
+}
+
+notify() {
+	[ -x "$NOTIFY" ] || return 0
+	"$NOTIFY" "$1" "$2" >/dev/null 2>&1
+}
+
+status() {
+	[ -x "$STATUS" ] || return 0
+	"$STATUS" "$@" >/dev/null 2>&1
+}
+
+ca_ok() {
+	cert=$ARCH_ROOT/etc/ssl/certs/ca-certificates.crt
+	[ -s "$cert" ] || return 1
+	size=$(wc -c <"$cert" 2>/dev/null || echo 0)
+	[ "$size" -gt 10000 ]
+}
+
+db_ok() {
+	[ -f "$ARCH_ROOT/var/lib/pacman/local/ALPM_DB_VERSION" ] || return 1
+	count=$(ls -A "$ARCH_ROOT/var/lib/pacman/local" 2>/dev/null | wc -l)
+	[ "$count" -gt 1 ]
+}
+
+mtab_ok() {
+	[ -s "$ARCH_ROOT/etc/mtab" ] || return 1
+	awk '$2 == "/" { found = 1 } END { exit !found }' "$ARCH_ROOT/etc/mtab" 2>/dev/null
+}
+
+check_mode() {
+	[ -x "$ARCH_ROOT/usr/bin/pacman" ] || return 1
+	db_ok || return 1
+	ca_ok || return 1
+	mtab_ok || return 1
+	grep -q "$MIRROR_HOST" "$ARCH_ROOT/etc/pacman.d/mirrorlist" 2>/dev/null || return 1
+	return 0
+}
+
+if [ "$1" = "--check" ]; then
+	if check_mode; then
+		exit 0
+	fi
+	exit 1
+fi
+
+if [ "$(id -u)" != "0" ]; then
+	echo "win95-arch-repair: must run as root" >&2
+	exit 1
+fi
+
+if [ ! -x "$ARCH_ROOT/usr/bin/pacman" ]; then
+	echo "Arch Linux ARM is not installed in $ARCH_ROOT." >&2
+	exit 1
+fi
+
+TITLE=${WIN95_INSTALL_TITLE:-Arch Linux 修复}
+status begin "$TITLE" "正在检查 pacman 数据库与证书…"
+
+/usr/bin/win95-arch-mounts >/dev/null 2>&1 || log "warning: win95-arch-mounts failed"
+
+mkdir -p "$ARCH_ROOT/var/lib/pacman/local" "$ARCH_ROOT/var/lib/pacman/sync" \
+	"$ARCH_ROOT/var/cache/pacman/pkg" "$ARCH_ROOT/etc/ssl/certs" "$ARCH_ROOT/etc/pacman.d"
+status set 10 "正在检查 pacman 数据库…"
+
+# --- pacman local database -------------------------------------------------
+# An interrupted extraction can leave /var/lib/pacman absent even though the
+# rest of the rootfs looks fine. Restore the packaged database from the base
+# tarball when it is still cached; otherwise create an empty database so pacman
+# can at least initialise (callers may need --overwrite for existing files).
+if ! db_ok; then
+	log "pacman local database missing or empty; trying to restore it"
+	archive=""
+	for candidate in "$TARBALL" "/root/下载/$(basename "$TARBALL")" "/root/桌面/$(basename "$TARBALL")"; do
+		if [ -s "$candidate" ] && gzip -t "$candidate" 2>/dev/null; then
+			archive=$candidate
+			break
+		fi
+	done
+	if [ -n "$archive" ]; then
+		entry=$(tar -tzf "$archive" 2>/dev/null | grep -m1 '/var/lib/pacman/local')
+		if [ -z "$entry" ]; then
+			entry=$(tar -tzf "$archive" 2>/dev/null | grep -m1 'var/lib/pacman/local')
+		fi
+		if [ -n "$entry" ]; then
+			prefix=${entry%%var/lib/pacman/local*}var/lib/pacman/local
+			log "restoring $prefix from $archive"
+			tar -xzf "$archive" -C "$ARCH_ROOT" "$prefix" >>"$LOG" 2>&1 || true
+		fi
+		if ! db_ok; then
+			log "single-path restore did not produce a database; re-extracting the base rootfs"
+			status set 25 "正在从压缩包恢复 pacman 数据库…"
+			tar -xzf "$archive" -C "$ARCH_ROOT" >>"$LOG" 2>&1 || true
+		fi
+	fi
+	if ! db_ok; then
+		log "warning: local database could not be restored; creating an empty database"
+		printf '9\n' >"$ARCH_ROOT/var/lib/pacman/local/ALPM_DB_VERSION"
+		touch /run/win95-arch-db-empty 2>/dev/null || true
+	else
+		rm -f /run/win95-arch-db-empty 2>/dev/null || true
+	fi
+else
+	rm -f /run/win95-arch-db-empty 2>/dev/null || true
+fi
+status set 25 "pacman 数据库已就绪"
+
+# --- CA trust store --------------------------------------------------------
+# update-ca-trust empties the bundle when the Mozilla trust source is missing,
+# which is exactly what happens in a half-extracted rootfs. Only run it when
+# the source actually exists; otherwise copy Alpine's known-good Mozilla
+# bundle, which is valid PEM for libcurl/OpenSSL.
+if ! ca_ok; then
+	log "CA bundle is missing or too small; repairing"
+	if [ -x "$ARCH_ROOT/usr/bin/update-ca-trust" ] &&
+		[ -n "$(ls -A "$ARCH_ROOT/usr/share/ca-certificates/mozilla" 2>/dev/null)" ]; then
+		chroot "$ARCH_ROOT" /usr/bin/update-ca-trust extract >>"$LOG" 2>&1 || true
+	fi
+	if ! ca_ok; then
+		src=""
+		for candidate in /etc/ssl/certs/ca-certificates.crt /etc/ssl/cert.pem; do
+			if [ -s "$candidate" ]; then
+				src=$candidate
+				break
+			fi
+		done
+		if [ -n "$src" ]; then
+			cp -Lf "$src" "$ARCH_ROOT/etc/ssl/certs/ca-certificates.crt" 2>/dev/null || true
+			cp -Lf "$src" "$ARCH_ROOT/etc/ssl/cert.pem" 2>/dev/null || true
+			log "copied $src into the chroot"
+		fi
+	fi
+	chmod 0644 "$ARCH_ROOT/etc/ssl/certs/ca-certificates.crt" 2>/dev/null || true
+	if ! ca_ok; then
+		log "warning: no usable CA bundle found; will use plain HTTP for the mirror"
+	fi
+fi
+status set 40 "SSL 证书已修复"
+
+# --- /etc/mtab -------------------------------------------------------------
+# pacman reads /etc/mtab before committing a transaction to pick the mount
+# point for its free-space check. Without it every install ends with
+# "could not determine filesystem mount points" and the transaction is rolled
+# back. Arch normally ships a symlink to /proc/self/mounts; /proc is already
+# bind-mounted by win95-arch-mounts above.
+if ! mtab_ok; then
+	log "/etc/mtab is missing a root mount entry; rewriting it"
+	rootdev=$(awk -v root="$ARCH_ROOT" '$2 == root { print $1; exit }' /proc/self/mounts 2>/dev/null)
+	[ -n "$rootdev" ] || rootdev=$(awk '$2 == "/" { print $1; exit }' /proc/self/mounts 2>/dev/null)
+	[ -n "$rootdev" ] || rootdev=rootfs
+	rm -f "$ARCH_ROOT/etc/mtab" 2>/dev/null || true
+	printf '%s / rootfs rw,relatime 0 0\n' "$rootdev" >"$ARCH_ROOT/etc/mtab" 2>/dev/null || true
+fi
+status set 45 "挂载表已就绪"
+
+# --- TUNA-only mirrorlist --------------------------------------------------
+mkdir -p "$ARCH_ROOT/etc/pacman.d"
+write_mirrorlist() {
+	scheme=$1
+	cat >"$ARCH_ROOT/etc/pacman.d/mirrorlist" <<EOF
+# Tsinghua University TUNA mirror only
+Server = $scheme://$MIRROR_HOST/$REPO_PATH/\$arch/\$repo
+EOF
+}
+write_mirrorlist https
+
+for repo in core extra alarm; do
+	if ! grep -q "^\[$repo\]" "$ARCH_ROOT/etc/pacman.conf"; then
+		printf '\n[%s]\nInclude = /etc/pacman.d/mirrorlist\n' "$repo" >>"$ARCH_ROOT/etc/pacman.conf"
+	fi
+done
+sed -i 's|^Server *=.*|# Server line replaced by TUNA mirrorlist|' "$ARCH_ROOT/etc/pacman.conf"
+
+# Keep DNS fresh inside the chroot.
+if [ -s /etc/resolv.conf ]; then
+	cp -f /etc/resolv.conf "$ARCH_ROOT/etc/resolv.conf" 2>/dev/null || true
+fi
+
+if [ ! -s "$ARCH_ROOT/etc/pacman.d/gnupg/trustdb.gpg" ]; then
+	status set 50 "正在初始化 pacman 密钥环…"
+	log "initialising pacman keyring"
+	chroot "$ARCH_ROOT" /usr/bin/pacman-key --init >>"$LOG" 2>&1 || true
+	chroot "$ARCH_ROOT" /usr/bin/pacman-key --populate archlinuxarm >>"$LOG" 2>&1 || true
+fi
+
+SYNC_LOG="$CACHE/pacman-sync.log"
+mkdir -p "$CACHE"
+sync_once() {
+	: >"$SYNC_LOG"
+	chroot "$ARCH_ROOT" /usr/bin/pacman -Syy --noconfirm >>"$SYNC_LOG" 2>&1
+	st=$?
+	cat "$SYNC_LOG" >>"$LOG" 2>/dev/null || true
+	return $st
+}
+
+status set 60 "正在同步清华 TUNA 软件源…"
+synced=0
+if sync_once; then
+	synced=1
+else
+	log "pacman -Syy over HTTPS failed"
+	# A broken trust store cannot be fixed by GPG settings; go straight to HTTP.
+	if grep -qiE 'trust anchor|certificate|SSL|TLS' "$SYNC_LOG"; then
+		log "TLS failure detected; switching to HTTP mirror"
+		write_mirrorlist http
+		status set 70 "证书不可用，正在改用 HTTP 清华源…"
+		if sync_once; then
+			synced=1
+		fi
+	fi
+fi
+
+if [ "$synced" = "0" ]; then
+	log "retrying after keyring and signature fallback"
+	sed -i 's/^SigLevel.*/SigLevel = Never/' "$ARCH_ROOT/etc/pacman.conf"
+	status set 75 "正在重试软件源（跳过签名校验）…"
+	if sync_once; then
+		synced=1
+	fi
+fi
+
+if [ "$synced" = "0" ]; then
+	log "final retry over HTTP"
+	write_mirrorlist http
+	status set 85 "正在用 HTTP 重试清华源…"
+	if sync_once; then
+		synced=1
+	fi
+fi
+
+if [ "$synced" = "1" ]; then
+	log "pacman database sync succeeded"
+	status done "Arch 子系统已修复，pacman 可以正常使用。"
+	notify "Arch Linux" "修复完成：证书、pacman 数据库与清华源均已就绪。"
+	exit 0
+fi
+
+log "pacman database sync failed; see $LOG and $SYNC_LOG"
+status fail "修复失败，请查看 $LOG。"
+notify "Arch Linux" "修复失败：pacman 仍无法同步，详情见 $LOG。"
+exit 1

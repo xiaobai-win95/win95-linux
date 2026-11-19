@@ -1,7 +1,8 @@
 package ui
 
-// Classic Windows 95 palette.
-const (
+// The classic palette is mutable so the settings app can switch themes at
+// runtime; every draw call reads these values.
+var (
 	ColDesktop   uint32 = 0x008080
 	ColFace      uint32 = 0xC0C0C0
 	ColLight     uint32 = 0xDFDFDF
@@ -20,6 +21,86 @@ const (
 	ColBlue      uint32 = 0x0000A0
 	ColBlack     uint32 = 0x000000
 )
+
+// Palette is one complete set of chrome colours.
+type Palette struct {
+	Name       string
+	Desktop    uint32
+	Face       uint32
+	Light      uint32
+	White      uint32
+	Shadow     uint32
+	Dark       uint32
+	Navy       uint32
+	NavyLight  uint32
+	TitleInac  uint32
+	Text       uint32
+	TextDis    uint32
+	Field      uint32
+	Yellow     uint32
+	Green      uint32
+	Red        uint32
+	Blue       uint32
+}
+
+var Palettes = []Palette{
+	{
+		Name: "经典 Windows 95", Desktop: 0x008080, Face: 0xC0C0C0, Light: 0xDFDFDF,
+		White: 0xFFFFFF, Shadow: 0x808080, Dark: 0x000000, Navy: 0x000080,
+		NavyLight: 0x1084D0, TitleInac: 0x808080, Text: 0x000000, TextDis: 0x808080,
+		Field: 0xFFFFFF, Yellow: 0xFFFF00, Green: 0x008000, Red: 0x800000, Blue: 0x0000A0,
+	},
+	{
+		Name: "午夜蓝", Desktop: 0x101C3A, Face: 0x2B3550, Light: 0x4C5A7A,
+		White: 0xDCE4F5, Shadow: 0x111827, Dark: 0x000000, Navy: 0x1E3A8A,
+		NavyLight: 0x3B82F6, TitleInac: 0x3C4660, Text: 0xE8EEF9, TextDis: 0x8A94AC,
+		Field: 0x1C2438, Yellow: 0xFDE047, Green: 0x4ADE80, Red: 0xF87171, Blue: 0x93C5FD,
+	},
+	{
+		Name: "高对比度", Desktop: 0x000000, Face: 0x000000, Light: 0xFFFFFF,
+		White: 0xFFFFFF, Shadow: 0x808080, Dark: 0xFFFFFF, Navy: 0x000080,
+		NavyLight: 0x00FFFF, TitleInac: 0x404040, Text: 0xFFFFFF, TextDis: 0xA0A0A0,
+		Field: 0x000000, Yellow: 0xFFFF00, Green: 0x00FF00, Red: 0xFF0000, Blue: 0x00FFFF,
+	},
+	{
+		Name: "青瓷", Desktop: 0x2F5D50, Face: 0xDDE8DC, Light: 0xF2F7EE,
+		White: 0xFFFFFF, Shadow: 0x8FA393, Dark: 0x1C2B24, Navy: 0x2F5D50,
+		NavyLight: 0x5E8C7A, TitleInac: 0x8FA393, Text: 0x1C2B24, TextDis: 0x7A8C80,
+		Field: 0xFBFDF7, Yellow: 0xFFE066, Green: 0x3A7D44, Red: 0xA33B3B, Blue: 0x2B5F8A,
+	},
+	{
+		Name: "玫瑰", Desktop: 0x6D2E46, Face: 0xF3E3E8, Light: 0xFDF3F6,
+		White: 0xFFFFFF, Shadow: 0xB08A96, Dark: 0x2B141E, Navy: 0x8C3A5A,
+		NavyLight: 0xC96B8C, TitleInac: 0xB08A96, Text: 0x2B141E, TextDis: 0x8C7680,
+		Field: 0xFFF9FB, Yellow: 0xFFD166, Green: 0x4F7942, Red: 0xB13E53, Blue: 0x3D5A80,
+	},
+	{
+		Name: "琥珀", Desktop: 0x3B2C16, Face: 0xE8DCC3, Light: 0xF7F0E0,
+		White: 0xFFFFFF, Shadow: 0xA79A80, Dark: 0x241A0C, Navy: 0x7A5B1E,
+		NavyLight: 0xC29A45, TitleInac: 0xA79A80, Text: 0x241A0C, TextDis: 0x867A64,
+		Field: 0xFFFBEF, Yellow: 0xF2C14E, Green: 0x5B7B3A, Red: 0x9E3B2F, Blue: 0x3A6B8A,
+	},
+}
+
+func ApplyPalette(p Palette) {
+	ColDesktop = p.Desktop
+	ColFace = p.Face
+	ColLight = p.Light
+	ColWhite = p.White
+	ColShadow = p.Shadow
+	ColDark = p.Dark
+	ColNavy = p.Navy
+	ColNavyLight = p.NavyLight
+	ColTitleInac = p.TitleInac
+	ColText = p.Text
+	ColTextDis = p.TextDis
+	ColField = p.Field
+	ColYellow = p.Yellow
+	ColGreen = p.Green
+	ColRed = p.Red
+	ColBlue = p.Blue
+	ColBlack = 0x000000
+}
 
 type Rect struct {
 	X, Y, W, H int

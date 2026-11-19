@@ -8,21 +8,32 @@ import (
 
 type InputBoxApp struct {
 	Base
-	d      *Desktop
-	title  string
-	prompt string
-	value  []rune
-	caret  int
-	cb     func(string, bool)
-	win    *Window
-	press  string
-	err    string
+	d        *Desktop
+	title    string
+	prompt   string
+	value    []rune
+	caret    int
+	cb       func(string, bool)
+	validate func(string) string
+	win      *Window
+	press    string
+	err      string
 
 	fieldR, okR, cancelR ui.Rect
 }
 
 func (d *Desktop) InputBox(title, prompt, initial string, cb func(string, bool)) *Window {
-	a := &InputBoxApp{d: d, title: title, prompt: prompt, cb: cb}
+	return d.inputBox(title, prompt, initial, nil, cb)
+}
+
+// InputBoxChecked is InputBox with a custom validator. The validator returns
+// an error message for invalid input, or "" to accept.
+func (d *Desktop) InputBoxChecked(title, prompt, initial string, validate func(string) string, cb func(string, bool)) *Window {
+	return d.inputBox(title, prompt, initial, validate, cb)
+}
+
+func (d *Desktop) inputBox(title, prompt, initial string, validate func(string) string, cb func(string, bool)) *Window {
+	a := &InputBoxApp{d: d, title: title, prompt: prompt, cb: cb, validate: validate}
 	a.value = []rune(initial)
 	a.caret = len(a.value)
 	w := d.OpenModal(a)
@@ -91,6 +102,15 @@ func (a *InputBoxApp) Mouse(d *Desktop, w *Window, client ui.Rect, ev MouseEvent
 
 func (a *InputBoxApp) accept() {
 	name := strings.TrimSpace(string(a.value))
+	if a.validate != nil {
+		if msg := a.validate(name); msg != "" {
+			a.err = msg
+			a.d.Invalidate()
+			return
+		}
+		a.finish(true)
+		return
+	}
 	switch {
 	case name == "":
 		a.err = "名称不能为空。"

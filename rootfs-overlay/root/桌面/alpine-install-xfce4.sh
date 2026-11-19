@@ -1,0 +1,1 @@
+apk add alpine-conf && setup-desktop && wget https://raw.githubusercontent.com/stellarCN/scp_zh/master/fonts/SimKai.ttf -O /usr/share/fonts/SimKai.ttf

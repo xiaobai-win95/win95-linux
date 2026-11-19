@@ -11,6 +11,13 @@ mountpoint -q /dev/pts || mount -t devpts -o gid=5,mode=0620 devpts /dev/pts
 mountpoint -q /tmp || mount -t tmpfs -o mode=1777 tmpfs /tmp
 mountpoint -q /run || mount -t tmpfs -o mode=0755 tmpfs /run
 
+# bootinit exposes the shared super partition as /dev/win95-super; the OTA
+# client and the inactive slot live on it.
+mkdir -p /mnt/win95-super
+if [ -e /dev/win95-super ]; then
+	mountpoint -q /mnt/win95-super || mount -t ext4 /dev/win95-super /mnt/win95-super
+fi
+
 echo 1 > /proc/sys/kernel/printk 2>/dev/null
 echo 0 > /sys/class/graphics/fbcon/cursor_blink 2>/dev/null
 hostname win95 2>/dev/null

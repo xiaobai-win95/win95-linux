@@ -16,6 +16,10 @@ var backgroundStyles = []string{
 }
 
 func (d *Desktop) drawDesktopBackground(c *ui.Canvas) {
+	if d.bgColorSet {
+		c.FillRect(ui.Rect{0, 0, c.W, c.H}, d.bgColor)
+		return
+	}
 	drawBackgroundRect(c, ui.Rect{0, 0, c.W, c.H}, d.background)
 }
 

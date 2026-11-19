@@ -1,0 +1,82 @@
+#!/bin/sh
+# Share the kernel filesystems with the Arch chroot and refresh its DNS
+# configuration. Idempotent; safe to call before every pacman/WeChat run.
+
+ARCH_ROOT=/opt/archlinux
+
+[ "$(id -u)" = "0" ] || {
+	echo "win95-arch-mounts: must run as root" >&2
+	exit 1
+}
+
+[ -d "$ARCH_ROOT" ] || exit 0
+
+# pacman refuses to start when its database directory is absent. Creating the
+# directories is enough for -Sy; win95-arch-repair restores the packaged local
+# database when a previous extraction left it empty.
+mkdir -p "$ARCH_ROOT/var/lib/pacman/local" "$ARCH_ROOT/var/lib/pacman/sync" 2>/dev/null || true
+
+# A libcurl without a CA bundle cannot even reach the HTTPS mirror. Copy
+# Alpine's Mozilla bundle when the chroot's file is missing or empty.
+cert="$ARCH_ROOT/etc/ssl/certs/ca-certificates.crt"
+if [ ! -s "$cert" ] || [ "$(wc -c <"$cert" 2>/dev/null || echo 0)" -lt 10000 ]; then
+	mkdir -p "$ARCH_ROOT/etc/ssl/certs" 2>/dev/null || true
+	cp -Lf /etc/ssl/certs/ca-certificates.crt "$cert" 2>/dev/null ||
+		cp -Lf /etc/ssl/cert.pem "$cert" 2>/dev/null || true
+fi
+
+mounted() {
+	grep -qs " $1 " /proc/mounts
+}
+
+if [ -d "$ARCH_ROOT/dev" ] && ! mounted "$ARCH_ROOT/dev"; then
+	mount --bind /dev "$ARCH_ROOT/dev" 2>/dev/null || true
+fi
+if [ -d "$ARCH_ROOT/proc" ] && ! mounted "$ARCH_ROOT/proc"; then
+	mount -t proc proc "$ARCH_ROOT/proc" 2>/dev/null || true
+fi
+if [ -d "$ARCH_ROOT/sys" ] && ! mounted "$ARCH_ROOT/sys"; then
+	mount --bind /sys "$ARCH_ROOT/sys" 2>/dev/null || true
+fi
+if [ -d "$ARCH_ROOT/run" ] && ! mounted "$ARCH_ROOT/run"; then
+	mount --bind /run "$ARCH_ROOT/run" 2>/dev/null || true
+fi
+
+# X11 clients inside the chroot reach the nested Xvfb through the host socket.
+if [ -d /tmp/.X11-unix ] && [ -d "$ARCH_ROOT/tmp" ]; then
+	mkdir -p "$ARCH_ROOT/tmp/.X11-unix" 2>/dev/null || true
+	if ! mounted "$ARCH_ROOT/tmp/.X11-unix"; then
+		mount --bind /tmp/.X11-unix "$ARCH_ROOT/tmp/.X11-unix" 2>/dev/null || true
+	fi
+fi
+
+# pacman opens /etc/mtab before committing a transaction to check free space.
+# A rootfs extracted without the filesystem package lacks it, and even a
+# symlink to /proc/self/mounts is not enough inside a chroot when that file
+# has no entry for "/": pacman then aborts with "could not determine cachedir
+# mount point". Write a real file with an explicit root entry, and keep any
+# filesystems mounted below the chroot with their paths rewritten relative.
+if [ -d "$ARCH_ROOT/etc" ]; then
+	mtab_tmp="$ARCH_ROOT/etc/mtab.$$"
+	rootdev=$(awk -v root="$ARCH_ROOT" '$2 == root { print $1; exit }' /proc/self/mounts 2>/dev/null)
+	[ -n "$rootdev" ] || rootdev=$(awk '$2 == "/" { print $1; exit }' /proc/self/mounts 2>/dev/null)
+	[ -n "$rootdev" ] || rootdev=rootfs
+	printf '%s / rootfs rw,relatime 0 0\n' "$rootdev" >"$mtab_tmp" 2>/dev/null || true
+	awk -v root="$ARCH_ROOT" 'index($2, root "/") == 1 { mp=$2; sub(root, "", mp); $2=mp; print }' \
+		/proc/self/mounts >>"$mtab_tmp" 2>/dev/null || true
+	mv -f "$mtab_tmp" "$ARCH_ROOT/etc/mtab" 2>/dev/null || rm -f "$mtab_tmp"
+fi
+
+# Copy instead of bind-mounting the file. A file bind mount works, but mount
+# output then lists the whole root filesystem (/dev/vdaX) as the source of
+# /etc/resolv.conf, which looks alarming and serves no purpose: DHCP only
+# rewrites this file, so a fresh copy at each run is enough. Images before
+# 26.3 created such a bind; release it before replacing the file.
+if mounted "$ARCH_ROOT/etc/resolv.conf"; then
+	umount "$ARCH_ROOT/etc/resolv.conf" 2>/dev/null || true
+fi
+if [ -s /etc/resolv.conf ] && [ -d "$ARCH_ROOT/etc" ]; then
+	rm -f "$ARCH_ROOT/etc/resolv.conf"
+	cp -f /etc/resolv.conf "$ARCH_ROOT/etc/resolv.conf" 2>/dev/null || true
+fi
+exit 0

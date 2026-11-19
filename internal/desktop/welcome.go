@@ -60,7 +60,7 @@ func (a *welcomeApp) Paint(d *Desktop, w *Window, c *ui.Canvas, client ui.Rect) 
 	hb := ui.Rect{client.X, client.Y, client.W, 74}
 	c.TitleBar(hb, ui.ColNavy, ui.ColNavyLight)
 	ui.DrawIcon32(c, ui.IcoSetup, client.X+14, client.Y+18, false)
-	f.TextBold(c, client.X+56, client.Y+14, "欢迎使用 Windows 95 Linux 26.2", ui.ColWhite)
+	f.TextBold(c, client.X+56, client.Y+14, "欢迎使用 Windows 95 Linux 26.3", ui.ColWhite)
 	f.Text(c, client.X+56, client.Y+34, "首次启动 · 请阅读并接受以下许可协议", 0xD0E0F0)
 	f.Text(c, client.X+56, client.Y+52, "接受后本协议不会再次弹出；拒绝则下次启动仍会显示。", 0xB0C8E0)
 

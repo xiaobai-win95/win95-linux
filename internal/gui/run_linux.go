@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"win95linux/internal/desktop"
+	"win95linux/internal/ota"
 	"win95linux/internal/ui"
 )
 
@@ -259,6 +260,17 @@ func Run(opt Options) error {
 	d := desktop.New(fb.w, fb.h, opt.Mode, host)
 	desktop.BootBeep()
 	d.MaybeShowWelcome()
+
+	// A trial slot is committed only after the GUI has really started; a
+	// crash before this point leaves the state for the boot-time rollback.
+	go func() {
+		time.Sleep(8 * time.Second)
+		if ok, err := ota.ConfirmRunningBoot(); err != nil {
+			logf("OTA trial confirm failed: %v", err)
+		} else if ok {
+			logf("OTA trial slot confirmed")
+		}
+	}()
 
 	events := make(chan inputEvent, 2048)
 	for _, dev := range devs {

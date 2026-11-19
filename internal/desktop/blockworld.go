@@ -16,6 +16,8 @@ const (
 	bwTile    = 16
 	bwW       = 240
 	bwH       = 88
+	bwD       = 48
+	bwMidZ    = bwD / 2
 	bwPW      = 12.0
 	bwPH      = 26.0
 	bwDayLen  = 150.0
@@ -76,135 +78,196 @@ type bwParticle struct {
 }
 
 type bwWorld struct {
-	W, H    int
+	W, D, H int
 	Seed    int64
 	Tiles   []bwBlock
-	Heights []int
+	Heights []int // surface height at the middle depth, used by the 2D slice view
 }
 
-func newBWWorld(seed int64) *bwWorld {
-	w := &bwWorld{W: bwW, H: bwH, Seed: seed, Tiles: make([]bwBlock, bwW*bwH), Heights: make([]int, bwW)}
-	rng := rand.New(rand.NewSource(seed))
-	surf := 46
-	for x := 0; x < w.W; x++ {
-		surf += rng.Intn(3) - 1
-		if surf < 30 {
-			surf = 30
-		}
-		if surf > 60 {
-			surf = 60
-		}
-		h := surf + int(3*math.Sin(float64(x)/17+float64(seed%97)/11))
-		if h < 26 {
-			h = 26
-		}
-		if h > 66 {
-			h = 66
-		}
-		w.Heights[x] = h
+func (w *bwWorld) index(x, y, z int) int {
+	return (y*w.D+z)*w.W + x
+}
+
+func (w *bwWorld) At3(x, y, z int) bwBlock {
+	if x < 0 || x >= w.W || y < 0 || y >= w.H || z < 0 || z >= w.D {
+		return bwAir
 	}
-	for x := 0; x < w.W; x++ {
-		h := w.Heights[x]
-		sand := h >= 56 && (seed+int64(x/11))%3 == 0
-		for y := h; y < w.H; y++ {
-			switch {
-			case y == w.H-1:
-				w.Tiles[y*w.W+x] = bwBedrock
-			case y >= w.H-2 && rng.Intn(2) == 0:
-				w.Tiles[y*w.W+x] = bwBedrock
-			case y == h && sand:
-				w.Tiles[y*w.W+x] = bwSand
-			case y <= h+3 && sand:
-				w.Tiles[y*w.W+x] = bwSand
-			case y == h:
-				w.Tiles[y*w.W+x] = bwGrass
-			case y <= h+3:
-				w.Tiles[y*w.W+x] = bwDirt
-			default:
-				w.Tiles[y*w.W+x] = bwStone
+	return w.Tiles[w.index(x, y, z)]
+}
+
+func (w *bwWorld) Set3(x, y, z int, b bwBlock) {
+	if x < 0 || x >= w.W || y < 0 || y >= w.H || z < 0 || z >= w.D {
+		return
+	}
+	w.Tiles[w.index(x, y, z)] = b
+}
+
+func (w *bwWorld) At(x, y int) bwBlock {
+	return w.At3(x, y, bwMidZ)
+}
+
+func (w *bwWorld) Set(x, y int, b bwBlock) {
+	w.Set3(x, y, bwMidZ, b)
+}
+
+func (w *bwWorld) columnTop3(x, z int) int {
+	if x < 0 || x >= w.W || z < 0 || z >= w.D {
+		return w.H - 1
+	}
+	for y := 0; y < w.H; y++ {
+		if w.At3(x, y, z) != bwAir {
+			return y
+		}
+	}
+	return w.H - 1
+}
+
+func (w *bwWorld) columnTop(x int) int {
+	return w.columnTop3(x, bwMidZ)
+}
+
+// newBWWorld builds a real volumetric world: heightmap terrain for every
+// (x,z) column, 3D cave worms, ore veins and trees. At()/Set() address the
+// middle slice so the classic side view remains a valid cross-section.
+func newBWWorld(seed int64) *bwWorld {
+	w := &bwWorld{W: bwW, D: bwD, H: bwH, Seed: seed,
+		Tiles: make([]bwBlock, bwW*bwD*bwH), Heights: make([]int, bwW)}
+	rng := rand.New(rand.NewSource(seed))
+	heights := make([]int, bwW*bwD)
+	ph1 := float64(seed%89) / 7
+	ph2 := float64(seed%97) / 11
+	ph3 := float64(seed%53) / 5
+	for z := 0; z < w.D; z++ {
+		for x := 0; x < w.W; x++ {
+			fx, fz := float64(x), float64(z)
+			base := 46.0 +
+				10*math.Sin(fx/60+ph1) +
+				6*math.Sin(fx/23+ph2) +
+				5*math.Sin(fz/30+ph3) +
+				2.5*math.Sin((fx+fz)/14+ph1)
+			h := int(math.Round(base))
+			if h < 24 {
+				h = 24
+			}
+			if h > w.H-8 {
+				h = w.H - 8
+			}
+			heights[z*w.W+x] = h
+			if z == bwMidZ {
+				w.Heights[x] = h
 			}
 		}
 	}
-	// Cave worms.
-	for i := 0; i < 8; i++ {
-		cx := rng.Intn(w.W)
-		cy := w.Heights[cx] + 8 + rng.Intn(20)
-		steps := 25 + rng.Intn(45)
+	for z := 0; z < w.D; z++ {
+		for x := 0; x < w.W; x++ {
+			h := heights[z*w.W+x]
+			sand := h >= 52 && math.Sin(float64(x)/19+ph3)*math.Sin(float64(z)/23+ph1) > 0.5
+			for y := h; y < w.H; y++ {
+				var b bwBlock
+				switch {
+				case y == w.H-1:
+					b = bwBedrock
+				case y >= w.H-2 && bwHash(uint32(x*7+z), uint32(y)^uint32(seed))%2 == 0:
+					b = bwBedrock
+				case y == h && sand:
+					b = bwSand
+				case y <= h+3 && sand:
+					b = bwSand
+				case y == h:
+					b = bwGrass
+				case y <= h+3:
+					b = bwDirt
+				default:
+					b = bwStone
+				}
+				w.Set3(x, y, z, b)
+			}
+		}
+	}
+	// Cave worms wander through all three axes, so caves are real cavities
+	// rather than vertical stripes in a cross-section.
+	for i := 0; i < 22; i++ {
+		cx := 4 + rng.Intn(w.W-8)
+		cz := 4 + rng.Intn(w.D-8)
+		cy := heights[cz*w.W+cx] + 8 + rng.Intn(18)
+		steps := 45 + rng.Intn(70)
 		for s := 0; s < steps; s++ {
 			r := 1
+			if rng.Intn(3) == 0 {
+				r = 2
+			}
 			for dy := -r; dy <= r; dy++ {
-				for dx := -r; dx <= r; dx++ {
-					if dx*dx+dy*dy > r*r {
-						continue
-					}
-					x, y := cx+dx, cy+dy
-					if x < 1 || x >= w.W-1 || y < 3 || y >= w.H-3 {
-						continue
-					}
-					if y <= w.Heights[x]+4 {
-						continue
-					}
-					if w.Tiles[y*w.W+x] != bwBedrock {
-						w.Tiles[y*w.W+x] = bwAir
+				for dz := -r; dz <= r; dz++ {
+					for dx := -r; dx <= r; dx++ {
+						if dx*dx+dy*dy+dz*dz > r*r {
+							continue
+						}
+						x, y, z := cx+dx, cy+dy, cz+dz
+						if x < 1 || x >= w.W-1 || z < 1 || z >= w.D-1 || y < 3 || y >= w.H-3 {
+							continue
+						}
+						if y <= heights[z*w.W+x]+4 {
+							continue
+						}
+						if w.At3(x, y, z) != bwBedrock {
+							w.Set3(x, y, z, bwAir)
+						}
 					}
 				}
 			}
 			cx += rng.Intn(3) - 1
 			cy += rng.Intn(3) - 1
-			if cx < 1 {
-				cx = 1
-			}
-			if cx >= w.W-1 {
-				cx = w.W - 2
-			}
-			if cy < 4 {
-				cy = 4
-			}
-			if cy >= w.H-4 {
-				cy = w.H - 5
-			}
+			cz += rng.Intn(3) - 1
+			cx = min(max(cx, 1), w.W-2)
+			cz = min(max(cz, 1), w.D-2)
+			cy = min(max(cy, 4), w.H-5)
 		}
 	}
 	// Ore veins.
-	for i := 0; i < w.W*w.H/55; i++ {
-		x := rng.Intn(w.W)
-		top := w.Heights[x] + 5
-		if top >= w.H-3 {
+	for i := 0; i < w.W*w.D*w.H/1100; i++ {
+		x := 1 + rng.Intn(w.W-2)
+		z := 1 + rng.Intn(w.D-2)
+		top := heights[z*w.W+x] + 5
+		if top >= w.H-4 {
 			continue
 		}
 		y := top + rng.Intn(w.H-3-top)
-		if w.Tiles[y*w.W+x] != bwStone {
-			continue
-		}
-		depth := y - w.Heights[x]
-		b := bwCoal
+		depth := y - heights[z*w.W+x]
 		roll := rng.Intn(1000)
+		var ore bwBlock
 		switch {
-		case depth > 30 && roll < 22:
-			b = bwDiamond
-		case depth > 20 && roll < 70:
-			b = bwGold
-		case depth > 10 && roll < 170:
-			b = bwIron
-		case roll < 420:
-			b = bwCoal
+		case depth > 30 && roll < 24:
+			ore = bwDiamond
+		case depth > 20 && roll < 76:
+			ore = bwGold
+		case depth > 10 && roll < 190:
+			ore = bwIron
+		case roll < 440:
+			ore = bwCoal
 		default:
 			continue
 		}
-		w.Tiles[y*w.W+x] = b
-	}
-	// Trees.
-	for x := 7; x < w.W-7; x += 8 + rng.Intn(11) {
-		h := w.Heights[x]
-		if h < 10 || w.At(x, h) != bwGrass {
-			continue
+		for dy := 0; dy < 2; dy++ {
+			for dz := 0; dz < 2; dz++ {
+				for dx := 0; dx < 2; dx++ {
+					if w.At3(x+dx, y+dy, z+dz) == bwStone {
+						w.Set3(x+dx, y+dy, z+dz, ore)
+					}
+				}
+			}
 		}
-		trunk := 4 + rng.Intn(3)
+	}
+	plantTree := func(x, z int) {
+		h := heights[z*w.W+x]
+		if h < 12 {
+			return
+		}
+		trunk := 4 + int(bwHash(uint32(x), uint32(z))%3)
 		if h-trunk < 3 {
-			continue
+			return
 		}
 		for i := 1; i <= trunk; i++ {
-			w.Set(x, h-i, bwWood)
+			w.Set3(x, h-i, z, bwWood)
 		}
 		top := h - trunk
 		for dy := -2; dy <= 1; dy++ {
@@ -212,47 +275,57 @@ func newBWWorld(seed int64) *bwWorld {
 			if dy == -2 {
 				radius = 1
 			}
-			for dx := -radius; dx <= radius; dx++ {
-				if dx == 0 && dy <= 0 {
-					continue
-				}
-				nx, ny := x+dx, top+dy
-				if nx < 0 || nx >= w.W || ny < 1 {
-					continue
-				}
-				if w.At(nx, ny) == bwAir {
-					w.Set(nx, ny, bwLeaves)
+			for dz := -radius; dz <= radius; dz++ {
+				for dx := -radius; dx <= radius; dx++ {
+					if dx == 0 && dz == 0 && dy <= 0 {
+						continue
+					}
+					nx, ny, nz := x+dx, top+dy, z+dz
+					if nx < 0 || nx >= w.W || nz < 0 || nz >= w.D || ny < 1 {
+						continue
+					}
+					if w.At3(nx, ny, nz) == bwAir {
+						w.Set3(nx, ny, nz, bwLeaves)
+					}
 				}
 			}
 		}
-		if w.At(x, top-1) == bwAir {
-			w.Set(x, top-1, bwLeaves)
+		if w.At3(x, top-1, z) == bwAir {
+			w.Set3(x, top-1, z, bwLeaves)
+		}
+	}
+	for z := 5; z < w.D-5; z += 4 + int(bwHash(uint32(z), uint32(seed))%5) {
+		for x := 7; x < w.W-7; x += 8 + int(bwHash(uint32(x), uint32(z)^uint32(seed))%9) {
+			if bwHash(uint32(x+z*131), uint32(seed))%4 != 0 {
+				continue
+			}
+			h := heights[z*w.W+x]
+			if w.At3(x, h, z) != bwGrass {
+				continue
+			}
+			plantTree(x, z)
+		}
+	}
+	// Guarantee that the middle cross-section contains wood, leaves and coal
+	// so both the classic view and the 3D spawn area have recognizable props.
+	for _, x := range []int{21, 67, 122, 181, 219} {
+		if x >= w.W {
+			continue
+		}
+		h := heights[bwMidZ*w.W+x]
+		w.Set3(x, h, bwMidZ, bwGrass)
+		plantTree(x, bwMidZ)
+	}
+	cx := 40
+	ch := heights[bwMidZ*w.W+cx]
+	for dy := 5; dy < 10; dy++ {
+		for dz := bwMidZ - 1; dz <= bwMidZ+1; dz++ {
+			if w.At3(cx, ch+dy, dz) == bwStone {
+				w.Set3(cx, ch+dy, dz, bwCoal)
+			}
 		}
 	}
 	return w
-}
-
-func (w *bwWorld) At(x, y int) bwBlock {
-	if x < 0 || x >= w.W || y < 0 || y >= w.H {
-		return bwAir
-	}
-	return w.Tiles[y*w.W+x]
-}
-
-func (w *bwWorld) Set(x, y int, b bwBlock) {
-	if x < 0 || x >= w.W || y < 0 || y >= w.H {
-		return
-	}
-	w.Tiles[y*w.W+x] = b
-}
-
-func (w *bwWorld) columnTop(x int) int {
-	for y := 0; y < w.H; y++ {
-		if w.At(x, y) != bwAir {
-			return y
-		}
-	}
-	return w.H - 1
 }
 
 func (w *bwWorld) rle() []byte {
@@ -303,6 +376,12 @@ func bwDecodeRLE(data []byte, n int) ([]bwBlock, error) {
 
 type bwKeyState struct {
 	left, right bool
+	forward     bool
+	backward    bool
+	lookLeft    bool
+	lookRight   bool
+	lookUp      bool
+	lookDown    bool
 	until       time.Time
 }
 
@@ -310,11 +389,15 @@ type bwSaveFile struct {
 	Version int      `json:"version"`
 	Seed    int64    `json:"seed"`
 	W       int      `json:"w"`
+	D       int      `json:"d,omitempty"`
 	H       int      `json:"h"`
 	Heights []int    `json:"heights"`
 	Tiles   []byte   `json:"tiles"`
 	X       float64  `json:"x"`
 	Y       float64  `json:"y"`
+	Z       float64  `json:"z,omitempty"`
+	Yaw     float64  `json:"yaw,omitempty"`
+	Pitch   float64  `json:"pitch,omitempty"`
 	Hotbar  []bwSlot `json:"hotbar"`
 	Sel     int      `json:"sel"`
 	Phase   float64  `json:"phase"`
@@ -329,11 +412,30 @@ type BlockWorldApp struct {
 	seed  int64
 	phase float64
 
-	px, py   float64
-	vx, vy   float64
-	face     int
-	onGround bool
-	walk     float64
+	px, py, pz float64
+	vx, vy, vz float64
+	face       int
+	onGround   bool
+	walk       float64
+
+	// First-person camera. yaw rotates around the vertical axis, pitch looks
+	// up (negative) or down (positive); both are radians.
+	yaw, pitch float64
+	viewDist   float64
+
+	hover3Valid  bool
+	hover3X      int
+	hover3Y      int
+	hover3Z      int
+	hover3PX     int
+	hover3PY     int
+	hover3PZ     int
+	mine3X       int
+	mine3Y       int
+	mine3Z       int
+	lastMouseX   int
+	lastMouseY   int
+	mouseLooking bool
 
 	hotbar [9]bwSlot
 	sel    int
@@ -374,6 +476,8 @@ func NewBlockWorldApp(d *Desktop) *BlockWorldApp {
 		d:        d,
 		rng:      rand.New(rand.NewSource(time.Now().UnixNano())),
 		savePath: bwSaveDef,
+		view3D:   true,
+		viewDist: 96.0,
 	}
 	a.newWorld(time.Now().UnixNano())
 	return a
@@ -426,44 +530,64 @@ func (a *BlockWorldApp) newWorld(seed int64) {
 
 func (a *BlockWorldApp) spawn() {
 	mid := a.world.W / 2
-	for off := 0; off < a.world.W/2; off++ {
-		for _, x := range []int{mid + off, mid - off} {
-			if x < 2 || x >= a.world.W-2 {
-				continue
-			}
-			y := a.world.columnTop(x)
-			if y < 3 || y >= a.world.H-3 {
-				continue
-			}
-			b := a.world.At(x, y)
-			if b != bwGrass && b != bwSand {
-				continue
-			}
-			if a.world.At(x, y-1) != bwAir || a.world.At(x, y-2) != bwAir {
-				continue
-			}
-			a.px = float64(x*bwTile + 2)
-			a.py = float64(y*bwTile) - bwPH
-			a.vx, a.vy = 0, 0
-			a.onGround = true
-			a.face = 1
-			return
+	bestX, bestY, bestYaw, bestScore := -1, -1, 0.0, -1
+	for x := 8; x < a.world.W-8; x += 2 {
+		y := a.world.columnTop(x)
+		if y < 3 || y >= a.world.H-6 {
+			continue
+		}
+		b := a.world.At(x, y)
+		if b != bwGrass && b != bwSand {
+			continue
+		}
+		if a.world.At(x, y-1) != bwAir || a.world.At(x, y-2) != bwAir {
+			continue
+		}
+		if !a.spawnClear(x, y) {
+			continue
+		}
+		yaw, score := a.openView(x, y)
+		if score > bestScore {
+			bestX, bestY, bestYaw, bestScore = x, y, yaw, score
 		}
 	}
-	a.px = float64(mid*bwTile + 2)
-	a.py = float64(a.world.Heights[mid]*bwTile) - bwPH
+	if bestX < 0 {
+		bestX, bestY = mid, a.world.Heights[mid]
+		bestYaw = a.openYaw(bestX, bestY)
+	}
+	a.px = float64(bestX*bwTile + 2)
+	a.py = float64(bestY*bwTile) - bwPH
+	a.pz = float64(bwMidZ*bwTile) + (bwTile-bwPW)/2
+	a.vx, a.vy, a.vz = 0, 0, 0
 	a.onGround = true
 	a.face = 1
+	a.yaw, a.pitch = bestYaw, 0
+}
+
+// spawnClear keeps the first-person spawn out of tree trunks and canopies so
+// the view opens onto the landscape instead of the inside of a leaf block.
+func (a *BlockWorldApp) spawnClear(x, y int) bool {
+	for dz := -2; dz <= 2; dz++ {
+		for dx := -2; dx <= 2; dx++ {
+			for dy := -5; dy <= 0; dy++ {
+				switch a.world.At3(x+dx, y+dy, bwMidZ+dz) {
+				case bwWood, bwLeaves:
+					return false
+				}
+			}
+		}
+	}
+	return true
 }
 
 func (a *BlockWorldApp) showHelp(d *Desktop) {
 	d.MessageBox("方块世界 95 - 操作说明",
 		"移动：A / D 或 ← / →\n"+
-			"跳跃：空格、W 或 ↑\n"+
-			"挖掘：按住鼠标左键\n"+
-			"放置：鼠标右键\n"+
+			"3D 移动：W A S D　跳跃：空格\n"+
+			"视角：方向键，或按住右键拖动\n"+
+			"挖掘：按住鼠标左键　放置：鼠标右键\n"+
 			"选择方块：1-9 或滚轮\n"+
-			"合成面板：E　3D 立体视角：V\n"+
+			"合成面板：E　3D/剖面切换：V\n"+
 			"保存世界：Ctrl+S　读取：Ctrl+O\n\n"+
 			"提示：基岩无法破坏；放置方块时需要相邻方块支撑，\n"+
 			"而且不能放在自己身上。按 E 打开合成面板，把木头合成\n"+
@@ -475,8 +599,12 @@ func (a *BlockWorldApp) showHelp(d *Desktop) {
 
 func (a *BlockWorldApp) showAbout(d *Desktop) {
 	d.MessageBox("关于方块世界 95",
-		"方块世界 95\n版本 26.2\n\n"+
-			"一个在 Windows 95 Linux 桌面上运行的\n二维方块沙盒小游戏：挖矿、建造、看日出。\n\n"+
+		"方块世界 95\n版本 26.3\n\n"+
+			"一个在 Windows 95 Linux 桌面上运行的\n三维体素沙盒小游戏：挖矿、建造、看日出。\n\n"+
+			"3D 视角由自研体素光栅化引擎逐像素光线步进渲染，\n"+
+			"具有真实的体积遮挡、透视和昼夜光照。\n"+
+			"目标环境 UTM Apple 虚拟化不提供 GPU，因此画面由 CPU\n"+
+			"实时渲染；Xorg 下的 Firefox 等程序可使用 Mesa 软件 GL。\n\n"+
 			"本游戏只写入自己的存档文件，\n不会修改系统设置，也不会接触磁盘分区。",
 		IconInfo, []string{"确定"}, nil)
 }
@@ -522,14 +650,18 @@ func (a *BlockWorldApp) writeSave() error {
 		path = bwSaveDef
 	}
 	sv := bwSaveFile{
-		Version: 2,
+		Version: 3,
 		Seed:    a.seed,
 		W:       a.world.W,
+		D:       a.world.D,
 		H:       a.world.H,
 		Heights: a.world.Heights,
 		Tiles:   a.world.rle(),
 		X:       a.px,
 		Y:       a.py,
+		Z:       a.pz,
+		Yaw:     a.yaw,
+		Pitch:   a.pitch,
 		Hotbar:  a.hotbar[:],
 		Sel:     a.sel,
 		Phase:   a.phase,
@@ -579,17 +711,38 @@ func (a *BlockWorldApp) loadWorld(notify bool) {
 }
 
 func (a *BlockWorldApp) applySave(sv bwSaveFile) error {
-	if sv.W < 16 || sv.H < 16 || sv.W > 2000 || sv.H > 2000 {
+	if sv.W != bwW || sv.H != bwH || sv.D < 0 || sv.D > 512 {
 		return fmt.Errorf("世界尺寸无效")
 	}
-	tiles, err := bwDecodeRLE(sv.Tiles, sv.W*sv.H)
+	legacy2D := sv.D == 0
+	volume := sv.W * sv.H
+	if !legacy2D {
+		volume = sv.W * sv.D * sv.H
+	}
+	tiles, err := bwDecodeRLE(sv.Tiles, volume)
 	if err != nil {
 		return err
 	}
 	if len(sv.Heights) != sv.W {
 		return fmt.Errorf("地形高度数据不完整")
 	}
-	w := &bwWorld{W: sv.W, H: sv.H, Seed: sv.Seed, Tiles: tiles, Heights: append([]int(nil), sv.Heights...)}
+	var w *bwWorld
+	if legacy2D {
+		// Version 2 saves only stored the middle cross-section. Expand them
+		// into a fresh 3D world instead of rejecting an old save.
+		w = newBWWorld(sv.Seed)
+		for y := 0; y < sv.H; y++ {
+			for x := 0; x < sv.W; x++ {
+				w.Set3(x, y, bwMidZ, tiles[y*sv.W+x])
+			}
+		}
+		w.Heights = append([]int(nil), sv.Heights...)
+	} else if sv.D == bwD {
+		w = &bwWorld{W: sv.W, D: sv.D, H: sv.H, Seed: sv.Seed, Tiles: tiles,
+			Heights: append([]int(nil), sv.Heights...)}
+	} else {
+		return fmt.Errorf("存档深度不受支持")
+	}
 	a.world = w
 	a.seed = sv.Seed
 	if len(sv.Hotbar) == 9 {
@@ -609,13 +762,25 @@ func (a *BlockWorldApp) applySave(sv bwSaveFile) error {
 	}
 	a.phase = math.Mod(math.Abs(sv.Phase), 1)
 	a.px, a.py = sv.X, sv.Y
-	a.vx, a.vy = 0, 0
-	if a.px < 0 || a.py < 0 || a.px > float64(w.W*bwTile) || a.py > float64(w.H*bwTile) {
+	a.pz = sv.Z
+	if a.pz <= 0 {
+		a.pz = float64(bwMidZ*bwTile) + (bwTile-bwPW)/2
+	}
+	a.yaw, a.pitch = sv.Yaw, sv.Pitch
+	if math.Abs(a.pitch) > 1.45 {
+		a.pitch = 0
+	}
+	a.vx, a.vy, a.vz = 0, 0, 0
+	if a.px < 0 || a.py < 0 || a.px > float64(w.W*bwTile) || a.py > float64(w.H*bwTile) ||
+		a.pz < 0 || a.pz > float64(w.D*bwTile) {
 		a.spawn()
 	}
 	a.particles = nil
+	a.floats = nil
 	a.mining = false
 	a.mineProg = 0
+	a.hover3Valid = false
+	a.mouseLooking = false
 	a.dirty = false
 	return nil
 }
@@ -648,8 +813,27 @@ func (a *BlockWorldApp) Animate(d *Desktop, w *Window, now time.Time) {
 	a.phase = math.Mod(a.phase+dt/bwDayLen, 1)
 	a.cloudShift += dt * 5
 	a.stepKeys(now)
-	a.stepPhysics(dt)
-	a.stepMining(dt)
+	if a.view3D {
+		if a.keys.lookLeft {
+			a.yaw -= dt * 1.9
+		}
+		if a.keys.lookRight {
+			a.yaw += dt * 1.9
+		}
+		if a.keys.lookUp {
+			a.pitch -= dt * 1.4
+		}
+		if a.keys.lookDown {
+			a.pitch += dt * 1.4
+		}
+		a.pitch = math.Max(-1.45, math.Min(1.45, a.pitch))
+		a.stepPhysics3(dt)
+		a.updateHover3()
+		a.stepMining3(dt)
+	} else {
+		a.stepPhysics(dt)
+		a.stepMining(dt)
+	}
 	a.stepParticles(dt)
 	a.stepFloats(dt)
 	d.Invalidate()
@@ -657,7 +841,7 @@ func (a *BlockWorldApp) Animate(d *Desktop, w *Window, now time.Time) {
 
 func (a *BlockWorldApp) stepKeys(now time.Time) {
 	if now.After(a.keys.until) {
-		a.keys.left, a.keys.right = false, false
+		a.keys = bwKeyState{}
 	}
 }
 
@@ -957,6 +1141,55 @@ func (a *BlockWorldApp) Key(d *Desktop, w *Window, ev KeyEvent) bool {
 	if a.craftOpen {
 		return a.craftKey(d, ev)
 	}
+	if ev.Ctrl && ev.Name == "S" {
+		a.saveWorld(true)
+		return true
+	}
+	if ev.Ctrl && ev.Name == "O" {
+		a.loadWorld(true)
+		return true
+	}
+	switch ev.Name {
+	case "F2":
+		a.confirmNewWorld(d)
+		return true
+	case "E":
+		a.toggleCraft(d)
+		return true
+	case "V":
+		a.toggle3D(d)
+		return true
+	}
+	if a.view3D {
+		switch ev.Name {
+		case "A":
+			a.keys.left = true
+		case "D":
+			a.keys.right = true
+		case "W":
+			a.keys.forward = true
+		case "S":
+			a.keys.backward = true
+		case "Left":
+			a.keys.lookLeft = true
+		case "Right":
+			a.keys.lookRight = true
+		case "Up":
+			a.keys.lookUp = true
+		case "Down":
+			a.keys.lookDown = true
+		case " ":
+			a.jump()
+		default:
+			if ev.Rune >= '1' && ev.Rune <= '9' {
+				a.sel = int(ev.Rune - '1')
+				return true
+			}
+			return false
+		}
+		a.keys.until = time.Now().Add(240 * time.Millisecond)
+		return true
+	}
 	switch ev.Name {
 	case "A", "Left":
 		a.keys.left = true
@@ -969,23 +1202,6 @@ func (a *BlockWorldApp) Key(d *Desktop, w *Window, ev KeyEvent) bool {
 	case "W", "Up", " ":
 		a.jump()
 		return true
-	case "F2":
-		a.confirmNewWorld(d)
-		return true
-	case "E":
-		a.toggleCraft(d)
-		return true
-	case "V":
-		a.toggle3D(d)
-		return true
-	}
-	if ev.Ctrl && (ev.Name == "S") {
-		a.saveWorld(true)
-		return true
-	}
-	if ev.Ctrl && (ev.Name == "O") {
-		a.loadWorld(true)
-		return true
 	}
 	if ev.Rune >= '1' && ev.Rune <= '9' {
 		a.sel = int(ev.Rune - '1')
@@ -996,7 +1212,6 @@ func (a *BlockWorldApp) Key(d *Desktop, w *Window, ev KeyEvent) bool {
 
 func (a *BlockWorldApp) Mouse(d *Desktop, w *Window, client ui.Rect, ev MouseEvent) {
 	a.client = client
-	a.updateCamera(client)
 	if a.craftOpen {
 		a.craftMouse(d, client, ev)
 		return
@@ -1008,6 +1223,11 @@ func (a *BlockWorldApp) Mouse(d *Desktop, w *Window, client ui.Rect, ev MouseEve
 		}
 		return
 	}
+	if a.view3D {
+		a.mouse3D(d, client, ev)
+		return
+	}
+	a.updateCamera(client)
 	tx, ty, ok := a.tileAt(client, ev.X, ev.Y)
 	if ev.Kind == MouseMove {
 		a.hoverX, a.hoverY, a.hoverValid = tx, ty, ok
@@ -1049,6 +1269,60 @@ func (a *BlockWorldApp) Mouse(d *Desktop, w *Window, client ui.Rect, ev MouseEve
 			a.hoverX, a.hoverY, a.hoverValid = tx, ty, ok
 			if ok {
 				a.placeBlock(tx, ty)
+			}
+			d.Invalidate()
+		}
+	}
+}
+
+func (a *BlockWorldApp) mouse3D(d *Desktop, client ui.Rect, ev MouseEvent) {
+	for i := 0; i < 9; i++ {
+		if hotbarRect(client, i).Contains(ev.X, ev.Y) && ev.Kind == MouseDown {
+			a.sel = i
+			a.mining = false
+			a.mineProg = 0
+			d.Invalidate()
+			return
+		}
+	}
+	if ev.Kind == MouseMove {
+		dx := ev.X - a.lastMouseX
+		dy := ev.Y - a.lastMouseY
+		a.lastMouseX, a.lastMouseY = ev.X, ev.Y
+		if a.mouseLooking {
+			a.yaw += float64(dx) * 0.006
+			a.pitch = math.Max(-1.45, math.Min(1.45, a.pitch+float64(dy)*0.006))
+			a.updateHover3()
+			d.Invalidate()
+		}
+		return
+	}
+	switch ev.Button {
+	case 1:
+		if ev.Kind == MouseDown {
+			a.updateHover3()
+			if a.hover3Valid && a.world.At3(a.hover3X, a.hover3Y, a.hover3Z) == bwBedrock {
+				a.setStatus("基岩非常坚硬，无法破坏")
+				return
+			}
+			a.mining = a.hover3Valid
+			a.mineProg = 0
+			a.mine3X, a.mine3Y, a.mine3Z = a.hover3X, a.hover3Y, a.hover3Z
+			d.Invalidate()
+		} else if ev.Kind == MouseUp {
+			a.mining = false
+			a.mineProg = 0
+			d.Invalidate()
+		}
+	case 3:
+		if ev.Kind == MouseDown {
+			a.mouseLooking = true
+			a.lastMouseX, a.lastMouseY = ev.X, ev.Y
+		} else if ev.Kind == MouseUp {
+			a.mouseLooking = false
+			a.updateHover3()
+			if a.hover3Valid {
+				a.placeBlock3(a.hover3PX, a.hover3PY, a.hover3PZ)
 			}
 			d.Invalidate()
 		}
@@ -1100,8 +1374,18 @@ func hotbarRect(client ui.Rect, i int) ui.Rect {
 }
 
 func (a *BlockWorldApp) Paint(d *Desktop, w *Window, c *ui.Canvas, client ui.Rect) {
-	a.updateCamera(client)
+	a.client = client
 	f := ui.DefaultFont()
+	if a.view3D {
+		a.render3D(c, client)
+		a.drawCrosshair3(c, client, f)
+		a.drawHUD(c, client, f)
+		if a.craftOpen {
+			a.drawCraftPanel(c, client, f)
+		}
+		return
+	}
+	a.updateCamera(client)
 	a.drawSky(c, client)
 
 	x0 := a.camX / bwTile
@@ -1551,6 +1835,7 @@ func (a *BlockWorldApp) drawHUD(c *ui.Canvas, client ui.Rect, f *ui.Font) {
 	f.TextBold(c, panel.X+10, panel.Y+5, label, 0xFFFF80)
 	tx := int(a.px / bwTile)
 	ty := int((a.py + bwPH) / bwTile)
+	tz := int((a.pz + bwPW/2) / bwTile)
 	period := "白天"
 	switch {
 	case a.phase < 0.08 || a.phase >= 0.94:
@@ -1562,8 +1847,13 @@ func (a *BlockWorldApp) drawHUD(c *ui.Canvas, client ui.Rect, f *ui.Font) {
 	default:
 		period = "夜晚"
 	}
-	f.Text(c, panel.X+10, panel.Y+21, fmt.Sprintf("X %d   Y %d   ·   %s", tx, ty, period), 0xC8D8E8)
-	f.Text(c, panel.X+10, panel.Y+37, "左键挖 · 右键放 · E 合成 · V 3D", 0x8FA6B8)
+	if a.view3D {
+		f.Text(c, panel.X+10, panel.Y+21, fmt.Sprintf("X %d   Y %d   Z %d   ·   %s", tx, ty, tz, period), 0xC8D8E8)
+		f.Text(c, panel.X+10, panel.Y+37, "WASD 移动 · 右键拖动视角 · V 剖面", 0x8FA6B8)
+	} else {
+		f.Text(c, panel.X+10, panel.Y+21, fmt.Sprintf("X %d   Y %d   ·   %s", tx, ty, period), 0xC8D8E8)
+		f.Text(c, panel.X+10, panel.Y+37, "A/D 移动 · 左键挖 · 右键放 · V 3D", 0x8FA6B8)
+	}
 
 	for i := 0; i < 9; i++ {
 		r := hotbarRect(client, i)

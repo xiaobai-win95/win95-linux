@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"win95linux/internal/ota"
 	"win95linux/internal/ui"
 )
 
@@ -439,7 +440,7 @@ func TestPreviewFrames(t *testing.T) {
 			a := NewPShellApp(d)
 			a.sess.cwd = "/root"
 			a.lines = []psLine{
-				{text: "Windows PowerShell 26.2", col: psColPrompt, bold: true},
+				{text: "Windows PowerShell 26.3", col: psColPrompt, bold: true},
 				{text: "版权所有 (C) 2026 Windows 95 Linux 项目。保留所有权利。", col: psColDim},
 				{text: ""},
 				{text: "PS C:\\root> Get-ChildItem", col: psColDim},
@@ -473,7 +474,7 @@ func TestPreviewFrames(t *testing.T) {
 			a.path = "/root/文档/示例.ps1"
 			a.caretLn, a.caretCol = 8, len([]rune(a.lines[8]))
 			a.out = []psLine{
-				{text: "Windows PowerShell ISE 26.2", col: psColPrompt, bold: true},
+				{text: "Windows PowerShell ISE 26.3", col: psColPrompt, bold: true},
 				{text: "编辑脚本后按 F5 运行。Ctrl+S 保存，Ctrl+O 打开。", col: psColDim},
 				{text: ""},
 				{text: "— 运行 09:41:27 —", col: psColDim},
@@ -684,6 +685,32 @@ func TestPreviewFrames(t *testing.T) {
 
 // renderApp draws a single application window on an otherwise empty desktop.
 // after runs once the window exists, for content that needs the canvas size.
+func TestPreviewOTA(t *testing.T) {
+	_ = os.MkdirAll("/Users/madic/aiwork/win95linux/out", 0o755)
+	d := New(1024, 768, ModeDesktop, Host{Info: "预览环境 · 1024×768"})
+	a := &OTAApp{
+		d: d, phase: otaAvailable, current: "26.3", slot: ota.SlotA, progress: 100,
+		status: "发现新版本 26.4（当前 26.3）",
+		notes: []string{
+			"· 新增系统更新与共享超级分区 A/B 双插槽",
+			"· 更新写入备用插槽，连续两次启动失败时自动回退",
+		},
+		log: []string{
+			"正在连接 https://github.com/xiaobai-win95/win95-linux/releases/latest/download/latest.json",
+			"发现新版本 26.4",
+			"更新包大小: 10.7 MB",
+		},
+	}
+	a.manifest = ota.Manifest{
+		Format: ota.Format, Version: "26.4", SlotLayout: ota.Layout,
+		Notes: "test", Package: ota.PackageRef{Size: 11203429},
+	}
+	d.Open(a)
+	c := ui.NewCanvas(1024, 768)
+	d.Draw(c)
+	savePreview(t, c, "desk-preview-ota.png")
+}
+
 func renderApp(t *testing.T, name string, makeApp func(d *Desktop) App, after func(d *Desktop, app App)) {
 	t.Helper()
 	d := New(1024, 768, ModeDesktop, Host{Info: "预览环境 · 1024×768"})

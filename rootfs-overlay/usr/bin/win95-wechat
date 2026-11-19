@@ -1,0 +1,44 @@
+#!/bin/sh
+# Start menu entry point: install WeChat on first use, then run it on Xvfb :1
+# through the Win95 nested X11 proxy. A full XFCE desktop is available from
+# the desktop icon, but WeChat itself stays inside the proxy.
+
+ARCH_ROOT=/opt/archlinux
+
+if [ "$(id -u)" != "0" ]; then
+	echo "win95-wechat: must run as root" >&2
+	exit 1
+fi
+
+# The marker is written only after libandromeda.so, the RUNPATH and ldconfig
+# checks pass, so an old or half-extracted tree is repaired on launch.
+if [ ! -x "$ARCH_ROOT/opt/wechat/wechat" ] || [ ! -f "$ARCH_ROOT/opt/wechat/.win95-ok" ]; then
+	/usr/bin/win95-wechat-setup || exit 1
+fi
+
+if [ -z "$DISPLAY" ]; then
+	echo "win95-wechat: no X11 display. Open it from the Win95 desktop:" >&2
+	echo "  Start > Programs > WeChat (runs in the nested X11 proxy)." >&2
+	exit 1
+fi
+
+# dbus-run-session puts the socket under /tmp, which is not shared with the
+# chroot; only /run is bind-mounted. Start the session bus at
+# /run/user/0/bus instead so Arch's libraries can reach it.
+mkdir -p /run/user/0
+chmod 0700 /run/user/0
+if [ "$DBUS_SESSION_BUS_ADDRESS" != "unix:path=/run/user/0/bus" ]; then
+	if [ ! -S /run/user/0/bus ]; then
+		rm -f /run/user/0/bus
+		if command -v dbus-daemon >/dev/null 2>&1; then
+			dbus-daemon --session --address=unix:path=/run/user/0/bus --fork \
+				>/dev/null 2>&1 || true
+		fi
+	fi
+	if [ -S /run/user/0/bus ]; then
+		DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/0/bus
+		export DBUS_SESSION_BUS_ADDRESS
+	fi
+fi
+
+exec /usr/bin/win95-wechat-run

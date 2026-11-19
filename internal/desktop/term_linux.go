@@ -43,7 +43,13 @@ func setWinsize(fd uintptr, cols, rows int) {
 	_ = ioctl(fd, ioctlTIOCSWINSZ, unsafe.Pointer(&ws))
 }
 
+// termOptions is declared in term_options.go so the stub build can use it too.
+
 func startTerminal(cols, rows int) (*termProc, error) {
+	return startTerminalOpts(cols, rows, termOptions{})
+}
+
+func startTerminalOpts(cols, rows int, opt termOptions) (*termProc, error) {
 	if cols < 20 {
 		cols = 20
 	}
@@ -72,15 +78,23 @@ func startTerminal(cols, rows int) (*termProc, error) {
 	}
 	setWinsize(master.Fd(), cols, rows)
 
-	shell := "/bin/ash"
-	if _, err := os.Stat(shell); err != nil {
-		shell = "/bin/sh"
+	var cmd *exec.Cmd
+	if len(opt.argv) > 0 {
+		cmd = exec.Command(opt.argv[0], opt.argv[1:]...)
+	} else {
+		shell := "/bin/ash"
+		if _, err := os.Stat(shell); err != nil {
+			shell = "/bin/sh"
+		}
+		cmd = exec.Command(shell, "-i")
 	}
-	cmd := exec.Command(shell, "-i")
 	cmd.Stdin = slave
 	cmd.Stdout = slave
 	cmd.Stderr = slave
-	cmd.Dir = "/root"
+	cmd.Dir = opt.cwd
+	if cmd.Dir == "" {
+		cmd.Dir = "/root"
+	}
 	if _, err := os.Stat(cmd.Dir); err != nil {
 		cmd.Dir = "/"
 	}
@@ -92,12 +106,14 @@ func startTerminal(cols, rows int) (*termProc, error) {
 		"ENV=/etc/profile",
 		"PS1=\\033[1;32m\\u@win95\\033[0m:\\033[1;34m\\w\\033[0m\\$ ",
 		"HOSTNAME=win95",
+		"PWD=" + cmd.Dir,
 	}
+	cmd.Env = append(cmd.Env, opt.env...)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true, Setctty: true, Ctty: 0}
 	if err := cmd.Start(); err != nil {
 		slave.Close()
 		master.Close()
-		return nil, fmt.Errorf("启动 shell 失败: %w", err)
+		return nil, fmt.Errorf("启动进程失败: %w", err)
 	}
 	slave.Close()
 	return &termProc{master: master, cmd: cmd, pid: cmd.Process.Pid}, nil
@@ -111,11 +127,36 @@ func (p *termProc) write(b []byte) {
 	_, _ = p.master.Write(b)
 }
 
+// wait reaps the child and reports its exit status. The terminal uses it to
+// keep the window open with a final exit code instead of a result dialog.
+func (p *termProc) wait() (int, error) {
+	if p == nil || p.cmd == nil {
+		return -1, nil
+	}
+	err := p.cmd.Wait()
+	if err == nil {
+		return 0, nil
+	}
+	if ee, ok := err.(*exec.ExitError); ok {
+		return ee.ExitCode(), err
+	}
+	return -1, err
+}
+
 func (p *termProc) resize(cols, rows int) {
 	if p == nil || p.master == nil {
 		return
 	}
 	setWinsize(p.master.Fd(), cols, rows)
+}
+
+// closeMaster releases the PTY master without signalling the child. Callers
+// use it after wait() to unblock a reader goroutine that may still be in read.
+func (p *termProc) closeMaster() {
+	if p == nil || p.master == nil {
+		return
+	}
+	_ = p.master.Close()
 }
 
 func (p *termProc) close() {

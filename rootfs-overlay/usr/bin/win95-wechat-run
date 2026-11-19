@@ -1,0 +1,47 @@
+#!/bin/sh
+# Launch WeChat inside the Arch glibc chroot on Xvfb :1 used by the nested X11
+# proxy. Mesa's llvmpipe provides GL because UTM Apple VZ has no GPU.
+
+ARCH_ROOT=/opt/archlinux
+NOTIFY=/usr/bin/win95-notify
+
+notify() {
+	[ -x "$NOTIFY" ] || return 0
+	"$NOTIFY" "$1" "$2" >/dev/null 2>&1
+}
+
+if [ ! -x "$ARCH_ROOT/opt/wechat/wechat" ] || [ ! -f "$ARCH_ROOT/opt/wechat/.win95-ok" ]; then
+	echo "win95-wechat-run: WeChat is not installed correctly" >&2
+	notify "微信" "微信尚未正确安装，请从开始菜单重新运行微信以自动修复。"
+	exit 1
+fi
+
+/usr/bin/win95-arch-mounts || exit 1
+
+# startx puts the cookie in the host /root; the chroot has its own /root.
+cp -f /root/.Xauthority "$ARCH_ROOT/root/.Xauthority" 2>/dev/null || true
+mkdir -p "$ARCH_ROOT/run/user/0" 2>/dev/null || true
+
+export DISPLAY="${DISPLAY:-:0}"
+# The chroot's /run is the host's /run, so this bus socket is reachable from
+# both sides even though /tmp is not shared.
+export DBUS_SESSION_BUS_ADDRESS="${DBUS_SESSION_BUS_ADDRESS:-unix:path=/run/user/0/bus}"
+exec chroot "$ARCH_ROOT" /usr/bin/env -i \
+	DISPLAY="$DISPLAY" \
+	XAUTHORITY=/root/.Xauthority \
+	HOME=/root USER=root LOGNAME=root \
+	LANG=zh_CN.UTF-8 LANGUAGE=zh_CN:zh \
+	PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+	XDG_RUNTIME_DIR=/run/user/0 \
+	XDG_SESSION_TYPE=x11 \
+	XDG_CURRENT_DESKTOP=XFCE \
+	DBUS_SESSION_BUS_ADDRESS="$DBUS_SESSION_BUS_ADDRESS" \
+	LD_LIBRARY_PATH=/opt/wechat:/opt/wechat/lib:/opt/wechat/lib64 \
+	GDK_BACKEND=x11 \
+	QT_QPA_PLATFORM=xcb \
+	QT_QPA_PLATFORMTHEME= \
+	NO_AT_BRIDGE=1 \
+	ELECTRON_OZONE_PLATFORM_HINT=x11 \
+	LIBGL_ALWAYS_SOFTWARE=1 GALLIUM_DRIVER=llvmpipe \
+	/opt/wechat/wechat --no-sandbox --disable-setuid-sandbox \
+		--disable-dev-shm-usage

@@ -39,6 +39,7 @@ type termScreen struct {
 	done     chan struct{}
 	closed   bool
 	err      string
+	opts     termOptions
 	scroll   VScroll
 	onOutput func()
 }
@@ -50,6 +51,9 @@ type TerminalApp struct {
 	t     *termScreen
 	area  ui.Rect
 	press string
+
+	title string
+	key   string
 
 	selAnchorX, selAnchorY int
 	selCurX, selCurY       int
@@ -63,12 +67,20 @@ var ansiColors = []uint32{
 }
 
 func NewTerminalApp(d *Desktop) *TerminalApp {
-	a := &TerminalApp{d: d}
+	return newTerminalApp(d, termOptions{}, "终端", "")
+}
+
+// newTerminalApp builds a terminal that either hosts an interactive shell or
+// runs argv directly inside a PTY. Scripts keep stdin attached, so read
+// prompts work; output is painted as it arrives.
+func newTerminalApp(d *Desktop, opts termOptions, title, key string) *TerminalApp {
+	a := &TerminalApp{d: d, title: title, key: key}
 	a.t = &termScreen{
 		cols: 80, rows: 24,
 		fg:      0xC0C0C0,
 		bg:      0x000000,
 		cursor:  true,
+		opts:    opts,
 		inputCh: make(chan []byte, 64),
 		done:    make(chan struct{}),
 	}
@@ -78,7 +90,12 @@ func NewTerminalApp(d *Desktop) *TerminalApp {
 	return a
 }
 
-func (a *TerminalApp) Title() string           { return "终端" }
+func (a *TerminalApp) Title() string {
+	if a.title != "" {
+		return a.title
+	}
+	return "终端"
+}
 func (a *TerminalApp) Icon() ui.IconKind       { return ui.IcoTerminal }
 func (a *TerminalApp) DefaultSize() (int, int) { return 760, 500 }
 func (a *TerminalApp) MinSize() (int, int)     { return 320, 220 }
@@ -136,7 +153,7 @@ func (t *termScreen) resetGrid() {
 }
 
 func (t *termScreen) start() {
-	proc, err := startTerminal(t.cols, t.rows)
+	proc, err := startTerminalOpts(t.cols, t.rows, t.opts)
 	if err != nil {
 		t.err = err.Error()
 		t.writeText("无法启动终端：" + err.Error() + "\r\n")
@@ -145,6 +162,27 @@ func (t *termScreen) start() {
 	t.proc = proc
 	go t.readLoop()
 	go t.writeLoop()
+	go t.waitLoop()
+}
+
+// waitLoop reports the exit status on the terminal itself. Nothing pops up
+// over the window while a script is still running.
+func (t *termScreen) waitLoop() {
+	code, err := t.proc.wait()
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.closed {
+		return
+	}
+	if err != nil && code < 0 {
+		t.writeText("\r\n[进程已结束: " + err.Error() + "]\r\n")
+	} else if code == 0 {
+		t.writeText("\r\n[进程已退出，退出码 0]\r\n")
+	} else {
+		t.writeText(fmt.Sprintf("\r\n[进程已退出，退出码 %d]\r\n", code))
+	}
+	t.view = 0
+	t.notify()
 }
 
 func (t *termScreen) writeText(s string) {
@@ -177,11 +215,6 @@ func (t *termScreen) readLoop() {
 				}
 				t.mu.Unlock()
 			}
-			t.mu.Lock()
-			if !t.closed && t.err == "" {
-				t.writeText("\r\n[进程已退出]\r\n")
-			}
-			t.mu.Unlock()
 			t.notify()
 			return
 		}

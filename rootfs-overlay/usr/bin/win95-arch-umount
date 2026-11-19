@@ -1,0 +1,38 @@
+#!/bin/sh
+# Release the kernel filesystems mounted into the Arch chroot. Busy mounts are
+# left alone so this is safe while another chroot command is still running.
+
+ARCH_ROOT=/opt/archlinux
+
+[ "$(id -u)" = "0" ] || {
+	echo "win95-arch-umount: must run as root" >&2
+	exit 1
+}
+
+[ -d "$ARCH_ROOT" ] || exit 0
+
+mounted() {
+	grep -qs " $1 " /proc/mounts
+}
+
+# Old images bind-mounted this file; release it and restore a plain copy.
+if mounted "$ARCH_ROOT/etc/resolv.conf"; then
+	umount "$ARCH_ROOT/etc/resolv.conf" 2>/dev/null || true
+fi
+
+if mounted "$ARCH_ROOT/tmp/.X11-unix"; then
+	umount "$ARCH_ROOT/tmp/.X11-unix" 2>/dev/null || true
+fi
+
+for dir in dev proc sys run; do
+	mountpoint_dir="$ARCH_ROOT/$dir"
+	[ -d "$mountpoint_dir" ] || continue
+	if mounted "$mountpoint_dir"; then
+		umount "$mountpoint_dir" 2>/dev/null || true
+	fi
+done
+
+if [ -s /etc/resolv.conf ] && [ ! -s "$ARCH_ROOT/etc/resolv.conf" ]; then
+	cp -f /etc/resolv.conf "$ARCH_ROOT/etc/resolv.conf" 2>/dev/null || true
+fi
+exit 0

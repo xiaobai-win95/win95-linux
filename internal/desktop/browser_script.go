@@ -118,9 +118,9 @@ func (js *pageJS) install(pageURL string) {
 	win.Set("scrollY", 0)
 
 	nav := vm.NewObject()
-	nav.Set("userAgent", "Win95LinuxBrowser/26.2 (ARM64; Windows 95 Linux)")
+	nav.Set("userAgent", "Win95LinuxBrowser/26.3 (ARM64; Windows 95 Linux)")
 	nav.Set("appName", "Netscape")
-	nav.Set("appVersion", "26.2 (Win95Linux)")
+	nav.Set("appVersion", "26.3 (Win95Linux)")
 	nav.Set("platform", "Windows 95 Linux ARM64")
 	nav.Set("language", "zh-CN")
 	nav.Set("languages", vm.NewArray("zh-CN", "zh", "en"))
@@ -1016,13 +1016,19 @@ func (js *pageJS) nodeClickable(n *xhtml.Node) bool {
 // dispatchClick runs inline onclick and click listeners with bubbling.
 // It returns true when the default action should be cancelled.
 func (js *pageJS) dispatchClick(n *xhtml.Node, x, y int) bool {
+	return js.dispatchDOMEvent(n, "click", x, y)
+}
+
+// dispatchDOMEvent is the shared path for click, input, change, focus and
+// blur. It bubbles through ancestors and honors inline on* attributes.
+func (js *pageJS) dispatchDOMEvent(n *xhtml.Node, typ string, x, y int) bool {
 	if js == nil || js.closed || n == nil {
 		return false
 	}
 	prevented := false
 	stopped := false
 	ev := js.vm.NewObject()
-	ev.Set("type", "click")
+	ev.Set("type", typ)
 	ev.Set("clientX", x)
 	ev.Set("clientY", y)
 	ev.Set("pageX", x)
@@ -1054,35 +1060,36 @@ func (js *pageJS) dispatchClick(n *xhtml.Node, x, y int) bool {
 			break
 		}
 		ev.Set("currentTarget", js.wrap(cur))
-		if code := attr(cur, "onclick"); code != "" {
-			handler := js.inlineHandler(cur, "onclick", code)
+		inlineName := "on" + typ
+		if code := attr(cur, inlineName); code != "" {
+			handler := js.inlineHandler(cur, inlineName, code)
 			if handler != nil {
 				ret, err := js.call(handler, js.wrap(cur), ev)
 				if err != nil {
-					js.recordError("onclick：" + err.Error())
+					js.recordError(inlineName + "：" + err.Error())
 				} else if b, ok := ret.Export().(bool); ok && !b {
 					prevented = true
 				}
 			}
 		}
 		if m := js.listeners[cur]; m != nil {
-			for _, fn := range append([]goja.Callable(nil), m["click"]...) {
+			for _, fn := range append([]goja.Callable(nil), m[typ]...) {
 				if _, err := js.call(fn, js.wrap(cur), ev); err != nil {
-					js.recordError("click 事件：" + err.Error())
+					js.recordError(typ + " 事件：" + err.Error())
 				}
 			}
 		}
 	}
 	if !stopped {
 		ev.Set("currentTarget", js.document)
-		for _, fn := range append([]goja.Callable(nil), js.docListeners["click"]...) {
+		for _, fn := range append([]goja.Callable(nil), js.docListeners[typ]...) {
 			if _, err := js.call(fn, js.document, ev); err != nil {
-				js.recordError("document click：" + err.Error())
+				js.recordError("document " + typ + "：" + err.Error())
 			}
 		}
-		for _, fn := range append([]goja.Callable(nil), js.winListeners["click"]...) {
+		for _, fn := range append([]goja.Callable(nil), js.winListeners[typ]...) {
 			if _, err := js.call(fn, js.window, ev); err != nil {
-				js.recordError("window click：" + err.Error())
+				js.recordError("window " + typ + "：" + err.Error())
 			}
 		}
 	}
@@ -1090,9 +1097,7 @@ func (js *pageJS) dispatchClick(n *xhtml.Node, x, y int) bool {
 }
 
 func (js *pageJS) dispatchNodeEvent(n *xhtml.Node, typ string, x, y int) {
-	if typ == "click" {
-		js.dispatchClick(n, x, y)
-	}
+	js.dispatchDOMEvent(n, typ, x, y)
 }
 
 func (js *pageJS) inlineHandler(n *xhtml.Node, evName, code string) goja.Callable {

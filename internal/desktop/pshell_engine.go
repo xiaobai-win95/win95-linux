@@ -57,6 +57,10 @@ type psSession struct {
 	cwd    string
 	vars   map[string]string
 	cancel context.CancelFunc
+	proc   *termProc
+	stream func(string)
+	cols   int
+	rows   int
 }
 
 func newPSSession() *psSession {
@@ -64,7 +68,7 @@ func newPSSession() *psSession {
 	if st, err := os.Stat(cwd); err != nil || !st.IsDir() {
 		cwd = "/"
 	}
-	return &psSession{cwd: cwd, vars: map[string]string{}}
+	return &psSession{cwd: cwd, vars: map[string]string{}, cols: 100, rows: 30}
 }
 
 func (s *psSession) getCwd() string {
@@ -441,6 +445,8 @@ func (s *psSession) executeStatement(stmt string) ([]psLine, bool, bool) {
 	var cmdErr string
 	if canon != "" {
 		objs, cmdErr = s.runCmdlet(canon, invoked, args[1:], nil)
+	} else if s.streaming() && len(segs) == 1 {
+		objs, cmdErr = s.runExternalPTY(first)
 	} else {
 		objs, cmdErr = s.runExternal(first)
 	}
@@ -517,17 +523,141 @@ func psErrLines(cmd, msg string) []psLine {
 
 // --- External commands ------------------------------------------------------
 
+// varValue looks a variable up case-insensitively, like PowerShell.
+func (s *psSession) varValue(name string) (string, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for k, v := range s.vars {
+		if strings.EqualFold(k, name) {
+			return v, true
+		}
+	}
+	return "", false
+}
+
+// commandTimeout returns the external-command limit. The default is unlimited,
+// matching a real shell; $PSCommandTimeout = N (seconds) or the
+// WIN95_PS_TIMEOUT environment variable opts into a limit. 0 or a negative
+// value disables it.
+func (s *psSession) commandTimeout() time.Duration {
+	v, ok := s.varValue("PSCommandTimeout")
+	if !ok {
+		v = os.Getenv("WIN95_PS_TIMEOUT")
+	}
+	secs, err := strconv.Atoi(strings.TrimSpace(v))
+	if err != nil || secs <= 0 {
+		return 0
+	}
+	if secs > 86400 {
+		secs = 86400
+	}
+	return time.Duration(secs) * time.Second
+}
+
+func (s *psSession) setStream(fn func(string)) {
+	s.mu.Lock()
+	s.stream = fn
+	s.mu.Unlock()
+}
+
+func (s *psSession) emitStream(text string) {
+	if text == "" {
+		return
+	}
+	s.mu.Lock()
+	fn := s.stream
+	s.mu.Unlock()
+	if fn != nil {
+		fn(text)
+	}
+}
+
+func (s *psSession) streaming() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.stream != nil
+}
+
+func (s *psSession) setTermSize(cols, rows int) {
+	if cols < 20 {
+		cols = 20
+	}
+	if rows < 6 {
+		rows = 6
+	}
+	s.mu.Lock()
+	changed := s.cols != cols || s.rows != rows
+	s.cols, s.rows = cols, rows
+	p := s.proc
+	s.mu.Unlock()
+	if changed && p != nil {
+		p.resize(cols, rows)
+	}
+}
+
+func (s *psSession) hasProc() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.proc != nil
+}
+
+func (s *psSession) writeProc(b []byte) bool {
+	s.mu.Lock()
+	p := s.proc
+	s.mu.Unlock()
+	if p == nil {
+		return false
+	}
+	p.write(b)
+	return true
+}
+
 func (s *psSession) cancelCurrent() {
 	s.mu.Lock()
+	p := s.proc
 	c := s.cancel
 	s.mu.Unlock()
+	if p != nil {
+		// Ctrl+C goes to the child's terminal first; a process that ignores it
+		// is killed after a short grace period so the console never hangs.
+		p.write([]byte{3})
+		time.AfterFunc(3*time.Second, func() {
+			s.mu.Lock()
+			still := s.proc == p
+			s.mu.Unlock()
+			if still {
+				p.close()
+			}
+		})
+		return
+	}
+	if c != nil {
+		c()
+	}
+}
+
+func (s *psSession) killCurrent() {
+	s.mu.Lock()
+	p := s.proc
+	c := s.cancel
+	s.mu.Unlock()
+	if p != nil {
+		p.close()
+	}
 	if c != nil {
 		c()
 	}
 }
 
 func (s *psSession) runExternal(raw string) ([]psObj, string) {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	timeout := s.commandTimeout()
+	ctx := context.Background()
+	var cancel context.CancelFunc
+	if timeout > 0 {
+		ctx, cancel = context.WithTimeout(ctx, timeout)
+	} else {
+		ctx, cancel = context.WithCancel(ctx)
+	}
 	s.mu.Lock()
 	s.cancel = cancel
 	s.mu.Unlock()
@@ -557,7 +687,7 @@ func (s *psSession) runExternal(raw string) ([]psObj, string) {
 	if err != nil {
 		switch {
 		case ctx.Err() == context.DeadlineExceeded:
-			objs = append(objs, psObj{text: "命令超过 30 秒，已终止。", kind: "err", col: psColErr})
+			objs = append(objs, psObj{text: fmt.Sprintf("命令超过 %d 秒，已终止。", int(timeout/time.Second)), kind: "err", col: psColErr})
 		case ctx.Err() == context.Canceled:
 			objs = append(objs, psObj{text: "命令已取消。", kind: "err", col: psColErr})
 		default:
@@ -565,6 +695,84 @@ func (s *psSession) runExternal(raw string) ([]psObj, string) {
 			if ee, ok := err.(*exec.ExitError); ok {
 				code = ee.ExitCode()
 			}
+			objs = append(objs, psObj{text: fmt.Sprintf("[退出代码 %d]", code), kind: "err", col: psColErr})
+		}
+	}
+	return objs, ""
+}
+
+// runExternalPTY runs one external command on a real pseudo terminal. Output
+// is streamed through s.stream as it is produced and the keyboard is forwarded
+// to the child, so package managers, ssh, python and other interactive tools
+// work inside the console instead of hanging on a hidden stdin. Commands that
+// take part in a pipeline still use the buffered path.
+func (s *psSession) runExternalPTY(raw string) ([]psObj, string) {
+	s.mu.Lock()
+	cols, rows := s.cols, s.rows
+	s.mu.Unlock()
+	proc, err := startTerminalOpts(cols, rows, termOptions{
+		argv: []string{"/bin/sh", "-c", raw},
+		cwd:  s.getCwd(),
+		env:  []string{"WIN95_PSHELL=1"},
+	})
+	if err != nil {
+		// Pseudo terminals are unavailable on some hosts; buffered execution is
+		// still better than failing the command outright.
+		return s.runExternal(raw)
+	}
+	s.mu.Lock()
+	s.proc = proc
+	s.mu.Unlock()
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		buf := make([]byte, 4096)
+		for {
+			n, err := proc.read(buf)
+			if n > 0 {
+				s.emitStream(string(buf[:n]))
+			}
+			if err != nil {
+				return
+			}
+		}
+	}()
+
+	timeout := s.commandTimeout()
+	timedOut := make(chan struct{}, 1)
+	var timer *time.Timer
+	if timeout > 0 {
+		timer = time.AfterFunc(timeout, func() {
+			s.mu.Lock()
+			active := s.proc == proc
+			s.mu.Unlock()
+			if !active {
+				return
+			}
+			timedOut <- struct{}{}
+			proc.close()
+		})
+	}
+
+	code, _ := proc.wait()
+	if timer != nil {
+		timer.Stop()
+	}
+	proc.closeMaster()
+	<-done
+	s.mu.Lock()
+	if s.proc == proc {
+		s.proc = nil
+	}
+	s.mu.Unlock()
+
+	var objs []psObj
+	select {
+	case <-timedOut:
+		objs = append(objs, psObj{text: fmt.Sprintf("命令超过 %d 秒，已终止。", int(timeout/time.Second)), kind: "err", col: psColErr})
+	default:
+		if code != 0 {
 			objs = append(objs, psObj{text: fmt.Sprintf("[退出代码 %d]", code), kind: "err", col: psColErr})
 		}
 	}
@@ -814,7 +1022,7 @@ func (s *psSession) cmdHelp(args []string) ([]psObj, string) {
 		return nil, fmt.Sprintf("找不到主题“%s”的帮助。输入 help 查看全部命令。", topic)
 	}
 	objs := []psObj{
-		{text: "Windows PowerShell 26.2（Windows 95 Linux）", kind: "text", col: psColPrompt, bold: true},
+		{text: "Windows PowerShell 26.3（Windows 95 Linux）", kind: "text", col: psColPrompt, bold: true},
 		{text: ""},
 		{text: "常用命令", kind: "text", col: psColInfo, bold: true},
 	}
@@ -835,6 +1043,13 @@ func (s *psSession) cmdHelp(args []string) ([]psObj, string) {
 		psObj{text: "管道与变量", kind: "text", col: psColInfo, bold: true},
 		psObj{text: "  Get-ChildItem | Sort-Object -Descending", kind: "text", col: psColText},
 		psObj{text: "  $name = \"世界\"; Write-Output \"你好，$name\"", kind: "text", col: psColText},
+		psObj{text: ""},
+		psObj{text: "外部命令与交互", kind: "text", col: psColInfo, bold: true},
+		psObj{text: "  未识别的命令在伪终端中运行：输出实时显示，可直接输入 y/N、密码等。", kind: "text", col: psColText},
+		psObj{text: "  Ctrl+C 发送中断，Ctrl+Shift+C 复制全部输出，Ctrl+V 粘贴。", kind: "text", col: psColText},
+		psObj{text: "  $PSCommandTimeout = 0    不限制运行时间（默认）", kind: "text", col: psColText},
+		psObj{text: "  $PSCommandTimeout = 300  外部命令最多运行 300 秒", kind: "text", col: psColText},
+		psObj{text: "  也可在启动前设置环境变量 WIN95_PS_TIMEOUT。", kind: "text", col: psColDim},
 		psObj{text: ""},
 		psObj{text: "使用 Get-Help <命令> 查看单个命令的详细说明。", kind: "text", col: psColDim},
 	)
@@ -1786,9 +2001,9 @@ func (s *psSession) cmdComputerInfo() ([]psObj, string) {
 	return []psObj{{
 		kind: "info",
 		props: map[string]string{
-			"OsName":       "Windows 95 Linux 26.2",
-			"OsVersion":    "26.2",
-			"PowerShell":   "5.1 (win95-ps 26.2)",
+			"OsName":       "Windows 95 Linux 26.3",
+			"OsVersion":    "26.3",
+			"PowerShell":   "5.1 (win95-ps 26.3)",
 			"Kernel":       kernel,
 			"Architecture": runtime.GOARCH,
 			"HostName":     host,

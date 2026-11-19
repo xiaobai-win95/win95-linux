@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"image"
 	"image/draw"
+	"image/gif"
+	"image/jpeg"
 	"image/png"
 	"math"
 	"os"
@@ -83,7 +85,7 @@ func (a *ImageViewerApp) Menus(d *Desktop, w *Window) []Menu {
 		{Label: "帮助(H)", Items: []MenuItem{
 			{Label: "关于图片查看器(A)", Enabled: true, Action: func() {
 				d.MessageBox("关于图片查看器",
-					"Windows 95 Linux 图片查看器\n版本 26.2\n\n支持 PNG（含透明通道）与未压缩 BMP。\n拖动图片可平移，Ctrl+滚轮可缩放。\n\n截屏（Print Screen）会保存为 BMP。",
+					"Windows 95 Linux 图片查看器\n版本 26.3\n\n支持 PNG（含透明通道）与未压缩 BMP。\n拖动图片可平移，Ctrl+滚轮可缩放。\n\n截屏（Print Screen）会保存为 BMP。",
 					IconInfo, []string{"确定"}, nil)
 			}},
 		}},
@@ -503,8 +505,34 @@ func decodeImageData(data []byte, ext string) (image.Image, error) {
 		return img, nil
 	case ".bmp":
 		return decodeBMP(data)
+	case ".jpg", ".jpeg":
+		img, err := jpeg.Decode(bytes.NewReader(data))
+		if err != nil {
+			return nil, fmt.Errorf("JPEG 文件已损坏或格式不受支持：%v", err)
+		}
+		return img, nil
+	case ".gif":
+		img, err := gif.Decode(bytes.NewReader(data))
+		if err != nil {
+			return nil, fmt.Errorf("GIF 文件已损坏或格式不受支持：%v", err)
+		}
+		return img, nil
 	}
-	return nil, fmt.Errorf("不支持的图片格式“%s”，仅支持 PNG 与 BMP。", ext)
+	// Web pages often serve images without a usable extension; sniff the magic
+	// bytes so those still render.
+	if len(data) >= 8 && bytes.Equal(data[:8], []byte("\x89PNG\r\n\x1a\n")) {
+		return decodeImageData(data, ".png")
+	}
+	if len(data) >= 3 && data[0] == 0xFF && data[1] == 0xD8 && data[2] == 0xFF {
+		return decodeImageData(data, ".jpg")
+	}
+	if len(data) >= 6 && (bytes.Equal(data[:6], []byte("GIF87a")) || bytes.Equal(data[:6], []byte("GIF89a"))) {
+		return decodeImageData(data, ".gif")
+	}
+	if len(data) >= 2 && data[0] == 'B' && data[1] == 'M' {
+		return decodeBMP(data)
+	}
+	return nil, fmt.Errorf("不支持的图片格式“%s”，支持 PNG、JPEG、GIF 与 BMP。", ext)
 }
 
 func toRGBA(src image.Image) *image.RGBA {

@@ -278,7 +278,7 @@ func TestBWNewBlocksValid(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got[5*w.W+5] != bwCraftingTable || got[5*w.W+6] != bwBrick {
+	if got[w.index(5, 5, bwMidZ)] != bwCraftingTable || got[w.index(5, 5, bwMidZ)+1] != bwBrick {
 		t.Fatal("new blocks did not survive RLE round trip")
 	}
 	if _, err := bwDecodeRLE([]byte{byte(bwBlockCount), 1}, 1); err == nil {
@@ -310,5 +310,121 @@ func TestBWFloatTextLifecycle(t *testing.T) {
 	a.stepFloats(1.0)
 	if len(a.floats) != 0 {
 		t.Fatal("float should have expired")
+	}
+}
+
+func TestBWWorldIsVolumetric(t *testing.T) {
+	w := newBWWorld(2026)
+	if w.D != bwD || w.At3(5, 5, 0) == w.At3(5, 5, bwD-1) && w.At3(5, 5, 0) != bwAir {
+		t.Fatalf("world depth %d does not expose distinct slices", w.D)
+	}
+	diff := 0
+	for y := 0; y < w.H; y++ {
+		if w.At3(80, y, 3) != w.At3(80, y, bwD-3) {
+			diff++
+		}
+	}
+	if diff == 0 {
+		t.Fatal("different depths have identical columns; world is only extruded 2D")
+	}
+	wood, leaves, coal := 0, 0, 0
+	for z := 0; z < w.D; z++ {
+		for x := 0; x < w.W; x++ {
+			for y := 0; y < w.H; y++ {
+				switch w.At3(x, y, z) {
+				case bwWood:
+					wood++
+				case bwLeaves:
+					leaves++
+				case bwCoal:
+					coal++
+				}
+			}
+		}
+	}
+	if wood == 0 || leaves == 0 || coal == 0 {
+		t.Fatalf("3D world lacks props: wood %d leaves %d coal %d", wood, leaves, coal)
+	}
+}
+
+func TestBW3DRaycastMiningAndPlacing(t *testing.T) {
+	a := NewBlockWorldApp(nil)
+	a.savePath = filepath.Join(t.TempDir(), "save.json")
+	a.pitch = 1.2
+	a.updateHover3()
+	if !a.hover3Valid {
+		t.Fatal("looking down from spawn did not hit the ground")
+	}
+	bx, by, bz := a.hover3X, a.hover3Y, a.hover3Z
+	b := a.world.At3(bx, by, bz)
+	if b == bwAir || b == bwBedrock {
+		t.Fatalf("hovered block is %s", bwNames[b])
+	}
+	if !a.breakBlock3(bx, by, bz) {
+		t.Fatal("breakBlock3 returned false")
+	}
+	if a.world.At3(bx, by, bz) != bwAir {
+		t.Fatal("3D block was not removed")
+	}
+	a.sel = 1
+	start := a.hotbar[1].Count
+	a.placeBlock3(bx, by, bz)
+	if a.world.At3(bx, by, bz) != bwDirt {
+		t.Fatalf("placed block is %s, want dirt", bwNames[a.world.At3(bx, by, bz)])
+	}
+	if a.hotbar[1].Count != start-1 {
+		t.Fatalf("dirt count = %d, want %d", a.hotbar[1].Count, start-1)
+	}
+}
+
+func TestBW3DRenderProducesTerrain(t *testing.T) {
+	a := NewBlockWorldApp(nil)
+	c := ui.NewCanvas(960, 640)
+	a.Paint(nil, nil, c, ui.Rect{0, 0, 960, 640})
+	distinct := map[uint32]bool{}
+	for y := 0; y < 640; y += 7 {
+		for x := 0; x < 960; x += 7 {
+			distinct[c.Pix[y*c.Stride+x]] = true
+		}
+	}
+	if len(distinct) < 8 {
+		t.Fatalf("3D frame has only %d colors; terrain may not be rendered", len(distinct))
+	}
+	cx, cy := 480, 320
+	found := false
+	for dx := -6; dx <= 6; dx++ {
+		if c.Pix[cy*c.Stride+cx+dx] == 0xF0F0F0 {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("crosshair is missing from the 3D view")
+	}
+}
+
+func TestBW3DSaveRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	a := NewBlockWorldApp(nil)
+	a.savePath = filepath.Join(dir, "world.json")
+	a.pitch = 0.35
+	a.yaw = 1.1
+	a.pz += 19
+	bx, by, bz := int(a.px/bwTile), int(a.py/bwPH), int(a.pz/bwTile)
+	a.world.Set3(bx, by, bz, bwAir)
+	if err := a.writeSave(); err != nil {
+		t.Fatal(err)
+	}
+	b := NewBlockWorldApp(nil)
+	b.savePath = a.savePath
+	b.loadWorld(false)
+	if b.world.D != bwD {
+		t.Fatalf("depth = %d, want %d", b.world.D, bwD)
+	}
+	if b.world.At3(bx, by, bz) != bwAir {
+		t.Fatal("3D edit was not restored")
+	}
+	if b.pz != a.pz || b.yaw != a.yaw || b.pitch != a.pitch {
+		t.Fatalf("camera not restored: z %v/%v yaw %v/%v pitch %v/%v",
+			b.pz, a.pz, b.yaw, a.yaw, b.pitch, a.pitch)
 	}
 }

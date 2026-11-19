@@ -96,6 +96,13 @@ func (d *Desktop) Mouse(ev MouseEvent) {
 			d.active.menuOpen = -1
 			return
 		}
+		if w := d.windowAt(gx, gy); w != nil {
+			d.selected = -1
+			d.lastIcon = -1
+			d.lastClick = time.Time{}
+			d.mouseWindow(w, ev, false)
+			return
+		}
 		if idx := d.iconAt(gx, gy); idx >= 0 {
 			if idx == d.lastIcon && time.Since(d.lastClick) < 450*time.Millisecond {
 				d.lastIcon = -1
@@ -121,10 +128,6 @@ func (d *Desktop) Mouse(ev MouseEvent) {
 			return
 		}
 		d.selected = -1
-		if w := d.windowAt(gx, gy); w != nil {
-			d.mouseWindow(w, ev, false)
-			return
-		}
 		d.active = nil
 		d.Invalidate()
 		return

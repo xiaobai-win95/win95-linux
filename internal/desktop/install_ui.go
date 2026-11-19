@@ -370,7 +370,7 @@ func (a *InstallerApp) Paint(d *Desktop, w *Window, c *ui.Canvas, client ui.Rect
 		}
 		y += 10
 		if a.result.rootUUID != "" {
-			f.TextClip(c, x0, y, right-x0, "根分区 PARTUUID: "+a.result.rootUUID, ui.ColShadow)
+			f.TextClip(c, x0, y, right-x0, "超级分区 PARTUUID: "+a.result.rootUUID, ui.ColShadow)
 			y += 20
 		}
 		logR := ui.Rect{x0, y + 6, right - x0, client.Bottom() - y - 56}
