@@ -11,7 +11,7 @@ import (
 
 func (d *Desktop) openWeChat() {
 	if _, err := os.Stat("/usr/bin/win95-wechat"); err != nil {
-		d.MessageBox("微信", "当前镜像缺少微信启动组件（需要 v26.3 或更新）。", IconError, []string{"确定"}, nil)
+		d.MessageBox("微信", "当前镜像缺少微信启动组件（需要 v26.4 或更新）。", IconError, []string{"确定"}, nil)
 		return
 	}
 	d.MessageBox("微信 WeChat",
@@ -83,7 +83,7 @@ func (d *Desktop) installArch() {
 // chroot without reinstalling it.
 func (d *Desktop) repairArch() {
 	if _, err := os.Stat("/usr/bin/win95-arch-repair"); err != nil {
-		d.MessageBox("Arch Linux", "当前镜像缺少修复组件（需要 v26.3 或更新）。", IconError, []string{"确定"}, nil)
+		d.MessageBox("Arch Linux", "当前镜像缺少修复组件（需要 v26.4 或更新）。", IconError, []string{"确定"}, nil)
 		return
 	}
 	d.openInstallStatus("Arch Linux 修复")
@@ -126,7 +126,7 @@ func (d *Desktop) launchShortcut(execLine string, terminal bool) {
 func (d *Desktop) switchToXFCE() {
 	if _, err := os.Stat("/usr/bin/switch-to-xfce"); err != nil {
 		d.MessageBox("切换到 XFCE 桌面",
-			"当前镜像缺少桌面切换组件（需要 v26.3 或更新）。", IconError, []string{"确定"}, nil)
+			"当前镜像缺少桌面切换组件（需要 v26.4 或更新）。", IconError, []string{"确定"}, nil)
 		return
 	}
 	d.MessageBox("切换到 XFCE 桌面",

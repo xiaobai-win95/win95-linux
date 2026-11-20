@@ -45,6 +45,7 @@ func (d *Desktop) setupShell() {
 		{labelKey: "任务管理器", label: d.tr("任务管理器"), kind: ui.IcoComputer, key: "sys:taskmgr", action: func() { d.openTaskManager() }},
 		{labelKey: "注册表编辑器", label: d.tr("注册表编辑器"), kind: ui.IcoSetup, key: "sys:regedit", action: func() { d.openRegistryEditor() }},
 		{labelKey: "我的文档", label: d.tr("我的文档"), kind: ui.IcoFolder, key: "sys:docs", isDir: true, action: func() { d.openFiles("/root/文档") }},
+		{labelKey: "Office 365", label: "Office 365", kind: ui.IcoOffice, key: "sys:office", action: func() { d.openOffice() }},
 		{labelKey: "网络浏览器", label: d.tr("网络浏览器"), kind: ui.IcoBrowser, key: "sys:browser", action: func() { d.openBrowser("") }},
 		{labelKey: "方块世界 95", label: d.tr("方块世界 95"), kind: ui.IcoGame, key: "sys:blockworld", action: func() { d.openBlockWorld() }},
 		{labelKey: "XFCE 终端", label: d.tr("XFCE 终端"), kind: ui.IcoTerminal, key: "sys:xfce-term", action: func() { d.openX11Proxy("xfce4-terminal") }},

@@ -1022,7 +1022,7 @@ func (s *psSession) cmdHelp(args []string) ([]psObj, string) {
 		return nil, fmt.Sprintf("找不到主题“%s”的帮助。输入 help 查看全部命令。", topic)
 	}
 	objs := []psObj{
-		{text: "Windows PowerShell 26.3（Windows 95 Linux）", kind: "text", col: psColPrompt, bold: true},
+		{text: "Windows PowerShell 26.4（Windows 95 Linux）", kind: "text", col: psColPrompt, bold: true},
 		{text: ""},
 		{text: "常用命令", kind: "text", col: psColInfo, bold: true},
 	}
@@ -2001,9 +2001,9 @@ func (s *psSession) cmdComputerInfo() ([]psObj, string) {
 	return []psObj{{
 		kind: "info",
 		props: map[string]string{
-			"OsName":       "Windows 95 Linux 26.3",
-			"OsVersion":    "26.3",
-			"PowerShell":   "5.1 (win95-ps 26.3)",
+			"OsName":       "Windows 95 Linux 26.4",
+			"OsVersion":    "26.4",
+			"PowerShell":   "5.1 (win95-ps 26.4)",
 			"Kernel":       kernel,
 			"Architecture": runtime.GOARCH,
 			"HostName":     host,

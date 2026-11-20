@@ -33,6 +33,7 @@ const (
 	IcoImage
 	IcoGame
 	IcoGlitch
+	IcoOffice
 )
 
 // DrawIcon32 draws a 32x32 icon at x,y. selected dithers the background navy.
@@ -470,6 +471,24 @@ func DrawIcon32(c *Canvas, kind IconKind, x, y int, selected bool) {
 		set(15, 5, ColDark)
 		set(15, 6, ColDark)
 		set(16, 5, ColDark)
+	case IcoOffice:
+		box(4, 2, 27, 29, ColWhite)
+		frame(4, 2, 27, 29, ColDark)
+		for i := 0; i < 6; i++ {
+			set(27-i, 2+i, ColFace)
+			set(27, 2+i, ColFace)
+		}
+		box(8, 8, 15, 13, 0xD04040)
+		box(17, 8, 23, 13, 0x40A040)
+		box(8, 15, 15, 20, 0x4060E0)
+		box(17, 15, 23, 20, 0xF0C040)
+		for xx := 8; xx < 24; xx += 4 {
+			set(xx, 24, ColShadow)
+			set(xx+1, 24, ColShadow)
+		}
+		set(8, 26, ColShadow)
+		set(11, 26, ColShadow)
+		set(14, 26, ColShadow)
 	}
 }
 
@@ -734,6 +753,19 @@ func DrawIcon16(c *Canvas, kind IconKind, x, y int) {
 		}
 		box(6, 13, 9, 14, ColShadow)
 		box(5, 15, 10, 15, ColShadow)
+	case IcoOffice:
+		box(2, 1, 13, 14, ColWhite)
+		frame(2, 1, 13, 14, ColDark)
+		set(12, 1, ColFace)
+		set(13, 1, ColFace)
+		set(13, 2, ColFace)
+		box(4, 4, 7, 6, 0xD04040)
+		box(9, 4, 12, 6, 0x40A040)
+		box(4, 8, 7, 10, 0x4060E0)
+		box(9, 8, 12, 10, 0xF0C040)
+		set(4, 12, ColShadow)
+		set(7, 12, ColShadow)
+		set(10, 12, ColShadow)
 	default:
 		box(3, 3, 12, 12, ColFace)
 		frame(3, 3, 12, 12, ColDark)

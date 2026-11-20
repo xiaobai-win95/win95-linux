@@ -3,6 +3,7 @@ package desktop
 import (
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -20,9 +21,12 @@ import (
 
 const (
 	x11Display      = ":1"
-	x11ScreenWidth  = 800
-	x11ScreenHeight = 600
+	x11ScreenWidth  = 1024
+	x11ScreenHeight = 768
 	x11Depth        = 24
+
+	x11BusPath = "/tmp/win95-x11-bus"
+	x11BusAddr = "unix:path=" + x11BusPath
 )
 
 var errX11Missing = errors.New("X11 虚拟显示组件尚未安装")
@@ -41,17 +45,20 @@ type x11KeyRef struct {
 }
 
 type x11Session struct {
-	mu     sync.Mutex
-	conn   *xgb.Conn
-	root   xproto.Window
-	width  int
-	height int
-	lsb    bool
+	mu      sync.Mutex
+	conn    *xgb.Conn
+	root    xproto.Window
+	width   int
+	height  int
+	lsb     bool
+	busAddr string
 
-	keys  map[xproto.Keysym]x11KeyRef
-	shift byte
-	ctrl  byte
-	alt   byte
+	keys      map[xproto.Keysym]x11KeyRef
+	shift     byte
+	ctrl      byte
+	alt       byte
+	imStarted bool
+	wmStarted bool
 }
 
 var (
@@ -66,7 +73,14 @@ func x11EnsureSession() (*x11Session, error) {
 	defer x11SessionMu.Unlock()
 	if x11Shared != nil {
 		if _, err := xproto.GetInputFocus(x11Shared.conn).Reply(); err == nil {
-			return x11Shared, nil
+			if x11Shared.width >= x11ScreenWidth && x11Shared.height >= x11ScreenHeight {
+				x11Shared.ensureWM()
+				x11Shared.ensureIM()
+				return x11Shared, nil
+			}
+			// The display was created with the old 800x600 geometry. Restart
+			// it so Office gets the full 1024x768 canvas.
+			x11StopXvfb()
 		}
 		x11Shared.conn.Close()
 		x11Shared = nil
@@ -85,11 +99,12 @@ func x11EnsureSession() (*x11Session, error) {
 	setup := xproto.Setup(conn)
 	screen := setup.DefaultScreen(conn)
 	s := &x11Session{
-		conn:   conn,
-		root:   screen.Root,
-		width:  int(screen.WidthInPixels),
-		height: int(screen.HeightInPixels),
-		lsb:    setup.ImageByteOrder == xproto.ImageOrderLSBFirst,
+		conn:    conn,
+		root:    screen.Root,
+		width:   int(screen.WidthInPixels),
+		height:  int(screen.HeightInPixels),
+		lsb:     setup.ImageByteOrder == xproto.ImageOrderLSBFirst,
+		busAddr: x11EnsureDBus(),
 	}
 	if s.width <= 0 || s.height <= 0 {
 		s.width, s.height = x11ScreenWidth, x11ScreenHeight
@@ -97,7 +112,170 @@ func x11EnsureSession() (*x11Session, error) {
 	s.loadKeymap(setup.MinKeycode, setup.MaxKeycode)
 	s.focus()
 	x11Shared = s
+	s.ensureWM()
+	s.ensureIM()
 	return s, nil
+}
+
+// x11StopXvfb terminates the server on :1. Only used when the running display
+// has the wrong geometry after an in-place upgrade.
+func x11StopXvfb() {
+	data, err := os.ReadFile("/tmp/.X1-lock")
+	if err != nil {
+		return
+	}
+	pid, err := strconv.Atoi(strings.TrimSpace(string(data)))
+	if err != nil || pid <= 0 {
+		return
+	}
+	_ = syscall.Kill(pid, syscall.SIGTERM)
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if syscall.Kill(pid, 0) != nil {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	_ = os.Remove("/tmp/.X1-lock")
+	_ = os.Remove("/tmp/.X11-unix/X1")
+}
+
+// x11EnsureDBus starts a private session bus for the nested display. Without
+// one fcitx5 cannot expose its input context to GTK applications.
+func x11EnsureDBus() string {
+	if x11UnixSocketAlive(x11BusPath) {
+		return x11BusAddr
+	}
+	_ = os.Remove(x11BusPath)
+	bin, err := exec.LookPath("dbus-daemon")
+	if err != nil {
+		if st, statErr := os.Stat("/usr/bin/dbus-daemon"); statErr == nil && !st.IsDir() {
+			bin = "/usr/bin/dbus-daemon"
+		} else {
+			return ""
+		}
+	}
+	logFile, _ := os.OpenFile("/tmp/win95-x11-dbus.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	cmd := exec.Command(bin, "--session", "--fork", "--print-address=1", "--address="+x11BusAddr, "--nopidfile")
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	if logFile != nil {
+		cmd.Stdout = logFile
+		cmd.Stderr = logFile
+	}
+	err = cmd.Run()
+	if logFile != nil {
+		logFile.Close()
+	}
+	if err != nil {
+		return ""
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if x11UnixSocketAlive(x11BusPath) {
+			return x11BusAddr
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	return ""
+}
+
+func x11UnixSocketAlive(path string) bool {
+	conn, err := net.DialTimeout("unix", path, 300*time.Millisecond)
+	if err != nil {
+		return false
+	}
+	conn.Close()
+	return true
+}
+
+// ensureWM starts JWM on the nested display. LibreOffice and Thunderbird open
+// secondary windows and modal dialogs; without a window manager those cannot
+// be moved, focused or closed. JWM is a ~300KB Xlib-only window manager.
+func (s *x11Session) ensureWM() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.wmStarted {
+		return
+	}
+	bin := "/usr/bin/jwm"
+	if st, err := os.Stat(bin); err != nil || st.IsDir() {
+		return
+	}
+	env := append(os.Environ(),
+		"DISPLAY="+x11Display,
+		"HOME=/root",
+		"XDG_RUNTIME_DIR=/run/user/0",
+		"LANG=zh_CN.UTF-8",
+	)
+	if s.busAddr != "" {
+		env = append(env, "DBUS_SESSION_BUS_ADDRESS="+s.busAddr)
+	}
+	logFile, _ := os.OpenFile("/tmp/win95-jwm.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	cmd := exec.Command(bin)
+	cmd.Env = env
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	if logFile != nil {
+		cmd.Stdout = logFile
+		cmd.Stderr = logFile
+	}
+	if err := cmd.Start(); err != nil {
+		if logFile != nil {
+			logFile.Close()
+		}
+		return
+	}
+	_ = cmd.Process.Release()
+	if logFile != nil {
+		logFile.Close()
+	}
+	s.wmStarted = true
+}
+
+// ensureIM launches fcitx5 on the nested display once the package exists. It
+// is called whenever an X11 application starts, so installing the input method
+// after the session was created still takes effect.
+func (s *x11Session) ensureIM() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.imStarted {
+		return
+	}
+	bin := "/usr/bin/fcitx5"
+	if st, err := os.Stat(bin); err != nil || st.IsDir() {
+		return
+	}
+	_ = os.MkdirAll("/run/user/0", 0o700)
+	env := append(os.Environ(),
+		"DISPLAY="+x11Display,
+		"HOME=/root",
+		"XDG_RUNTIME_DIR=/run/user/0",
+		"LANG=zh_CN.UTF-8",
+		"XMODIFIERS=@im=fcitx",
+		"GTK_IM_MODULE=fcitx",
+		"QT_IM_MODULE=fcitx",
+	)
+	if s.busAddr != "" {
+		env = append(env, "DBUS_SESSION_BUS_ADDRESS="+s.busAddr)
+	}
+	logFile, _ := os.OpenFile("/tmp/win95-fcitx5.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	cmd := exec.Command(bin, "-d", "--replace")
+	cmd.Env = env
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	if logFile != nil {
+		cmd.Stdout = logFile
+		cmd.Stderr = logFile
+	}
+	if err := cmd.Start(); err != nil {
+		if logFile != nil {
+			logFile.Close()
+		}
+		return
+	}
+	_ = cmd.Process.Release()
+	if logFile != nil {
+		logFile.Close()
+	}
+	s.imStarted = true
 }
 
 // removeStaleXLock clears a lock left by a crashed Xvfb. Without this a new
@@ -427,12 +605,14 @@ func (s *x11Session) Launch(app string, extra ...string) error {
 	if err != nil {
 		return &x11AppMissingError{name: app}
 	}
+	s.ensureWM()
+	s.ensureIM()
 	args := append([]string{}, extra...)
 	cmd := exec.Command(exe, args...)
 	cmd.Dir = "/root"
 	_ = os.MkdirAll("/run/user/0", 0o700)
 	_ = os.Chmod("/run/user/0", 0o700)
-	cmd.Env = append(os.Environ(),
+	env := append(os.Environ(),
 		"DISPLAY="+x11Display,
 		"WIN95_NESTED_X11=1",
 		"HOME=/root",
@@ -445,7 +625,15 @@ func (s *x11Session) Launch(app string, extra ...string) error {
 		"GALLIUM_DRIVER=llvmpipe",
 		"MOZ_DISABLE_CONTENT_SANDBOX=1",
 		"MOZ_ENABLE_WAYLAND=0",
+		"XMODIFIERS=@im=fcitx",
+		"GTK_IM_MODULE=fcitx",
+		"QT_IM_MODULE=fcitx",
+		"SAL_USE_VCLPLUGIN=gtk3",
 	)
+	if s.busAddr != "" {
+		env = append(env, "DBUS_SESSION_BUS_ADDRESS="+s.busAddr)
+	}
+	cmd.Env = env
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	logPath := filepath.Join("/tmp", "win95-x11-app.log")
 	logFile, _ := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)

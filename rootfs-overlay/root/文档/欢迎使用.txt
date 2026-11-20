@@ -3,8 +3,35 @@
 这是一个运行在 ARM64 / UEFI 虚拟机中的图形 Linux 系统。
 整个桌面直接绘制在 framebuffer 上，不需要 X11 或 Wayland。
 
-26.3 本次构建新增：系统更新（OTA）
------------------------------------
+26.4 本次构建新增：Office 365 全件套（按需安装）
+-----------------------------------------------
+· Office 365 全件套：桌面“Office 365”图标，或开始 → 程序 → Office 365 全件套。
+  启动器用卡片列出 Word（Writer）、Excel（Calc）、PowerPoint（Impress）、
+  Draw、Math、Base、PDF、邮件与笔记；未安装的卡片点击后会打开组件管理。
+· 组件自选：第一次打开时进入“Office 365 全件套 - 选择组件”窗口，
+  勾选需要的组件，再点“安装所选”。核心引擎与中文字体为必装项；
+  Writer、Calc、Impress、Draw、Math、PDF、中文输入法默认勾选；
+  Base、邮件、笔记、OCR、云盘同步为可选。窗口显示每组的大小与状态。
+· 随时补装：安装完成后再次打开组件管理，已安装组件标记为“已安装”，
+  其余组件仍可勾选补装；也可以直接双击文档，按提示安装缺少的组件。
+· 软件包不随系统镜像打包，首次安装需要联网，从 Alpine 软件源下载；
+  安装进度显示在“安装进度”窗口中，期间桌面仍可继续使用。
+  安装日志位于 /var/log/win95-office-setup.log。
+· 文档引擎：LibreOffice 25.8（Alpine 官方 aarch64 构建），
+  可读写 .doc/.docx/.odt/.rtf、.xls/.xlsx/.ods/.csv、
+  .ppt/.pptx/.odp、.odg 与 .odb；界面与拼写检查含十种语言。
+· PDF：Zathura 阅读器、poppler-utils（pdftotext 等）与 qpdf。
+· 中文输入：fcitx5 拼音，配合 GTK/QT 输入法模块，可在 LibreOffice、
+  Firefox 等 X11 程序中输入中文。
+· 文件关联：在文件管理器或桌面双击办公文档时自动选择对应应用；
+  所需组件尚未安装时，会先打开组件管理并预选该组件，装完继续打开。
+· 显示方式：Office 应用通过 X11 嵌套代理显示在 Win95 窗口内，
+  文档窗口自动最大化；后台使用 Xvfb 1024×768 与 JWM 窗口管理器，
+  LibreOffice 的对话框可以正常移动与确认。需要更大画面时，可切换到
+  XFCE 桌面，或在 UTM 中调大虚拟机显示分辨率。
+
+26.3 重点功能：系统更新（OTA）
+------------------------------
 · 系统更新（OTA）：开始 → 设置 → Windows 更新，或程序 → 系统更新。
   客户端会从 GitHub Releases 的 latest.json 检查新版本，显示更新说明，
   下载并校验更新包后写入备用插槽，重启即进入新系统。
@@ -17,11 +44,11 @@
   自动确认；连续两次启动失败时，引导程序会回退到旧插槽。
 · 版本文件：/etc/win95-version 记录 VERSION、BUILD 与 SLOT_LAYOUT；
   系统更新窗口显示当前版本与运行插槽。
-· GitHub 发布约定：26.4 发布时，除安装镜像外还需附带
-  win95-ota-26.4-aarch64.tar.gz、对应的 .sha256 与 latest.json；
+· GitHub 发布约定：26.5 发布时，除安装镜像外还需附带
+  win95-ota-26.5-aarch64.tar.gz、对应的 .sha256 与 latest.json；
   此后的每个 Release 同样附带该版本的更新包与清单。
-· 本机版本为 26.3：26.4 发布并在 GitHub Release 上传更新包后，
-  打开“系统更新”即可检查、下载并升级到 26.4。
+· 本机版本为 26.4：26.4 的更新包、SHA256 与 latest.json 已随 Release 上传；
+  26.5 发布后，打开“系统更新”即可检查、下载并升级到 26.5。
 · 国内网络：客户端会并行探测 GitHub 直连与公共加速镜像，
   清单取最先响应的源，下载按测速顺序自动换源并支持续传；
   可在 /etc/win95-ota.conf 中添加 MIRROR、改 MANIFEST_URL，
@@ -90,6 +117,7 @@
   UTM 共享文件夹、浏览 Arch 子系统，支持多种文件类型
 · 完整 XFCE 桌面：切换到 Xorg/XFCE，注销后返回 Win95
 · X11 嵌套代理：XFCE 终端、Firefox、微信等程序显示在 Win95 窗口里
+· Office 365 全件套：Word/Excel/PowerPoint/Draw/Math/Base/PDF 等按需安装
 · 网络浏览器：浏览本地 HTML、执行 JavaScript、访问互联网、下载文件
 · Windows PowerShell：命令控制台，支持常用 cmdlet 和管道
 · PowerShell ISE：编辑并运行 PowerShell 脚本，F5 运行、Esc 停止
@@ -411,4 +439,4 @@ X11 代理只负责把单个程序嵌进 Win95 窗口，不会取代完整 XFCE 
 · 在任务栏空白处右键，可以快速整理所有已打开的窗口。
 · 在终端中输入 exit 可以关闭当前 shell。
 
-Windows 95 Linux 中文版 · 版本 26.3
+Windows 95 Linux 中文版 · 版本 26.4

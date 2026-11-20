@@ -52,7 +52,7 @@ func NewPShellApp(d *Desktop) *PShellApp {
 		stick:   true,
 	}
 	a.lines = []psLine{
-		{text: "Windows PowerShell 26.3", col: psColPrompt, bold: true},
+		{text: "Windows PowerShell 26.4", col: psColPrompt, bold: true},
 		{text: "版权所有 (C) 2026 Windows 95 Linux 项目。保留所有权利。", col: psColDim},
 		{text: ""},
 		{text: "正在尝试新的跨平台 PowerShell：本控制台内置常用 cmdlet，", col: psColDim},
@@ -96,7 +96,7 @@ func (a *PShellApp) Menus(d *Desktop, w *Window) []Menu {
 			{Separator: true},
 			{Label: "关于 PowerShell(A)", Enabled: true, Action: func() {
 				d.MessageBox("关于 Windows PowerShell",
-					"Windows PowerShell 26.3\nWindows 95 Linux 中文版\n\n内置 cmdlet 子集与管道支持。\n未识别的命令在伪终端中执行：输出实时显示，可交互输入。\n外部命令默认不超时；$PSCommandTimeout = 秒数 可设置上限，0 表示不限制。\n\nCtrl+Alt+K 可打开屏幕键盘。",
+					"Windows PowerShell 26.4\nWindows 95 Linux 中文版\n\n内置 cmdlet 子集与管道支持。\n未识别的命令在伪终端中执行：输出实时显示，可交互输入。\n外部命令默认不超时；$PSCommandTimeout = 秒数 可设置上限，0 表示不限制。\n\nCtrl+Alt+K 可打开屏幕键盘。",
 					IconInfo, []string{"确定"}, nil)
 			}},
 		}},

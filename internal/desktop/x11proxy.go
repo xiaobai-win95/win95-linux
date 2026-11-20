@@ -302,7 +302,7 @@ func (a *X11ProxyApp) Paint(d *Desktop, w *Window, c *ui.Canvas, r ui.Rect) {
 	ui.Button(c, a.btnReconnect, "重新连接", a.press == "retry", a.state != x11StateStarting)
 	switch a.state {
 	case x11StateReady:
-		f.TextRight(c, r.Right()-8, ty+4, "Xvfb :1 · 800×600 · 点击画面即可操作", ui.ColShadow)
+		f.TextRight(c, r.Right()-8, ty+4, "Xvfb :1 · 1024×768 · 点击画面即可操作", ui.ColShadow)
 	case x11StateInstalling:
 		f.TextRight(c, r.Right()-8, ty+4, "正在安装组件…", ui.ColText)
 	default:

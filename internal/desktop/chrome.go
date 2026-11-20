@@ -481,7 +481,7 @@ func (d *Desktop) subEntry(id string) *startEntry {
 
 func (d *Desktop) showAbout() {
 	d.MessageBox("关于 Windows 95 Linux",
-		"Windows 95 Linux 中文版\n版本 26.3 · ARM64 / UEFI\n\nWin95 风格桌面：多语言与设置中心、纸牌、扫雷、三维弹球、\n真正的 3D 体素方块世界、画图、PowerShell、JavaScript 浏览器、\n图片查看器、屏幕键盘、系统更新（OTA）、拖放与截屏（PNG + BMP）、\n苏尔科视觉整活。\nArch Linux ARM glibc 子系统与真实 pacman（清华 TUNA 源），\n可从开始菜单安装并启动官方微信 ARM64 版。\n浏览器支持图片、彩色控件与表单；mcjs.link 的 Minecraft 通过\n嵌套在 Win95 窗口里的 Firefox（Mesa WebGL2）运行。\nX11 嵌套代理用 Xvfb :1 + XGetImage/XTest，在 Win95 窗口里\n直接操作 X11 程序；需要完整桌面时，双击桌面的\n“切换到 XFCE 桌面”交给 Xorg/XFCE，注销后返回 Win95。\n\n"+d.Host.Info,
+		"Windows 95 Linux 中文版\n版本 26.4 · ARM64 / UEFI\n\nWin95 风格桌面：多语言与设置中心、纸牌、扫雷、三维弹球、\n真正的 3D 体素方块世界、画图、PowerShell、JavaScript 浏览器、\n图片查看器、屏幕键盘、系统更新（OTA）、拖放与截屏（PNG + BMP）、\nOffice 365 全件套（组件按需安装，可随时补装）、苏尔科视觉整活。\nArch Linux ARM glibc 子系统与真实 pacman（清华 TUNA 源），\n可从开始菜单安装并启动官方微信 ARM64 版。\n浏览器支持图片、彩色控件与表单；mcjs.link 的 Minecraft 通过\n嵌套在 Win95 窗口里的 Firefox（Mesa WebGL2）运行。\nX11 嵌套代理用 Xvfb :1 + XGetImage/XTest，在 Win95 窗口里\n直接操作 X11 程序；需要完整桌面时，双击桌面的\n“切换到 XFCE 桌面”交给 Xorg/XFCE，注销后返回 Win95。\n\n"+d.Host.Info,
 		IconInfo, []string{"确定"}, nil)
 }
 
@@ -548,6 +548,9 @@ func (d *Desktop) showDangerMenu() {
 
 func (d *Desktop) programEntries() []startEntry {
 	items := []startEntry{
+		{id: "office", label: "Office 365 全件套", icon: ui.IcoOffice, enabled: true, action: func() { d.openOffice() }},
+		{id: "office-setup", label: "Office 组件管理", icon: ui.IcoOffice, enabled: true, action: func() { d.openOfficeSetup("", "", "") }},
+		{sep: true},
 		{id: "notepad", label: d.tr("记事本"), icon: ui.IcoNotepad, enabled: true, action: func() { d.openNotepad("") }},
 		{id: "calc", label: d.tr("计算器"), icon: ui.IcoCalc, enabled: true, action: func() { d.openCalc() }},
 		{id: "calendar", label: d.tr("日历"), icon: ui.IcoCalendar, enabled: true, action: func() { d.openCalendar() }},
@@ -611,6 +614,7 @@ func (d *Desktop) documentEntries() []startEntry {
 func (d *Desktop) settingsEntries() []startEntry {
 	return []startEntry{
 		{id: "settings", label: d.tr("设置中心"), icon: ui.IcoSetup, enabled: true, action: func() { d.openSettings() }},
+		{id: "office-setup", label: "Office 组件管理", icon: ui.IcoOffice, enabled: true, action: func() { d.openOfficeSetup("", "", "") }},
 		{id: "about", label: d.tr("关于本机"), icon: ui.IcoInfo, enabled: true, action: func() { d.showAbout() }},
 		{id: "display", label: d.tr("显示属性(D)"), icon: ui.IcoComputer, enabled: true, action: func() { d.openDisplayProperties() }},
 		{id: "shot", label: "截屏(S)  Print Screen", icon: ui.IcoComputer, enabled: true, action: func() { d.takeScreenshot() }},

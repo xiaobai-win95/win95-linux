@@ -1101,7 +1101,7 @@ func (a *BrowserApp) Menus(d *Desktop, w *Window) []Menu {
 			{Label: "浏览器帮助(A)", Enabled: true, Action: func() { a.Navigate("about:help") }},
 			{Label: "JavaScript 演示(D)", Enabled: true, Action: func() { a.Navigate("about:demo") }},
 			{Label: "关于(A)", Enabled: true, Action: func() {
-				d.MessageBox("关于网络浏览器", "Windows 95 Linux 网络浏览器\n版本 26.3\n\n支持 HTML 页面、超链接、本地文件、HTTP/HTTPS 访问、文件下载与 JavaScript（ECMAScript 5.1）。\n下载的文件保存在 "+downloadDir()+"。", IconInfo, []string{"确定"}, nil)
+				d.MessageBox("关于网络浏览器", "Windows 95 Linux 网络浏览器\n版本 26.4\n\n支持 HTML 页面、超链接、本地文件、HTTP/HTTPS 访问、文件下载与 JavaScript（ECMAScript 5.1）。\n下载的文件保存在 "+downloadDir()+"。", IconInfo, []string{"确定"}, nil)
 			}},
 		}},
 	}
@@ -1386,7 +1386,7 @@ func fetchImageResource(raw string) (*bImage, error) {
 			if err != nil {
 				return nil, err
 			}
-			req.Header.Set("User-Agent", "Mozilla/5.0 (X11; Linux aarch64) Win95Browser/26.3")
+			req.Header.Set("User-Agent", "Mozilla/5.0 (X11; Linux aarch64) Win95Browser/26.4")
 			req.Header.Set("Accept", "image/*,*/*;q=0.8")
 			resp, err := client.Do(req)
 			if err != nil {

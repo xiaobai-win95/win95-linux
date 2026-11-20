@@ -14,15 +14,15 @@ import (
 	"win95linux/internal/ui"
 )
 
-const browserRuntimeVersion = "26.3"
+const browserRuntimeVersion = "26.4"
 
 // browserDOMBridgeJS is installed next to the runtime. It is loaded after the
 // runtime on every page and provides small convenience helpers for pages that
 // expect a modern-ish browser.
-const browserDOMBridgeJS = `/* Windows 95 Linux DOM bridge 26.3 */
+const browserDOMBridgeJS = `/* Windows 95 Linux DOM bridge 26.4 */
 (function () {
   var W = window.Win95 = window.Win95 || {};
-  W.domBridge = "` + "26.3" + `";
+  W.domBridge = "` + "26.4" + `";
   W.text = function (sel, value) {
     var n = typeof sel === "string" ? document.querySelector(sel) : sel;
     if (!n) return "";
@@ -253,7 +253,7 @@ func (a *BrowserApp) runBrowserSetup(s *browserSetup) {
 	if err := os.WriteFile(bridgePath, []byte(browserDOMBridgeJS), 0o644); err != nil {
 		s.update(2, setupWarn, "写入失败，使用内置副本")
 	} else {
-		s.update(2, setupOK, "DOM 兼容层 26.3（已安装）")
+		s.update(2, setupOK, "DOM 兼容层 26.4（已安装）")
 	}
 	a.postSetupChange()
 
@@ -270,7 +270,7 @@ func (a *BrowserApp) runBrowserSetup(s *browserSetup) {
 	prefsOK := os.WriteFile(filepath.Join(dir, "preferences.ini"), []byte(prefs), 0o644) == nil
 	manifest := []map[string]string{
 		{"name": "win95-js-engine", "version": browserRuntimeVersion, "source": "bundled"},
-		{"name": "win95-dom-bridge", "version": "26.3", "source": "bundled"},
+		{"name": "win95-dom-bridge", "version": "26.4", "source": "bundled"},
 		{"name": "ca-certificates", "version": "system", "source": "alpine"},
 	}
 	manifestData, _ := json.MarshalIndent(manifest, "", "  ")

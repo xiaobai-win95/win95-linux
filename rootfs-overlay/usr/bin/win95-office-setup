@@ -1,0 +1,139 @@
+#!/bin/sh
+# Install the Office 365 suite components selected by the user.
+#
+# Usage: win95-office-setup PACKAGE [PACKAGE...]
+#
+# The desktop picks the missing packages, then starts this script detached.
+# Progress is published with win95-install-status so the Win95 progress window
+# can follow the download while the rest of the desktop stays usable.
+
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+
+TITLE="Office 365 全件套"
+STATUS=/usr/bin/win95-install-status
+LOG=/var/log/win95-office-setup.log
+PIDFILE=/run/win95-office-setup.pid
+LOCKDIR=/run/win95-office-setup.lock
+PROFILE=/root/.config/fcitx5/profile
+
+[ "$(id -u)" = "0" ] || {
+	echo "win95-office-setup: must run as root" >&2
+	exit 1
+}
+if [ "$#" -lt 1 ]; then
+	echo "usage: win95-office-setup PACKAGE [PACKAGE...]" >&2
+	exit 2
+fi
+for pkg in "$@"; do
+	case "$pkg" in
+	'' | *[!a-z0-9._+-]*)
+		echo "win95-office-setup: invalid package name: $pkg" >&2
+		exit 2
+		;;
+	esac
+done
+
+mkdir -p /var/log /run 2>/dev/null || true
+: >"$LOG" 2>/dev/null || true
+if ! mkdir "$LOCKDIR" 2>/dev/null; then
+	if [ -f "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE" 2>/dev/null)" 2>/dev/null; then
+		echo "win95-office-setup: another install is running" >&2
+		exit 1
+	fi
+	rmdir "$LOCKDIR" 2>/dev/null || true
+	mkdir "$LOCKDIR" 2>/dev/null || {
+		echo "win95-office-setup: cannot create lock" >&2
+		exit 1
+	}
+fi
+echo $$ >"$PIDFILE"
+trap 'rm -f "$PIDFILE"; rmdir "$LOCKDIR" 2>/dev/null || true' EXIT INT TERM
+
+log() {
+	echo "$(date '+%F %T') $*" >>"$LOG" 2>/dev/null
+}
+
+status() {
+	[ -x "$STATUS" ] && "$STATUS" "$@" >/dev/null 2>&1
+}
+
+fail() {
+	log "FAILED: $1"
+	status fail "$1"
+	echo "win95-office-setup: $1" >&2
+	exit 1
+}
+
+status begin "$TITLE" "正在更新软件包索引…"
+log "apk update"
+if ! apk update >>"$LOG" 2>&1; then
+	fail "软件包索引更新失败，请检查网络与 Alpine 软件源"
+fi
+
+total=$#
+processed=0
+chunk=""
+chunk_n=0
+
+install_chunk() {
+	[ -n "$chunk" ] || return 0
+	log "apk add$chunk"
+	# shellcheck disable=SC2086
+	if ! apk add --no-progress $chunk >>"$LOG" 2>&1; then
+		fail "软件包安装失败：$chunk（详情见 $LOG）"
+	fi
+	chunk=""
+	chunk_n=0
+}
+
+for pkg in "$@"; do
+	chunk="$chunk $pkg"
+	chunk_n=$((chunk_n + 1))
+	processed=$((processed + 1))
+	pct=$((8 + processed * 82 / total))
+	status set "$pct" "正在下载并安装：$pkg"
+	if [ "$chunk_n" -ge 6 ]; then
+		install_chunk
+	fi
+done
+install_chunk
+
+status set 93 "正在校验已安装的软件包…"
+missing=""
+for pkg in "$@"; do
+	apk info -e "$pkg" >/dev/null 2>&1 || missing="$missing $pkg"
+done
+[ -z "$missing" ] || fail "以下软件包未安装成功：$missing"
+
+if [ -x /usr/bin/fc-cache ]; then
+	fc-cache -f >/dev/null 2>&1 || true
+fi
+
+# fcitx5 needs a minimal profile to expose the Pinyin engine on first start.
+# The desktop session starts fcitx5 afterwards with DISPLAY=:1 and the private
+# DBus address; this file only provides the default input method ordering.
+if [ -x /usr/bin/fcitx5 ] && [ ! -f "$PROFILE" ]; then
+	mkdir -p /root/.config/fcitx5 2>/dev/null || true
+	cat >"$PROFILE" <<'EOF'
+[Groups/0]
+Name=Default
+Default Layout=us
+DefaultIM=pinyin
+
+[Groups/0/Items/0]
+Name=keyboard-us
+Layout=
+
+[Groups/0/Items/1]
+Name=pinyin
+Layout=
+
+[GroupOrder]
+0=Default
+EOF
+fi
+
+log "installation complete: $total package(s)"
+status done "Office 组件安装完成（共 $total 个软件包）"
+exit 0

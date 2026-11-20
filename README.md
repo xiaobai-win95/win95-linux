@@ -6,13 +6,13 @@ This is a linux OS which has the win95 style GUI (Chinese).
 
 
 
-# Windows 95 Linux 中文版 26.3 · UTM 配置与安装说明（含 OTA 更新客户端）
+# Windows 95 Linux 中文版 26.4 · UTM 配置与安装说明（含 Office 365 全件套与 OTA 更新客户端）
 
 ## 一、交付文件
 
 | 文件 | 说明 |
 | --- | --- |
-| `win95-installer-aarch64.img` | 可启动的 UEFI 安装盘镜像（raw GPT，130 MiB），系统版本 26.3，内置 OTA 更新客户端 |
+| `win95-installer-aarch64.img` | 可启动的 UEFI 安装盘镜像（raw GPT，130 MiB），系统版本 26.4，内置 OTA 更新客户端与 Office 365 启动器；**26.4 Release 只上传 OTA 包，安装镜像由构建脚本在本地生成** |
 | `win95-installer-aarch64.img.sha256` | SHA-256 校验值 |
 | `win95-ota-<版本>-aarch64.tar.gz` | 更新包，由构建脚本按 `VERSION` 生成；**从 26.4 起**随 Release 上传 |
 | `win95-ota-<版本>-aarch64.tar.gz.sha256` | 更新包 SHA-256 校验值 |
@@ -24,10 +24,16 @@ This is a linux OS which has the win95 style GUI (Chinese).
 shasum -a 256 -c win95-installer-aarch64.img.sha256
 ```
 
-镜像 SHA-256：
+26.3 安装镜像 SHA-256（26.4 未上传安装镜像，可先用 26.3 镜像安装，再通过 OTA 升级到 26.4）：
 
 ```sha256
 b5d1597ee59dd722f1c78e538d1102aa9816963856101b606c642004d3813e82
+```
+
+26.4 更新包 SHA-256（随 v26.4 Release 上传）：
+
+```sha256
+4abba892699ebc7e1d9b3a73e2ff2bf1eff0af1dbe62f64747f658fb2c2a5c29
 ```
 
 > 这是**磁盘镜像**，不是 ISO，不要挂到“CD/DVD”上。必须作为 UTM 的硬盘设备导入。
@@ -118,7 +124,7 @@ b5d1597ee59dd722f1c78e538d1102aa9816963856101b606c642004d3813e82
 ## 六、安装后的系统
 
 - 图形桌面：Win95 风格任务栏、开始菜单、窗口、对话框。
-- 程序菜单：记事本、计算器、日历、终端、Windows PowerShell、PowerShell ISE、文件管理器、网络浏览器、微信 WeChat、纸牌、扫雷、方块世界 95、三维弹球、画图、图片查看器、图形化下载器、软件包管理器、**系统更新（OTA）**、Arch Linux (glibc / pacman)、设置中心、屏幕键盘、视觉整活演示、任务管理器、注册表编辑器、**切换到 XFCE 桌面**，以及 X11 嵌套代理（XFCE 终端、Firefox、微信等 X11 程序都显示在 Win95 窗口里）。
+- 程序菜单：记事本、计算器、日历、终端、Windows PowerShell、PowerShell ISE、文件管理器、网络浏览器、**Office 365 全件套**、**Office 组件管理**、微信 WeChat、纸牌、扫雷、方块世界 95、三维弹球、画图、图片查看器、图形化下载器、软件包管理器、**系统更新（OTA）**、Arch Linux (glibc / pacman)、设置中心、屏幕键盘、视觉整活演示、任务管理器、注册表编辑器、**切换到 XFCE 桌面**，以及 X11 嵌套代理（XFCE 终端、Firefox、微信等 X11 程序都显示在 Win95 窗口里）。
 - **X11 代理与完整 XFCE 并存**：X11 代理只负责把单个程序嵌进 Win95 窗口；桌面的“切换到 XFCE 桌面”仍会关闭 Win95 桌面、启动完整的 Xorg/XFCE 会话，注销后自动返回 Win95。两者互不替代。
 - 设置中心包含语言、显示、字体、主题、时间、地区、关于与许可协议；界面支持简体中文、繁體中文、English、日本語、한국어、Français、Deutsch、Español、Русский、Português、Italiano 等，安装镜像自带全部语言。
 - 显示属性：6 种桌面背景（经典青色、纯青色、海洋蓝、云彩、午夜星空、石板灰），并可配置飞线、星空或飞行窗口屏保与 1–120 分钟的等待时间；设置会保存到 `/root/.config/win95/desktop.json`。
@@ -262,7 +268,7 @@ b5d1597ee59dd722f1c78e538d1102aa9816963856101b606c642004d3813e82
   - **在此处打开终端**：工具栏的“终端”按钮或右键菜单“在此处打开终端”，会在当前目录启动一个 Win95 终端；进入 Arch 子系统后按钮变为“在此处打开 Arch 终端”，执行 `win95-arch-run bash` 进入 glibc chroot。
   - **创建快捷方式**：右键文件或文件夹 → “创建快捷方式”，在当前目录生成符号链接，名称为“原名 - 快捷方式.扩展名”，重名自动加编号；双击快捷方式打开原目标。
   - **显示隐藏文件**：按 Ctrl+H 或查看菜单 → “显示隐藏文件”，列出以 `.` 开头的文件与目录；再次切换即隐藏。
-  - **更多文件类型**：文本/源码/配置（.txt/.md/.go/.c/.py/.json/.yaml/.toml/.ini…）用记事本打开；HTML 用浏览器；PNG/BMP/JPG/JPEG/GIF 用图片查看器；`.sh`/`.bash` 在终端中执行；压缩包（.zip/.tar/.gz/.xz/.7z…）在终端里列出内容；`.desktop` 快捷方式解析后启动；PDF、Office、音视频、字体、磁盘镜像和 Windows 程序会给出对应说明或交给合适的程序。
+  - **更多文件类型**：文本/源码/配置（.txt/.md/.go/.c/.py/.json/.yaml/.toml/.ini…）用记事本打开；HTML 用浏览器；PNG/BMP/JPG/JPEG/GIF 用图片查看器；`.sh`/`.bash` 在终端中执行；压缩包（.zip/.tar/.gz/.xz/.7z…）在终端里列出内容；`.desktop` 快捷方式解析后启动；Word/Excel/PowerPoint/Draw/Math/Base/PDF 等办公文档交给 **Office 365 全件套**（缺少组件时先提示安装），音视频、字体、磁盘镜像和 Windows 程序会给出对应说明或交给合适的程序。
   - **UTM 共享文件夹**：启动时读取 `/proc/self/mounts`，自动把 `virtiofs` / `9p` 挂载点（如 UTM 的共享目录）显示为“共享文件夹 - 名称”，双击即可浏览。
   - **进入子系统**：在“我的电脑”中双击“Arch Linux 子系统”直接浏览 `/opt/archlinux`；右键“Arch 子系统终端”或在 Arch 目录内点终端按钮进入 chroot。
 - **文件操作**：在文件管理器中右键可新建文件夹、重命名（F2，带输入框和非法字符校验）、删除（移入 `/tmp/.trash` 回收站）、查看属性（路径、类型、大小、修改时间）；在回收站里再次删除才是永久删除。系统根目录、`/root` 等关键路径受保护，不能删除或重命名。
@@ -304,14 +310,37 @@ b5d1597ee59dd722f1c78e538d1102aa9816963856101b606c642004d3813e82
 
 X11 程序可以直接在 Win95 桌面窗口里运行，不必切换控制台；需要完整桌面时仍可切到 Xorg/XFCE。两者是并存关系，代理不会取代 XFCE：
 
-- **虚拟显示**：代理在后台静默启动 `Xvfb :1 -screen 0 800x600x24 -nolisten tcp -ac`，只提供一块 800×600 的虚拟屏幕，不接管 tty1 的 framebuffer。
+- **虚拟显示**：代理在后台静默启动 `Xvfb :1 -screen 0 1024x768x24 -nolisten tcp -ac`，只提供一块 1024×768 的虚拟屏幕，不接管 tty1 的 framebuffer。
 - **画面捕获**：Go 协程每隔约 110 ms 通过 `XGetImage` 抓取 `:1` 的像素，转换颜色后绘制到“X11 嵌套代理”窗口的客户区；内容未变化时跳过重绘。
 - **输入回送**：窗口里的鼠标移动、左/右键、滚轮和键盘事件通过 XTest 扩展注入 `:1`，因此 `xfce4-terminal`、Firefox、微信等程序可以正常操作。右键会补发一次 button 3 的按下/释放。
 - **入口**：桌面图标“XFCE 终端”“Firefox”“X11 代理”，开始 → 程序 → 对应条目，开始 → 运行（如 `firefox`、`xfce4-terminal`），浏览器的 mcjs.link 跳转，以及软件包管理器生成的图形快捷方式，全部走同一个代理窗口；重复打开会复用已有代理窗口。
 - **按需安装**：首次使用若镜像里缺少 `Xvfb`、`firefox`、`xfce4-terminal` 等组件，会弹出确认并运行 `/usr/bin/win95-x11-setup`（Alpine 源，约数百 MB）；“安装进度”窗口显示阶段与日志，完成后自动启动刚才请求的程序。日志：`/var/log/win95-x11-setup.log`、`/tmp/win95-xvfb.log`、`/tmp/win95-x11-app.log`。
-- **窗口适配**：Xvfb 里没有窗口管理器，部分程序会按大于 800×600 的尺寸建窗；代理约每秒检查一次顶层窗口，并把超尺寸窗口缩到 800×600，保证完整落在客户区内。
+- **窗口管理**：Xvfb 里运行轻量窗口管理器 JWM（配置文件 `/root/.jwmrc`），窗口可移动、缩放、最小化，LibreOffice 的文件对话框与提示框能正常获得焦点。打开 Office 文档时代理会自动最大化，以利用 1024×768 的虚拟屏幕；输入法框与弹窗由 JWM 管理。
 - **重连**：如果 Xvfb 异常退出，代理工具栏的“重连”会清理失效的 `/tmp/.X1-lock` 后重新启动虚拟显示。
 - **完整 XFCE**：双击桌面的“切换到 XFCE 桌面”（或开始 → 程序 → 切换到 XFCE 桌面）会关闭 Win95 桌面，交给 tty1 上的 Xorg/XFCE；在 XFCE 中注销后自动回到 Win95。X11 代理在 Win95 内继续作为单程序窗口使用，不需要为它放弃完整桌面。旧的 `switch-to-xfce` / `win95-xfce-app` 脚本仍在磁盘上，切换入口现在重新指向完整的 XFCE 会话。
+
+### Office 365 全件套（按需安装）
+
+Office 组件不随系统镜像打包，首次使用时从 Alpine 软件源下载；安装完成后可以随时补装缺少的组件。
+
+- **入口**：桌面“Office 365”图标，开始 → 程序 → **Office 365 全件套**，或开始 → 程序 → **Office 组件管理**。启动器以卡片列出 Word、Excel、PowerPoint、Draw、Math、Base、PDF、邮件与笔记；未安装的卡片点击后会直接打开组件管理并预选所需组件。
+- **组件与下载量（约）**：
+  | 组件 | 内容 | 大小 |
+  | --- | --- | --- |
+  | 核心引擎与中文字体（必装） | libreoffice-common/gtk、Noto CJK、文泉驿字体、Xvfb、DBus、JWM | 246 MB |
+  | Word / Excel / PowerPoint / Draw / Math | libreoffice-writer / calc / impress / draw / math | 1–10 MB |
+  | PDF 阅读与工具 | zathura、zathura-pdf-poppler、poppler-utils、qpdf | 6 MB |
+  | 中文输入法 | fcitx5、拼音、GTK/QT 模块与配置工具 | 13 MB |
+  | 界面与拼写语言包 | 简繁中文、英、日、韩、法、德、西、俄、葡、意 | 13 MB |
+  | Base 数据库 | libreoffice-base + OpenJDK 17 运行时 | 65 MB |
+  | 邮件 / 笔记 / OCR / 云盘 | Thunderbird / Zim / Tesseract / rclone | 4–95 MB |
+  默认勾选核心、Writer、Calc、Impress、Draw、Math、PDF、中文输入法与语言包；Base、邮件、笔记、OCR、云盘同步默认不勾选。
+- **安装流程**：组件管理窗口点“安装所选”，确认后运行 `/usr/bin/win95-office-setup`。脚本先 `apk update`，再按每 6 个包一组执行 `apk add --no-progress`，逐包校验是否安装成功，最后刷新字体缓存并写入 fcitx5 拼音配置。安装进度显示在“安装进度”窗口，桌面可继续使用；同时只允许一个安装任务（锁目录 `/run/win95-office-setup.lock`）。
+- **补装**：组件管理窗口每 2 秒重新读取 `/lib/apk/db/installed`，已安装组件显示为“已安装”并保持勾选、不可取消；其余组件可继续勾选补装，只会下载缺少的软件包。
+- **文件关联**：在文件管理器或桌面双击 `.doc/.docx/.docm/.dot/.dotx/.odt/.ott/.rtf/.wps`、`.xls/.xlsx/.xlsm/.xlt/.xltx/.ods/.ots/.csv/.tsv`、`.ppt/.pptx/.pptm/.pps/.ppsx/.pot/.potx/.odp/.otp`、`.odg/.otg/.vsd/.vsdx`、`.odf/.odc`、`.odb`、`.pdf` 时自动选择对应应用；组件未安装时先打开组件管理并预选，安装完成后继续打开该文档。
+- **运行方式**：LibreOffice 通过 X11 嵌套代理启动（`SAL_USE_VCLPLUGIN=gtk3`，`--writer/--calc/--impress/--draw/--math/--base`），代理窗口自动最大化。后台是 1024×768 的 Xvfb :1、JWM 窗口管理器、私有会话总线 `/tmp/win95-x11-bus` 与 fcitx5 拼音；安装输入法后无需重启桌面。
+- **日志**：`/var/log/win95-office-setup.log`（安装）、`/tmp/win95-fcitx5.log`（输入法）、`/tmp/win95-jwm.log`（窗口管理器）。
+- **更大画面**：需要更宽的编辑区时，可切换到完整 XFCE 桌面，或在 UTM 虚拟机设置中调大显示分辨率；Win95 桌面的 X11 代理仍为 1024×768。
 
 ### 完整 XFCE 桌面切换
 
@@ -324,17 +353,17 @@ X11 程序可以直接在 Win95 桌面窗口里运行，不必切换控制台；
 ### X11 应用与统一通知
 
 - **XFCE 终端 / Firefox**：从桌面图标、开始菜单或运行对话框启动后，程序画面出现在代理窗口中；窗口工具栏提供“终端”“浏览器”“重连”快捷按钮。
-- **性能提示**：UTM Apple 虚拟化没有 GPU，Firefox 使用 Mesa llvmpipe 软件渲染，首次冷启动和复杂页面会较慢；代理固定 24 位色、800×600，适合轻量网页和 mcjs.link 的 WebGL2 演示。
+- **性能提示**：UTM Apple 虚拟化没有 GPU，Firefox 使用 Mesa llvmpipe 软件渲染，首次冷启动和复杂页面会较慢；代理固定 24 位色、1024×768，适合轻量网页和 mcjs.link 的 WebGL2 演示。
 - 统一通知系统把后台事件送到 Win95 托盘：
   - 各脚本通过 `/usr/bin/win95-notify "标题" "内容"` 追加到 `/run/win95-notify`；Win95 桌面每秒读取该队列，在任务栏右下角显示黄色气泡，约 8 秒后自动消失。
   - `win95-download-watch` 会监视 `/root/下载`，新文件出现后发送“下载完成”通知；X11 程序退出时也会发送通知。
   - 通知队列不会因为代理窗口打开而丢失。
 
-> 新应用随系统镜像一起安装。此前发布的 26.3 与更早版本是单根分区，没有 OTA 客户端和 A/B 双插槽，必须**用本次 26.3 安装镜像重装一次**；之后 26.4 及以后的常规更新都通过 OTA 交付，不必再重装。
+> Office 组件按需安装，其余新功能随系统镜像安装。26.3 首次引入 WIN95SUPER 超级分区与 A/B 双插槽；已安装 26.3 的系统可直接通过 OTA 升级到 26.4，不必重装。更早的单根分区版本仍需用安装镜像重装一次，之后即可持续 OTA 更新。
 
 ### 系统更新（OTA）
 
-- **版本关系**：本次安装的系统是 **26.3**，已内置更新客户端。26.4 尚未发布时，检查更新会提示无法获取清单（GitHub 最新 Release 里还没有 `latest.json`）；26.4 发布并上传更新包与清单后，即可在 26.3 上直接升级。
+- **版本关系**：本次发布的系统版本是 **26.4**，已内置更新客户端，26.4 的更新包、SHA-256 与 `latest.json` 随本次 Release 上传。26.3 系统打开“系统更新”即可下载并升级到 26.4；26.5 发布后，26.4 系统同样通过该窗口升级。
 - **入口**：开始 → 设置 → **Windows 更新**，或 开始 → 程序 → **系统更新**。窗口显示当前版本、运行插槽、状态、进度、更新说明与日志。
 - **检查更新**：客户端读取
   `https://github.com/xiaobai-win95/win95-linux/releases/latest/download/latest.json`，
@@ -361,13 +390,13 @@ X11 程序可以直接在 Win95 桌面窗口里运行，不必切换控制台；
   ```
   两个插槽共享整个超级分区的剩余空间，不需要预先划分固定大小的 B 分区。安装器与更新客户端占用的是“当前系统 + 用户数据 + 一个更新包”的空间。
 - **版本文件**：`/etc/win95-version` 包含 `VERSION=`、`BUILD=`、`SLOT_LAYOUT=super-v1`；终端可用 `cat /etc/win95-version` 查看。
-- **GitHub 发布约定（26.4 起）**：每个 Release（标签如 `v26.4`）需要上传：
-  - `win95-installer-aarch64.img` 与 `.sha256`；
+- **GitHub 发布约定（26.4 起）**：每个 Release（标签如 `v26.4`）必须上传该版本的更新包与清单：
   - `win95-ota-26.4-aarch64.tar.gz`、`win95-ota-26.4-aarch64.tar.gz.sha256`；
   - `latest.json`（内容由构建脚本生成，`package.url` 指向该 Release 的更新包）。
+  安装镜像 `win95-installer-aarch64.img` 与 `.sha256` 按需上传。**26.4 只上传 OTA 包、SHA256 与 latest.json**，不传安装镜像；已安装 26.3 的虚拟机直接 OTA 升级。若某个 Release 不提供安装镜像，全新安装需使用较早的镜像版本再通过 OTA 升级。
   只有挂在 **latest release** 上的 `latest.json` 会被 `releases/latest/download/` 解析；客户端不读取 Release 正文。
-  **26.3 构建也会在本地生成 `win95-ota-26.3-*` 与 26.3 的 `latest.json`，但不要上传**，否则 26.3 客户端会暂时认为已是最新；26.4 的 Release 发布后，其 `latest.json` 才会被客户端读取。
-  发布 26.4 时可用 `VERSION=26.4 OTA_NOTES="更新说明…" ./build-installer.sh` 生成对应版本的清单。
+  **本机构建也会生成旧版本的 `win95-ota-26.3-*` 与 26.3 的 `latest.json`，不要上传**；26.4 的 Release 发布后，其 `latest.json` 才会被客户端读取。
+  构建 26.4 时可用 `VERSION=26.4 OTA_NOTES="更新说明…" ./build-installer.sh` 生成对应版本的镜像、更新包与清单。
 - **与 Android 虚拟 A/B 的差别**：本系统没有 Android 的 liblp 超级分区元数据、dm-linear / dm-snapshot、update_engine、boot_control HAL 与 AVB/dm-verity 验证链。这里用 ext4 目录 + 文件级硬链接快照实现同样的用户体验（共享超级分区、后台写备用槽、试用与自动回退），不是 Android 的块级快照。OTA 只替换根文件系统；内核、initrd 与 `BOOTAA64.EFI` 仍在 EFI 分区上，不随 OTA 更新。如果未来版本需要换内核，需发布新的安装镜像。
 - **离线或 GitHub 不可达**：检查更新会显示失败原因，不影响当前系统；可以照常使用。更新包 SHA-256 校验失败会拒绝安装。
 
@@ -411,7 +440,7 @@ X11 程序可以直接在 Win95 桌面窗口里运行，不必切换控制台；
   /usr/bin/switch-to-xfce
   ```
 - 确认 UTM 的指针设备是 **USB Tablet**（或默认 USB 鼠标）；PS/2 设备在部分 Apple 虚拟化配置下不会被自动识别。
-- 桌面上找不到“切换到 XFCE 桌面”时，确认镜像为 26.3 且没有被旧版快捷方式缓存覆盖；开始 → 程序 → “切换到 XFCE 桌面”与桌面图标使用同一个入口，也可以直接执行 `/usr/bin/switch-to-xfce`。
+- 桌面上找不到“切换到 XFCE 桌面”时，确认镜像为 26.4 且没有被旧版快捷方式缓存覆盖；开始 → 程序 → “切换到 XFCE 桌面”与桌面图标使用同一个入口，也可以直接执行 `/usr/bin/switch-to-xfce`。
 
 **微信报 libandromeda.so 或其它共享库找不到**
 

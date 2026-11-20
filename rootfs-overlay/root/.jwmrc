@@ -1,0 +1,18 @@
+<?xml version="1.0"?>
+<!-- Minimal JWM configuration for the nested X11 display. The Win95 desktop
+     provides the outer taskbar; inside the proxy JWM only adds title bars,
+     window dragging/resizing and focus handling for LibreOffice dialogs. -->
+<JWM>
+	<Desktops width="1" height="1"/>
+	<Tray x="0" y="-1" height="26">
+		<TaskList maxwidth="220"/>
+		<Spacer width="4"/>
+		<Clock format="%H:%M"/>
+	</Tray>
+	<WindowStyle>
+		<Font>Sans-10</Font>
+		<Width>4</Width>
+		<Height>22</Height>
+		<Corner>3</Corner>
+	</WindowStyle>
+</JWM>

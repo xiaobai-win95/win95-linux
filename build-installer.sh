@@ -16,7 +16,7 @@ BIN="$ROOT/build/bin"
 OUT="$ROOT/out"
 ESP="$ROOT/build/esp-installer.img"
 IMAGE="$OUT/win95-installer-aarch64.img"
-VERSION="${VERSION:-26.3}"
+VERSION="${VERSION:-26.4}"
 BUILD_DATE="${BUILD_DATE:-$(date +%Y-%m-%d)}"
 OTA_NAME="win95-ota-${VERSION}-aarch64.tar.gz"
 OTA_NOTES="${OTA_NOTES:-Windows 95 Linux ${VERSION} 系统更新。}"
@@ -89,7 +89,7 @@ cat > "$OUT/latest.json" <<EOF
   "version": "$VERSION",
   "released": "$BUILD_DATE",
   "notes": "$OTA_NOTES",
-  "min_version": "26.3",
+  "min_version": "26.4",
   "slot_layout": "super-v1",
   "package": {
     "url": "https://github.com/$REPO_SLUG/releases/download/v$VERSION/$OTA_NAME",
@@ -179,7 +179,7 @@ for entry in "$STAGE/initrd-installer.img:安装器" "$STAGE/initrd-installed.im
 		;;
 	esac
 done
-tar -tzf "$STAGE/rootfs.tar.gz" | grep -E '^\./(sbin/init|usr/bin/win95gui|usr/bin/startgui|usr/bin/switch-to-xfce|usr/bin/switch-to-win95|usr/bin/win95-clipd|usr/bin/win95-notify|usr/bin/win95-xfce-app|usr/bin/win95-x11-setup|usr/bin/win95-download-watch|usr/bin/win95-install-status|usr/bin/win95-arch-bootstrap|usr/bin/win95-arch-mounts|usr/bin/win95-arch-umount|usr/bin/win95-arch-repair|usr/bin/pacman|usr/bin/win95-arch-run|usr/bin/win95-wechat|usr/bin/win95-wechat-setup|usr/bin/win95-wechat-run|etc/inittab|etc/init\.d/rcS|etc/win95-version|root/\.config/autostart/win95-clipd\.desktop|root/\.config/autostart/win95-download-watch\.desktop|root/\.config/user-dirs\.dirs|root/桌面/切换到 Win95 桌面\.desktop|root/桌面/alpine-install-xfce4\.sh)$' | sort
+tar -tzf "$STAGE/rootfs.tar.gz" | grep -E '^\./(sbin/init|usr/bin/win95gui|usr/bin/startgui|usr/bin/switch-to-xfce|usr/bin/switch-to-win95|usr/bin/win95-clipd|usr/bin/win95-notify|usr/bin/win95-xfce-app|usr/bin/win95-x11-setup|usr/bin/win95-download-watch|usr/bin/win95-install-status|usr/bin/win95-office-setup|usr/bin/win95-arch-bootstrap|usr/bin/win95-arch-mounts|usr/bin/win95-arch-umount|usr/bin/win95-arch-repair|usr/bin/pacman|usr/bin/win95-arch-run|usr/bin/win95-wechat|usr/bin/win95-wechat-setup|usr/bin/win95-wechat-run|etc/inittab|etc/init\.d/rcS|etc/win95-version|root/\.config/autostart/win95-clipd\.desktop|root/\.config/autostart/win95-download-watch\.desktop|root/\.config/user-dirs\.dirs|root/桌面/切换到 Win95 桌面\.desktop|root/桌面/alpine-install-xfce4\.sh)$' | sort
 tar -tzf "$OUT/$OTA_NAME" | grep -qx 'manifest.json'
 tar -tzf "$OUT/$OTA_NAME" | grep -qx 'rootfs.tar.gz'
 grep -q "\"version\": \"$VERSION\"" "$OUT/latest.json"

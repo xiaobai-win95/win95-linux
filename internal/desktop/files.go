@@ -741,12 +741,14 @@ func (a *FileManagerApp) activate(idx int) {
 		a.d.runScript(e.path, "/bin/bash")
 	case fmArchiveExt(ext):
 		a.openArchive(e)
+	case officeFileModule(e.name) != "":
+		a.d.openOfficeFile(e.path)
 	case fmTextType(e.name):
 		a.d.openNotepad(e.path)
 	default:
 		a.d.MessageBox("文件管理器", "无法打开“"+e.name+"”。\n\n"+
 			"类型："+e.typ+"\n大小："+sizeText(e.size)+"\n路径："+e.path+"\n\n"+
-			"没有与此文件类型关联的程序。支持的文本、源代码、配置、图片、HTML 和脚本可直接双击打开。", IconInfo, []string{"确定"}, nil)
+			"没有与此文件类型关联的程序。可安装 Office 365 全件套编辑办公文档，\n或者双击打开文本、源代码、配置、图片、HTML 和脚本文件。", IconInfo, []string{"确定"}, nil)
 	}
 }
 
@@ -1156,8 +1158,10 @@ func fmClassify(name string) (ui.IconKind, string) {
 		return ui.IcoPackage, "软件包"
 	case ".pdf", ".djvu", ".epub", ".mobi":
 		return ui.IcoText, "电子文档"
-	case ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".odt", ".ods", ".odp", ".rtf":
-		return ui.IcoText, "办公文档"
+	case ".doc", ".docx", ".docm", ".dot", ".dotx", ".xls", ".xlsx", ".xlsm",
+		".ppt", ".pptx", ".pptm", ".pps", ".ppsx", ".odt", ".ods", ".odp",
+		".odg", ".odf", ".odb", ".rtf", ".csv", ".tsv", ".vsd", ".vsdx":
+		return ui.IcoOffice, "办公文档"
 	case ".mp3", ".wav", ".flac", ".ogg", ".oga", ".m4a", ".aac", ".opus", ".wma",
 		".mp4", ".mkv", ".avi", ".mov", ".webm", ".wmv", ".flv", ".m4v", ".mpg", ".mpeg":
 		return ui.IcoFile, "媒体文件"
