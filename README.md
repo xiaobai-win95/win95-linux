@@ -12,7 +12,7 @@ This is a linux OS which has the win95 style GUI (Chinese).
 
 | 文件 | 说明 |
 | --- | --- |
-| `win95-installer-aarch64.img` | 可启动的 UEFI 安装盘镜像（raw GPT，130 MiB），系统版本 26.4，内置 OTA 更新客户端与 Office 365 启动器；**26.4 Release 只上传 OTA 包，安装镜像由构建脚本在本地生成** |
+| `win95-installer-aarch64.img` | 可启动的 UEFI 安装盘镜像（raw GPT，130 MiB），系统版本 26.4，内置 OTA 更新客户端与 Office 365 启动器；**随 26.4 Release 上传** |
 | `win95-installer-aarch64.img.sha256` | SHA-256 校验值 |
 | `win95-ota-<版本>-aarch64.tar.gz` | 更新包，由构建脚本按 `VERSION` 生成；**从 26.4 起**随 Release 上传 |
 | `win95-ota-<版本>-aarch64.tar.gz.sha256` | 更新包 SHA-256 校验值 |
@@ -24,10 +24,10 @@ This is a linux OS which has the win95 style GUI (Chinese).
 shasum -a 256 -c win95-installer-aarch64.img.sha256
 ```
 
-26.3 安装镜像 SHA-256（26.4 未上传安装镜像，可先用 26.3 镜像安装，再通过 OTA 升级到 26.4）：
+26.4 安装镜像 SHA-256（随 v26.4 Release 上传）：
 
 ```sha256
-b5d1597ee59dd722f1c78e538d1102aa9816963856101b606c642004d3813e82
+d74082a19bdc4703a3c64bbe2b2301f35734ff5ab575c673c8ba51957394fced
 ```
 
 26.4 更新包 SHA-256（随 v26.4 Release 上传）：
@@ -363,7 +363,7 @@ Office 组件不随系统镜像打包，首次使用时从 Alpine 软件源下�
 
 ### 系统更新（OTA）
 
-- **版本关系**：本次发布的系统版本是 **26.4**，已内置更新客户端，26.4 的更新包、SHA-256 与 `latest.json` 随本次 Release 上传。26.3 系统打开“系统更新”即可下载并升级到 26.4；26.5 发布后，26.4 系统同样通过该窗口升级。
+- **版本关系**：本次发布的系统版本是 **26.4**，已内置更新客户端，26.4 的安装镜像、更新包、SHA-256 与 `latest.json` 随本次 Release 全部上传。26.3 系统打开“系统更新”即可下载并升级到 26.4；26.5 发布后，26.4 系统同样通过该窗口升级。
 - **入口**：开始 → 设置 → **Windows 更新**，或 开始 → 程序 → **系统更新**。窗口显示当前版本、运行插槽、状态、进度、更新说明与日志。
 - **检查更新**：客户端读取
   `https://github.com/xiaobai-win95/win95-linux/releases/latest/download/latest.json`，
@@ -390,10 +390,11 @@ Office 组件不随系统镜像打包，首次使用时从 Alpine 软件源下�
   ```
   两个插槽共享整个超级分区的剩余空间，不需要预先划分固定大小的 B 分区。安装器与更新客户端占用的是“当前系统 + 用户数据 + 一个更新包”的空间。
 - **版本文件**：`/etc/win95-version` 包含 `VERSION=`、`BUILD=`、`SLOT_LAYOUT=super-v1`；终端可用 `cat /etc/win95-version` 查看。
-- **GitHub 发布约定（26.4 起）**：每个 Release（标签如 `v26.4`）必须上传该版本的更新包与清单：
+- **GitHub 发布约定（26.4 起）**：每个 Release（标签如 `v26.4`）上传完整交付物：
+  - `win95-installer-aarch64.img`、`win95-installer-aarch64.img.sha256`；
   - `win95-ota-26.4-aarch64.tar.gz`、`win95-ota-26.4-aarch64.tar.gz.sha256`；
   - `latest.json`（内容由构建脚本生成，`package.url` 指向该 Release 的更新包）。
-  安装镜像 `win95-installer-aarch64.img` 与 `.sha256` 按需上传。**26.4 只上传 OTA 包、SHA256 与 latest.json**，不传安装镜像；已安装 26.3 的虚拟机直接 OTA 升级。若某个 Release 不提供安装镜像，全新安装需使用较早的镜像版本再通过 OTA 升级。
+  **26.4 安装镜像、更新包、SHA256 与 latest.json 全部上传**；已安装 26.3 的虚拟机可直接 OTA 升级，新虚拟机用 26.4 镜像全新安装。
   只有挂在 **latest release** 上的 `latest.json` 会被 `releases/latest/download/` 解析；客户端不读取 Release 正文。
   **本机构建也会生成旧版本的 `win95-ota-26.3-*` 与 26.3 的 `latest.json`，不要上传**；26.4 的 Release 发布后，其 `latest.json` 才会被客户端读取。
   构建 26.4 时可用 `VERSION=26.4 OTA_NOTES="更新说明…" ./build-installer.sh` 生成对应版本的镜像、更新包与清单。
