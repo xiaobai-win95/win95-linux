@@ -440,7 +440,7 @@ func TestPreviewFrames(t *testing.T) {
 			a := NewPShellApp(d)
 			a.sess.cwd = "/root"
 			a.lines = []psLine{
-				{text: "Windows PowerShell 26.4", col: psColPrompt, bold: true},
+				{text: "Windows PowerShell 26.5", col: psColPrompt, bold: true},
 				{text: "版权所有 (C) 2026 Windows 95 Linux 项目。保留所有权利。", col: psColDim},
 				{text: ""},
 				{text: "PS C:\\root> Get-ChildItem", col: psColDim},
@@ -474,7 +474,7 @@ func TestPreviewFrames(t *testing.T) {
 			a.path = "/root/文档/示例.ps1"
 			a.caretLn, a.caretCol = 8, len([]rune(a.lines[8]))
 			a.out = []psLine{
-				{text: "Windows PowerShell ISE 26.4", col: psColPrompt, bold: true},
+				{text: "Windows PowerShell ISE 26.5", col: psColPrompt, bold: true},
 				{text: "编辑脚本后按 F5 运行。Ctrl+S 保存，Ctrl+O 打开。", col: psColDim},
 				{text: ""},
 				{text: "— 运行 09:41:27 —", col: psColDim},
@@ -689,20 +689,20 @@ func TestPreviewOTA(t *testing.T) {
 	_ = os.MkdirAll("/Users/madic/aiwork/win95linux/out", 0o755)
 	d := New(1024, 768, ModeDesktop, Host{Info: "预览环境 · 1024×768"})
 	a := &OTAApp{
-		d: d, phase: otaAvailable, current: "26.4", slot: ota.SlotA, progress: 100,
-		status: "发现新版本 26.5（当前 26.4）",
+		d: d, phase: otaAvailable, current: "26.5", slot: ota.SlotA, progress: 100,
+		status: "发现新版本 27.0（当前 26.5）",
 		notes: []string{
 			"· 新增系统更新与共享超级分区 A/B 双插槽",
 			"· 更新写入备用插槽，连续两次启动失败时自动回退",
 		},
 		log: []string{
 			"正在连接 https://github.com/xiaobai-win95/win95-linux/releases/latest/download/latest.json",
-			"发现新版本 26.4",
+			"发现新版本 27.0",
 			"更新包大小: 10.7 MB",
 		},
 	}
 	a.manifest = ota.Manifest{
-		Format: ota.Format, Version: "26.4", SlotLayout: ota.Layout,
+		Format: ota.Format, Version: "27.0", SlotLayout: ota.Layout,
 		Notes: "test", Package: ota.PackageRef{Size: 11203429},
 	}
 	d.Open(a)

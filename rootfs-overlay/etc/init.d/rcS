@@ -23,6 +23,23 @@ echo 0 > /sys/class/graphics/fbcon/cursor_blink 2>/dev/null
 hostname win95 2>/dev/null
 mkdir -p /root/文档 /root/下载 /root/桌面 /root/图片 /var/log
 
+# Restore permanent IP blocks created in the Network control panel. The list
+# only exists after iptables was installed by that panel.
+if [ -s /etc/win95-blocklist ] && command -v iptables >/dev/null 2>&1; then
+	iptables -N WIN95-BAN 2>/dev/null
+	for hook in INPUT OUTPUT; do
+		iptables -C "$hook" -j WIN95-BAN 2>/dev/null ||
+			iptables -I "$hook" -j WIN95-BAN 2>/dev/null
+	done
+	while read -r ip; do
+		case "$ip" in ""|"#"*) continue ;; esac
+		iptables -C WIN95-BAN -s "$ip" -j DROP 2>/dev/null ||
+			iptables -I WIN95-BAN -s "$ip" -j DROP 2>/dev/null
+		iptables -C WIN95-BAN -d "$ip" -j DROP 2>/dev/null ||
+			iptables -I WIN95-BAN -d "$ip" -j DROP 2>/dev/null
+	done < /etc/win95-blocklist
+fi
+
 for iface in /sys/class/net/*; do
 	[ -e "$iface" ] || continue
 	name=${iface##*/}

@@ -16,7 +16,7 @@ import (
 // normal use and a 24-bit BMP for the vintage Paint workflow. Both files share
 // one base name and their paths are returned as two lines.
 func saveScreenshot(c *ui.Canvas) (string, error) {
-	dir := "/root/下载"
+	dir := "/root/桌面"
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", err
 	}

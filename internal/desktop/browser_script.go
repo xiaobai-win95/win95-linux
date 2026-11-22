@@ -118,9 +118,9 @@ func (js *pageJS) install(pageURL string) {
 	win.Set("scrollY", 0)
 
 	nav := vm.NewObject()
-	nav.Set("userAgent", "Win95LinuxBrowser/26.4 (ARM64; Windows 95 Linux)")
+	nav.Set("userAgent", "Win95LinuxBrowser/26.5 (ARM64; Windows 95 Linux)")
 	nav.Set("appName", "Netscape")
-	nav.Set("appVersion", "26.4 (Win95Linux)")
+	nav.Set("appVersion", "26.5 (Win95Linux)")
 	nav.Set("platform", "Windows 95 Linux ARM64")
 	nav.Set("language", "zh-CN")
 	nav.Set("languages", vm.NewArray("zh-CN", "zh", "en"))

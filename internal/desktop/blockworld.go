@@ -599,7 +599,7 @@ func (a *BlockWorldApp) showHelp(d *Desktop) {
 
 func (a *BlockWorldApp) showAbout(d *Desktop) {
 	d.MessageBox("关于方块世界 95",
-		"方块世界 95\n版本 26.4\n\n"+
+		"方块世界 95\n版本 26.5\n\n"+
 			"一个在 Windows 95 Linux 桌面上运行的\n三维体素沙盒小游戏：挖矿、建造、看日出。\n\n"+
 			"3D 视角由自研体素光栅化引擎逐像素光线步进渲染，\n"+
 			"具有真实的体积遮挡、透视和昼夜光照。\n"+

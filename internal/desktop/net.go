@@ -81,16 +81,5 @@ func drawNetLED(c *ui.Canvas, r ui.Rect, state int) {
 }
 
 func (d *Desktop) showNetworkStatus() {
-	d.checkNetwork()
-	text := "网络状态：" + netStateText(d.netState) + "\n\n"
-	switch d.netState {
-	case netOnline:
-		text += "已连接外部网络，任务栏指示灯为绿色。"
-	case netOffline:
-		text += "无法连接外部网络，任务栏指示灯为红色。\n\n请检查 UTM 网络设置：建议选择“桥接（Wi-Fi）”，不要选择以太网。"
-	default:
-		text += "正在后台检测连接，请稍候。"
-	}
-	text += "\n\n指示灯每 12 秒自动刷新一次。"
-	d.MessageBox("网络状态", text, IconInfo, []string{"确定"}, nil)
+	d.openNetworkCenter(0)
 }

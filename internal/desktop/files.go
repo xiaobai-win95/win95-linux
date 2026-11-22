@@ -16,14 +16,15 @@ import (
 const archRootDir = "/opt/archlinux"
 
 type fmEntry struct {
-	name    string
-	path    string
-	isDir   bool
-	kind    ui.IconKind
-	size    int64
-	mod     time.Time
-	typ     string
-	virtual bool
+	name       string
+	path       string
+	isDir      bool
+	kind       ui.IconKind
+	size       int64
+	mod        time.Time
+	typ        string
+	virtual    bool
+	hostLetter string
 }
 
 type fmTabState struct {
@@ -104,7 +105,19 @@ func fmPathLabel(path string) string {
 	case archRootDir:
 		return "Arch Linux 子系统"
 	}
+	if lt := hostDriveLetterFor(path); lt != "" {
+		return lt + ": 宿主机共享"
+	}
 	return filepath.Base(path)
+}
+
+func hostDriveLetterFor(path string) string {
+	for _, hd := range loadHostDrives() {
+		if hd.Path == path {
+			return hd.Letter
+		}
+	}
+	return ""
 }
 
 func (a *FileManagerApp) Title() string {
@@ -161,13 +174,20 @@ func (a *FileManagerApp) Menus(d *Desktop, w *Window) []Menu {
 		{Label: "打开(O)", Enabled: a.sel >= 0, Action: func() { a.activate(a.sel) }},
 		{Label: a.terminalLabel(), Action: func() { a.openTerminalHere(d) }},
 		{Label: "创建快捷方式(S)", Enabled: hasReal && !inTrash, Action: func() { a.createShortcut(d) }},
+		{Label: "发送到手机（二维码）…", Enabled: hasReal && !e.isDir, Action: func() { d.shareFile(e.path) }},
 		{Separator: true},
 		{Label: "新建文件夹(N)", Accel: "Ctrl+N", Enabled: a.path != "" && !inTrash, Action: func() { a.newFolder(d) }},
 		{Label: "新建标签页(T)", Accel: "Ctrl+T", Action: func() { a.newTab(); d.Invalidate() }},
 		{Label: "关闭标签页(W)", Accel: "Ctrl+W", Enabled: len(a.tabs) > 1, Action: func() { a.closeTab(); d.Invalidate() }},
+		{Label: "映射宿主机文件夹(M)…", Action: func() { d.openHostDriveDialog(func() { a.reload(true); d.Invalidate() }) }},
 		{Separator: true},
 		{Label: "重命名(M)", Accel: "F2", Enabled: renamable, Action: func() { a.renameSelected(d) }},
 		{Label: "删除(D)", Accel: "Del", Enabled: hasReal && !protectedPath(e.path), Action: func() { a.deleteSelected(d) }},
+	}
+	if e.hostLetter != "" {
+		fileItems = append(fileItems, MenuItem{Label: "断开宿主机驱动器(" + e.hostLetter + ":)", Action: func() {
+			a.disconnectHostDrive(d, e.hostLetter)
+		}})
 	}
 	if inTrash {
 		fileItems = append(fileItems, MenuItem{Label: "清空回收站(E)", Enabled: d.recycleCount() > 0, Action: func() { d.emptyRecycle(a.load) }})
@@ -230,6 +250,18 @@ func (a *FileManagerApp) reload(keep bool) {
 	a.loadErr = ""
 	if a.path == "" {
 		a.entries = append(a.entries, fmEntry{name: "系统盘 (C:)", path: "/", isDir: true, kind: ui.IcoDrive, typ: "本地磁盘", virtual: true})
+		mapped := map[string]bool{}
+		for _, hd := range loadHostDrives() {
+			typ := "宿主机文件夹 → " + hd.Path
+			if st, err := os.Stat(hd.Path); err != nil || !st.IsDir() {
+				typ = "宿主机文件夹（路径当前不可用）"
+			}
+			a.entries = append(a.entries, fmEntry{
+				name: hd.Letter + ": 宿主机共享", path: hd.Path, isDir: true,
+				kind: ui.IcoDrive, typ: typ, virtual: true, hostLetter: hd.Letter,
+			})
+			mapped[hd.Path] = true
+		}
 		for _, item := range []struct{ label, path string }{
 			{"我的文档", "/root/文档"},
 			{"下载", "/root/下载"},
@@ -246,6 +278,9 @@ func (a *FileManagerApp) reload(keep bool) {
 			)
 		}
 		for _, sh := range fmSharedMounts() {
+			if mapped[sh.mount] {
+				continue
+			}
 			a.entries = append(a.entries, fmEntry{
 				name: sh.label(), path: sh.mount, isDir: true, kind: ui.IcoDrive,
 				typ: "共享文件夹 (" + sh.fstype + ")", virtual: true,
@@ -953,6 +988,7 @@ func (a *FileManagerApp) ContextMenu(d *Desktop, w *Window, x, y int) []ctxItem 
 			ctxItem{label: "打开(O)", icon: e.kind, enabled: true, action: func() { a.activate(idx) }},
 			ctxItem{label: a.terminalLabel(), icon: ui.IcoTerminal, enabled: true, action: func() { a.openTerminalHere(d) }},
 			ctxItem{label: "创建快捷方式(S)", icon: ui.IcoFile, enabled: real && !inTrash, action: func() { a.createShortcut(d) }},
+			ctxItem{label: "发送到手机（二维码）…", icon: ui.IcoShare, enabled: real && !inTrash && !e.isDir, action: func() { d.shareFile(e.path) }},
 			ctxItem{label: "重命名(M)", enabled: renamable, action: func() { a.renameSelected(d) }},
 		)
 		if inTrash {
@@ -960,10 +996,19 @@ func (a *FileManagerApp) ContextMenu(d *Desktop, w *Window, x, y int) []ctxItem 
 		} else {
 			items = append(items, ctxItem{label: "删除(D)", icon: ui.IcoRecycle, enabled: real, action: func() { a.deleteSelected(d) }})
 		}
+		if e.hostLetter != "" {
+			letter := e.hostLetter
+			items = append(items, ctxItem{label: "断开宿主机驱动器 (" + letter + ":)", icon: ui.IcoDrive, enabled: true, action: func() {
+				a.disconnectHostDrive(d, letter)
+			}})
+		}
 		items = append(items, ctxItem{sep: true})
 	}
 	items = append(items,
 		ctxItem{label: "新建文件夹(N)", icon: ui.IcoFolder, enabled: a.path != "" && !inTrash, action: func() { a.newFolder(d) }},
+		ctxItem{label: "映射宿主机文件夹(M)…", icon: ui.IcoDrive, enabled: true, action: func() {
+			d.openHostDriveDialog(func() { a.reload(true); d.Invalidate() })
+		}},
 		ctxItem{label: "新建标签页(T)", accel: "Ctrl+T", enabled: true, action: func() { a.newTab(); d.Invalidate() }},
 		ctxItem{label: "刷新(R)", accel: "F5", icon: ui.IcoInfo, enabled: true, action: func() { a.reload(true); d.Invalidate() }},
 		ctxItem{label: "显示隐藏文件(H)", accel: "Ctrl+H", icon: ui.IcoInfo, checked: a.showHidden, enabled: true, action: func() { a.toggleHidden(d) }},

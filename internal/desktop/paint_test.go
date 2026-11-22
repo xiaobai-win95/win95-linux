@@ -98,3 +98,73 @@ func TestPaintRejectsUnsupportedOpen(t *testing.T) {
 		t.Fatal("unsupported image should raise an error dialog")
 	}
 }
+
+func TestPaintSelectionAndMosaic(t *testing.T) {
+	d, a := openTestPaint(t, 1024, 768)
+	for y := 0; y < a.ch; y++ {
+		for x := 0; x < a.cw; x++ {
+			a.pix[y*a.cw+x] = uint32((x*7+y*13)>>4) << 16
+		}
+	}
+	client := a.win.ClientRect()
+	at := func(dx, dy int) MouseEvent { return MouseEvent{Button: 1, X: a.canvasR.X + dx, Y: a.canvasR.Y + dy} }
+	a.tool = paintSelect
+	down := at(20, 30)
+	down.Kind = MouseDown
+	a.Mouse(d, a.win, client, down)
+	move := at(120, 130)
+	move.Kind = MouseMove
+	a.Mouse(d, a.win, client, move)
+	up := at(120, 130)
+	up.Kind = MouseUp
+	a.Mouse(d, a.win, client, up)
+	if !a.hasSel {
+		t.Fatal("drag with the selection tool should create a selection")
+	}
+	if a.selX0 != 20 || a.selY0 != 30 || a.selX1 != 120 || a.selY1 != 130 {
+		t.Fatalf("selection = (%d,%d)-(%d,%d)", a.selX0, a.selY0, a.selX1, a.selY1)
+	}
+	outside := a.pix[10*a.cw+10]
+	a.tool = paintMosaic
+	click := at(40, 40)
+	click.Kind = MouseDown
+	a.Mouse(d, a.win, client, click)
+	click.Kind = MouseUp
+	a.Mouse(d, a.win, client, click)
+	want := a.pix[30*a.cw+20]
+	for y := 30; y <= 38; y++ {
+		for x := 20; x <= 28; x++ {
+			if got := a.pix[y*a.cw+x]; got != want {
+				t.Fatalf("mosaic block not uniform at %d,%d: %06X != %06X", x, y, got, want)
+			}
+		}
+	}
+	if a.pix[10*a.cw+10] != outside {
+		t.Fatal("mosaic must not touch pixels outside the selection")
+	}
+	if !a.Key(d, a.win, KeyEvent{Name: "Esc"}) || a.hasSel {
+		t.Fatal("Esc should clear the selection")
+	}
+}
+
+func TestPaintSaveDefaultsToPNG(t *testing.T) {
+	d, a := openTestPaint(t, 1024, 768)
+	a.put(1, 1, 0x123456)
+	path := filepath.Join(t.TempDir(), "作品")
+	a.writeTo(d, path)
+	if a.path != path+".png" {
+		t.Fatalf("path = %q, want .png appended", a.path)
+	}
+	f, err := os.Open(a.path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	img, err := png.Decode(f)
+	f.Close()
+	if err != nil {
+		t.Fatalf("saved file is not PNG: %v", err)
+	}
+	if got := color.RGBAModel.Convert(img.At(1, 1)).(color.RGBA); got.R != 0x12 || got.G != 0x34 || got.B != 0x56 {
+		t.Fatalf("pixel = %v", got)
+	}
+}

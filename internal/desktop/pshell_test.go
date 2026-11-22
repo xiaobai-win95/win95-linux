@@ -116,7 +116,7 @@ func TestPShellEngineProcessAndExternal(t *testing.T) {
 		t.Fatalf("external command produced no output")
 	}
 	out = runPS(t, s, `Get-ComputerInfo`)
-	if !strings.Contains(out, "OsName") || !strings.Contains(out, "26.4") {
+	if !strings.Contains(out, "OsName") || !strings.Contains(out, "26.5") {
 		t.Fatalf("Get-ComputerInfo: %q", out)
 	}
 }

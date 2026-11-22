@@ -27,13 +27,15 @@ type FindApp struct {
 	d   *Desktop
 	win *Window
 
-	query      []rune
-	queryCaret int
-	scope      []rune
-	scopeCaret int
-	focus      int // 0 name, 1 scope, 2 results
-	recursive  bool
-	hidden     bool
+	query        []rune
+	queryCaret   int
+	content      []rune
+	contentCaret int
+	scope        []rune
+	scopeCaret   int
+	focus        int // 0 name, 1 content, 2 scope, 3 results
+	recursive    bool
+	hidden       bool
 
 	results []findResult
 	sel     int
@@ -51,7 +53,7 @@ type FindApp struct {
 	lastClick time.Time
 	lastIndex int
 
-	nameR, scopeR, listR                  ui.Rect
+	nameR, contentR, scopeR, listR        ui.Rect
 	startR, stopR, openR, folderR, closeR ui.Rect
 	recurseR, hiddenR                     ui.Rect
 }
@@ -75,10 +77,10 @@ func (d *Desktop) openFind() {
 	a.win = w
 }
 
-func (a *FindApp) Title() string           { return "查找：文件或文件夹" }
-func (a *FindApp) Icon() ui.IconKind       { return ui.IcoFolderOpen }
-func (a *FindApp) DefaultSize() (int, int) { return 660, 460 }
-func (a *FindApp) MinSize() (int, int)     { return 560, 340 }
+func (a *FindApp) Title() string           { return "查找：所有文件" }
+func (a *FindApp) Icon() ui.IconKind       { return ui.IcoFind }
+func (a *FindApp) DefaultSize() (int, int) { return 700, 520 }
+func (a *FindApp) MinSize() (int, int)     { return 560, 400 }
 func (a *FindApp) Resizable() bool         { return true }
 
 func (a *FindApp) Paint(d *Desktop, w *Window, c *ui.Canvas, r ui.Rect) {
@@ -92,9 +94,14 @@ func (a *FindApp) Paint(d *Desktop, w *Window, c *ui.Canvas, r ui.Rect) {
 	a.drawField(c, f, a.nameR, a.query, a.queryCaret, a.focus == 0)
 
 	y += 32
+	f.Text(c, r.X+12, y+4, "包含文字(C):", ui.ColText)
+	a.contentR = ui.Rect{r.X + labelW, y, r.W - labelW - 12, 24}
+	a.drawField(c, f, a.contentR, a.content, a.contentCaret, a.focus == 1)
+
+	y += 32
 	f.Text(c, r.X+12, y+4, "搜索范围(L):", ui.ColText)
 	a.scopeR = ui.Rect{r.X + labelW, y, r.W - labelW - 12, 24}
-	a.drawField(c, f, a.scopeR, a.scope, a.scopeCaret, a.focus == 1)
+	a.drawField(c, f, a.scopeR, a.scope, a.scopeCaret, a.focus == 2)
 
 	y += 32
 	a.recurseR = ui.Rect{r.X + labelW, y + 1, 13, 13}
@@ -273,8 +280,12 @@ func (a *FindApp) Mouse(d *Desktop, w *Window, client ui.Rect, ev MouseEvent) {
 			a.focus = 0
 			a.queryCaret = runCaretAt(ui.DefaultFont(), a.query, a.nameR, ev.X)
 			d.Invalidate()
-		case a.scopeR.Contains(ev.X, ev.Y):
+		case a.contentR.Contains(ev.X, ev.Y):
 			a.focus = 1
+			a.contentCaret = runCaretAt(ui.DefaultFont(), a.content, a.contentR, ev.X)
+			d.Invalidate()
+		case a.scopeR.Contains(ev.X, ev.Y):
+			a.focus = 2
 			a.scopeCaret = runCaretAt(ui.DefaultFont(), a.scope, a.scopeR, ev.X)
 			d.Invalidate()
 		case a.recurseR.Contains(ev.X, ev.Y) || (ui.Rect{a.recurseR.X, a.recurseR.Y - 2, 120, 18}).Contains(ev.X, ev.Y):
@@ -294,12 +305,12 @@ func (a *FindApp) Mouse(d *Desktop, w *Window, client ui.Rect, ev MouseEvent) {
 		case a.closeR.Contains(ev.X, ev.Y):
 			a.press = "close"
 		case a.listR.Contains(ev.X, ev.Y):
-			a.focus = 2
+			a.focus = 3
 			idx := a.rowAt(ev.X, ev.Y)
 			if idx >= 0 {
 				a.sel = idx
 				if time.Since(a.lastClick) < 450*time.Millisecond && a.lastIndex == idx {
-					a.openSelected()
+					a.openFolder()
 				}
 				a.lastClick = time.Now()
 				a.lastIndex = idx
@@ -402,37 +413,115 @@ func (a *FindApp) startSearch() {
 	if !strings.ContainsAny(pattern, "*?") {
 		pattern = "*" + pattern + "*"
 	}
-	go a.walk(token, scope, pattern, a.recursive, a.hidden)
+	content := strings.ToLower(strings.TrimSpace(string(a.content)))
+	go a.runSearch(token, scope, pattern, content, a.recursive, a.hidden)
 }
 
-func skipFindDir(path string) bool {
-	switch filepath.Clean(path) {
-	case "/proc", "/sys", "/dev", "/run":
-		return true
-	}
-	return false
+func (a *FindApp) cancelled(token uint64) bool {
+	return a.closed.Load() || a.stop.Load() || a.token.Load() != token
 }
 
-func (a *FindApp) walk(token uint64, scope, pattern string, recursive, hidden bool) {
-	var batch []findResult
-	count := 0
-	limited := false
-	flush := func() {
-		if len(batch) == 0 {
+func (a *FindApp) postStatus(token uint64, status string) {
+	a.d.Post(func() {
+		if a.closed.Load() || a.token.Load() != token {
 			return
 		}
-		b := batch
-		batch = nil
-		a.d.Post(func() {
-			if a.closed.Load() || a.token.Load() != token {
-				return
-			}
-			a.results = append(a.results, b...)
-			a.d.Invalidate()
-		})
+		a.status = status
+		a.d.Invalidate()
+	})
+}
+
+type findCandidate struct {
+	path  string
+	name  string
+	isDir bool
+	size  int64
+}
+
+func (a *FindApp) runSearch(token uint64, scope, pattern, content string, recursive, hidden bool) {
+	started := time.Now()
+	idx := a.d.searchIndex()
+	var candidates []findCandidate
+	limit := maxFindResults
+	if content != "" {
+		limit = maxFindResults * 6
 	}
+	idx.ensureStarted()
+	_, ready, _ := idx.Stats()
+	if idx.Covers(scope) && ready {
+		res := idx.SearchIn(pattern, scope, recursive, hidden, content != "", limit)
+		candidates = make([]findCandidate, 0, len(res))
+		for _, r := range res {
+			candidates = append(candidates, findCandidate{path: r.path, name: r.name, isDir: r.dir, size: r.size})
+		}
+	} else {
+		if !ready && idx.Covers(scope) {
+			a.postStatus(token, "正在建立全盘索引，本次先实时遍历…")
+		} else {
+			a.postStatus(token, "索引不覆盖该范围，正在实时遍历…")
+		}
+		candidates = a.liveCandidates(token, scope, pattern, recursive, hidden, limit)
+	}
+	limited := len(candidates) >= limit
+	if content != "" {
+		filtered := make([]findCandidate, 0, len(candidates))
+		scanned := 0
+		for _, c := range candidates {
+			if a.cancelled(token) {
+				break
+			}
+			if c.isDir || !textSearchable(c.name) {
+				continue
+			}
+			if scanned >= 8000 {
+				limited = true
+				break
+			}
+			scanned++
+			if scanned%200 == 0 {
+				a.postStatus(token, fmt.Sprintf("正在搜索文件内容… 已检查 %d 个文件", scanned))
+			}
+			if fileContainsText(c.path, content, 1<<20) {
+				filtered = append(filtered, c)
+				if len(filtered) >= maxFindResults {
+					limited = true
+					break
+				}
+			}
+		}
+		candidates = filtered
+	}
+	elapsed := time.Since(started)
+	results := make([]findResult, 0, len(candidates))
+	for _, c := range candidates {
+		results = append(results, findResult{name: c.name, dir: filepath.Dir(c.path), path: c.path, isDir: c.isDir, size: c.size})
+	}
+	a.d.Post(func() {
+		if a.closed.Load() || a.token.Load() != token {
+			return
+		}
+		a.results = results
+		a.sel = -1
+		a.scroll.Pos = 0
+		a.running = false
+		a.done = true
+		switch {
+		case limited:
+			a.status = fmt.Sprintf("已达到 %d 个结果上限，请缩小搜索范围。", len(results))
+		case a.stopped:
+			a.status = fmt.Sprintf("查找已停止，共找到 %d 个项目。", len(results))
+		default:
+			a.status = fmt.Sprintf("找到 %d 个项目 · 用时 %d ms", len(results), elapsed.Milliseconds())
+		}
+		a.d.Invalidate()
+	})
+}
+
+func (a *FindApp) liveCandidates(token uint64, scope, pattern string, recursive, hidden bool, limit int) []findCandidate {
+	var out []findCandidate
+	wild := strings.ContainsAny(pattern, "*?")
 	_ = filepath.WalkDir(scope, func(path string, de fs.DirEntry, err error) error {
-		if a.closed.Load() || a.stop.Load() || a.token.Load() != token {
+		if a.cancelled(token) {
 			return filepath.SkipAll
 		}
 		if err != nil {
@@ -456,43 +545,35 @@ func (a *FindApp) walk(token uint64, scope, pattern string, recursive, hidden bo
 				return filepath.SkipDir
 			}
 		}
-		ok, _ := filepath.Match(pattern, strings.ToLower(name))
+		lname := strings.ToLower(name)
+		ok := false
+		if wild {
+			ok, _ = filepath.Match(pattern, lname)
+		} else {
+			ok = strings.Contains(lname, pattern)
+		}
 		if !ok {
 			return nil
 		}
-		res := findResult{name: name, path: path, dir: filepath.Dir(path), isDir: de.IsDir()}
+		var size int64
 		if info, err := de.Info(); err == nil {
-			res.size = info.Size()
+			size = info.Size()
 		}
-		batch = append(batch, res)
-		count++
-		if count >= maxFindResults {
-			limited = true
-			flush()
+		out = append(out, findCandidate{path: path, name: name, isDir: de.IsDir(), size: size})
+		if len(out) >= limit {
 			return filepath.SkipAll
-		}
-		if len(batch) >= 25 {
-			flush()
 		}
 		return nil
 	})
-	flush()
-	a.d.Post(func() {
-		if a.closed.Load() || a.token.Load() != token {
-			return
-		}
-		a.running = false
-		a.done = true
-		switch {
-		case limited:
-			a.status = fmt.Sprintf("已达到 %d 个结果上限，请缩小搜索范围。", maxFindResults)
-		case a.stopped:
-			a.status = fmt.Sprintf("查找已停止，共找到 %d 个项目。", len(a.results))
-		default:
-			a.status = fmt.Sprintf("找到 %d 个项目。", len(a.results))
-		}
-		a.d.Invalidate()
-	})
+	return out
+}
+
+func skipFindDir(path string) bool {
+	switch filepath.Clean(path) {
+	case "/proc", "/sys", "/dev", "/run":
+		return true
+	}
+	return false
 }
 
 func (a *FindApp) ensureSel() {
@@ -512,10 +593,13 @@ func (a *FindApp) ensureSel() {
 }
 
 func (a *FindApp) Key(d *Desktop, w *Window, ev KeyEvent) bool {
-	if a.focus < 2 {
+	if a.focus < 3 {
 		value := &a.query
 		caret := &a.queryCaret
 		if a.focus == 1 {
+			value = &a.content
+			caret = &a.contentCaret
+		} else if a.focus == 2 {
 			value = &a.scope
 			caret = &a.scopeCaret
 		}
@@ -525,7 +609,7 @@ func (a *FindApp) Key(d *Desktop, w *Window, ev KeyEvent) bool {
 			d.CloseWindow(w)
 			return true
 		case "Tab":
-			a.focus = (a.focus + 1) % 3
+			a.focus = (a.focus + 1) % 4
 			return true
 		case "Enter":
 			a.startSearch()

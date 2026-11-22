@@ -16,10 +16,10 @@ BIN="$ROOT/build/bin"
 OUT="$ROOT/out"
 ESP="$ROOT/build/esp-installer.img"
 IMAGE="$OUT/win95-installer-aarch64.img"
-VERSION="${VERSION:-26.4}"
+VERSION="${VERSION:-26.5}"
 BUILD_DATE="${BUILD_DATE:-$(date +%Y-%m-%d)}"
 OTA_NAME="win95-ota-${VERSION}-aarch64.tar.gz"
-OTA_NOTES="${OTA_NOTES:-Windows 95 Linux ${VERSION} 系统更新。}"
+OTA_NOTES="${OTA_NOTES:-Windows 95 Linux 26.5 系统更新：经典 Win95 外壳、收件箱与公文包、AOL/MSN 与 Netscape Navigator、极速搜索与聚光灯、系统监视器、局域网快传、VNC、按键精灵、DOOM 95、AI 助手与 Wine 兼容层。}"
 REPO_SLUG="${REPO_SLUG:-xiaobai-win95/win95-linux}"
 
 # af_packet 必须列在这里：Alpine 把 CONFIG_PACKET 编译成模块，而已安装系统的
@@ -89,7 +89,7 @@ cat > "$OUT/latest.json" <<EOF
   "version": "$VERSION",
   "released": "$BUILD_DATE",
   "notes": "$OTA_NOTES",
-  "min_version": "26.4",
+  "min_version": "26.5",
   "slot_layout": "super-v1",
   "package": {
     "url": "https://github.com/$REPO_SLUG/releases/download/v$VERSION/$OTA_NAME",

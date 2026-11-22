@@ -55,7 +55,7 @@ func NewPShellISEApp(d *Desktop) *PShellISEApp {
 	a := &PShellISEApp{d: d, sess: newPSSession(), outStick: true}
 	a.lines = strings.Split(strings.TrimSuffix(iseSampleScript, "\n"), "\n")
 	a.out = []psLine{
-		{text: "Windows PowerShell ISE 26.4", col: psColPrompt, bold: true},
+		{text: "Windows PowerShell ISE 26.5", col: psColPrompt, bold: true},
 		{text: "编辑脚本后按 F5 运行。Ctrl+S 保存，Ctrl+O 打开。", col: psColDim},
 		{text: ""},
 	}
@@ -103,7 +103,7 @@ func (a *PShellISEApp) Menus(d *Desktop, w *Window) []Menu {
 			{Separator: true},
 			{Label: "关于 PowerShell ISE(A)", Enabled: true, Action: func() {
 				d.MessageBox("关于 Windows PowerShell ISE",
-					"Windows PowerShell ISE 26.4\nWindows 95 Linux 中文版\n\n上部编辑脚本，下部显示输出。\nF5 运行，Esc 停止。\n与 PowerShell 控制台共享同一套 cmdlet。",
+					"Windows PowerShell ISE 26.5\nWindows 95 Linux 中文版\n\n上部编辑脚本，下部显示输出。\nF5 运行，Esc 停止。\n与 PowerShell 控制台共享同一套 cmdlet。",
 					IconInfo, []string{"确定"}, nil)
 			}},
 		}},

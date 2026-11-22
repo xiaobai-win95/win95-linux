@@ -138,6 +138,10 @@ func (d *Desktop) rightClickTaskbar(x, y int) {
 		d.openContext(d.clockMenuItems(), x, y)
 		return
 	}
+	if d.lanTrayRect().Contains(x, y) {
+		d.openContext(d.shareTrayMenu(), x, y)
+		return
+	}
 	if d.sysTrayRect().Contains(x, y) {
 		d.openContext(d.trayMenuItems(), x, y)
 		return
@@ -666,7 +670,7 @@ func (d *Desktop) maximizeWindow(w *Window) {
 func (d *Desktop) arrangeableWindows() []*Window {
 	var wins []*Window
 	for _, w := range d.windows {
-		if !w.Modal {
+		if !w.Modal && w.Workspace == d.ws {
 			wins = append(wins, w)
 		}
 	}
@@ -676,7 +680,7 @@ func (d *Desktop) arrangeableWindows() []*Window {
 func (d *Desktop) minimizeAll() {
 	d.closeContext()
 	for _, w := range d.windows {
-		if w.Modal {
+		if w.Modal || w.Workspace != d.ws {
 			continue
 		}
 		w.Minimized = true
@@ -773,7 +777,7 @@ func (d *Desktop) tileWindows(horizontal bool) {
 func (d *Desktop) ordinaryWindowCount() int {
 	n := 0
 	for _, w := range d.windows {
-		if !w.Modal {
+		if !w.Modal && w.Workspace == d.ws {
 			n++
 		}
 	}
@@ -788,14 +792,14 @@ type taskButton struct {
 func (d *Desktop) taskbarButtons() []taskButton {
 	var wins []*Window
 	for _, w := range d.windows {
-		if !w.Modal {
+		if !w.Modal && w.Workspace == d.ws {
 			wins = append(wins, w)
 		}
 	}
 	sort.SliceStable(wins, func(i, j int) bool { return wins[i].created.Before(wins[j].created) })
 	top := d.taskbarTop()
-	tray := d.sysTrayRect()
-	avail := tray.X - 6 - 96
+	lan := d.lanTrayRect()
+	avail := lan.X - 6 - 8
 	n := len(wins)
 	bw := 160
 	if n > 0 {
@@ -810,7 +814,7 @@ func (d *Desktop) taskbarButtons() []taskButton {
 	var out []taskButton
 	x := 96
 	for _, w := range wins {
-		if x+bw > tray.X-2 {
+		if x+bw > lan.X-2 {
 			break
 		}
 		out = append(out, taskButton{w: w, r: ui.Rect{x, top + 4, bw - 2, 26}})

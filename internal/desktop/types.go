@@ -127,6 +127,9 @@ type Window struct {
 	Modal      bool
 	Minimized  bool
 	Maximized  bool
+	Workspace  int
+	tiled      bool
+	tilePrev   ui.Rect
 	restore    ui.Rect
 
 	menus      []Menu

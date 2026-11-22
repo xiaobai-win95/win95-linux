@@ -24,23 +24,23 @@ var (
 
 // Palette is one complete set of chrome colours.
 type Palette struct {
-	Name       string
-	Desktop    uint32
-	Face       uint32
-	Light      uint32
-	White      uint32
-	Shadow     uint32
-	Dark       uint32
-	Navy       uint32
-	NavyLight  uint32
-	TitleInac  uint32
-	Text       uint32
-	TextDis    uint32
-	Field      uint32
-	Yellow     uint32
-	Green      uint32
-	Red        uint32
-	Blue       uint32
+	Name      string
+	Desktop   uint32
+	Face      uint32
+	Light     uint32
+	White     uint32
+	Shadow    uint32
+	Dark      uint32
+	Navy      uint32
+	NavyLight uint32
+	TitleInac uint32
+	Text      uint32
+	TextDis   uint32
+	Field     uint32
+	Yellow    uint32
+	Green     uint32
+	Red       uint32
+	Blue      uint32
 }
 
 var Palettes = []Palette{

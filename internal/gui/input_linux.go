@@ -317,6 +317,8 @@ type inputState struct {
 	caps     bool
 	haveX    bool
 	haveY    bool
+
+	lastAltTap time.Time
 }
 
 func newInputState(w, h int) *inputState {
@@ -366,6 +368,14 @@ func (s *inputState) handle(ev inputEvent, d *desktop.Desktop) {
 			s.ctrl = ev.val != 0
 			return
 		case 56, 100:
+			if ev.val == 1 {
+				if !s.lastAltTap.IsZero() && time.Since(s.lastAltTap) < 400*time.Millisecond {
+					s.lastAltTap = time.Time{}
+					d.ToggleSpotlight()
+				} else {
+					s.lastAltTap = time.Now()
+				}
+			}
 			s.alt = ev.val != 0
 			return
 		case 58:

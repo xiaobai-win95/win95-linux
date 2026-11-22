@@ -41,31 +41,33 @@ func (d *Desktop) setupShell() {
 	}
 	d.icons = []*desktopIcon{
 		{labelKey: "我的电脑", label: d.tr("我的电脑"), kind: ui.IcoComputer, key: "sys:computer", action: func() { d.openFiles("") }},
-		{labelKey: "切换到 XFCE 桌面", label: d.tr("切换到 XFCE 桌面"), kind: ui.IcoSetup, key: "sys:xfce", action: func() { d.switchToXFCE() }},
-		{labelKey: "任务管理器", label: d.tr("任务管理器"), kind: ui.IcoComputer, key: "sys:taskmgr", action: func() { d.openTaskManager() }},
-		{labelKey: "注册表编辑器", label: d.tr("注册表编辑器"), kind: ui.IcoSetup, key: "sys:regedit", action: func() { d.openRegistryEditor() }},
-		{labelKey: "我的文档", label: d.tr("我的文档"), kind: ui.IcoFolder, key: "sys:docs", isDir: true, action: func() { d.openFiles("/root/文档") }},
-		{labelKey: "Office 365", label: "Office 365", kind: ui.IcoOffice, key: "sys:office", action: func() { d.openOffice() }},
-		{labelKey: "网络浏览器", label: d.tr("网络浏览器"), kind: ui.IcoBrowser, key: "sys:browser", action: func() { d.openBrowser("") }},
-		{labelKey: "方块世界 95", label: d.tr("方块世界 95"), kind: ui.IcoGame, key: "sys:blockworld", action: func() { d.openBlockWorld() }},
-		{labelKey: "XFCE 终端", label: d.tr("XFCE 终端"), kind: ui.IcoTerminal, key: "sys:xfce-term", action: func() { d.openX11Proxy("xfce4-terminal") }},
-		{label: "Firefox", kind: ui.IcoBrowser, key: "sys:firefox", action: func() { d.openX11Proxy("firefox") }},
-		{label: "X11 代理", kind: ui.IcoComputer, key: "sys:x11proxy", action: func() { d.openX11Proxy("") }},
-		{labelKey: "设置中心", label: d.tr("设置中心"), kind: ui.IcoSetup, key: "sys:settings", action: func() { d.openSettings() }},
+		{labelKey: "网上邻居", label: d.tr("网上邻居"), kind: ui.IcoNetwork, key: "sys:network", action: func() { d.openLANShare() }},
+		{labelKey: "收件箱", label: d.tr("收件箱"), kind: ui.IcoMail, key: "sys:inbox", action: func() { d.openInbox() }},
+		{label: "Internet Explorer", kind: ui.IcoIE, key: "sys:ie", action: func() { d.openBrowser("about:home") }},
+		{label: "Netscape Navigator", kind: ui.IcoNetscape, key: "sys:netscape", action: func() { d.openNetscape() }},
 		{labelKey: "回收站", label: d.tr("回收站"), kind: ui.IcoRecycle, key: "sys:recycle", action: func() { d.openRecycle() }},
+		{labelKey: "我的公文包", label: d.tr("我的公文包"), kind: ui.IcoBriefcase, key: "sys:briefcase", action: func() { d.openBriefcase() }},
+		{labelKey: "游戏", label: d.tr("游戏"), kind: ui.IcoGame, key: "sys:games", action: func() { d.openGames() }},
+		{labelKey: "在线服务", label: d.tr("在线服务"), kind: ui.IcoOnline, key: "sys:online", action: func() { d.openOnlineServices() }},
+		{label: "尝试 The Microsoft Network", kind: ui.IcoMSN, key: "sys:msn", action: func() { d.openMSN() }},
+		{label: "AI 助手", kind: ui.IcoAI, key: "sys:ai", action: func() { d.openAI(0) }},
+		{labelKey: "切换到 XFCE 桌面", label: d.tr("切换到 XFCE 桌面"), kind: ui.IcoSetup, key: "sys:xfce", action: func() { d.switchToXFCE() }},
+		{labelKey: "设置中心", label: d.tr("设置中心"), kind: ui.IcoSetup, key: "sys:settings", action: func() { d.openSettings() }},
 	}
 	d.baseIcons = append([]*desktopIcon{}, d.icons...)
 	d.refreshShortcuts(true)
 }
 
-func (d *Desktop) openTaskManager() {
+func (d *Desktop) openTaskManager() *TaskManagerApp {
 	for _, w := range d.windows {
-		if _, ok := w.App.(*TaskManagerApp); ok {
+		if a, ok := w.App.(*TaskManagerApp); ok {
 			d.bringToFront(w)
-			return
+			return a
 		}
 	}
-	d.Open(NewTaskManagerApp(d))
+	a := NewTaskManagerApp(d)
+	d.Open(a)
+	return a
 }
 
 func (d *Desktop) openRecycle() {
@@ -223,7 +225,7 @@ func (d *Desktop) openImageViewer(path string) {
 
 func (d *Desktop) openBrowser(url string) {
 	for _, w := range d.windows {
-		if b, ok := w.App.(*BrowserApp); ok {
+		if b, ok := w.App.(*BrowserApp); ok && b.brand != netscapeBrand {
 			d.bringToFront(w)
 			if url != "" {
 				b.Navigate(url)

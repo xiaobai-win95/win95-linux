@@ -69,7 +69,7 @@ func (a *OfficeApp) Menus(d *Desktop, w *Window) []Menu {
 
 func (a *OfficeApp) showAbout() {
 	a.d.MessageBox("关于 Office 365 全件套",
-		"Windows 95 Linux Office 365 全件套\n版本 26.4\n\n"+
+		"Windows 95 Linux Office 365 全件套\n版本 26.5\n\n"+
 			"文档引擎：LibreOffice 25.8（Alpine 官方 aarch64 构建）\n"+
 			"PDF：Zathura + poppler-utils + qpdf\n"+
 			"输入法：fcitx5 拼音\n\n"+
@@ -176,7 +176,7 @@ func (a *OfficeApp) Paint(d *Desktop, w *Window, c *ui.Canvas, r ui.Rect) {
 	if core != nil && !officeCompInstalled(*core, a.installed) {
 		f.TextRight(c, header.Right()-16, header.Y+36, "首次使用：请打开“组件管理”选择并安装", 0xFFE699)
 	} else {
-		f.TextRight(c, header.Right()-16, header.Y+36, "Windows 95 Linux 26.4", 0xC8DCFF)
+		f.TextRight(c, header.Right()-16, header.Y+36, "Windows 95 Linux 26.5", 0xC8DCFF)
 	}
 
 	for _, t := range a.tiles {

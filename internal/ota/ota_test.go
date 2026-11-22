@@ -31,6 +31,15 @@ func TestCompareVersions(t *testing.T) {
 	if IsNewerVersion("26.4", "26.4") {
 		t.Fatal("equal versions are not newer")
 	}
+	if !IsNewerVersion("27.0", "26.4") {
+		t.Fatal("major bump 26.4 -> 27.0 must be detected as newer")
+	}
+	if !IsNewerVersion("27.0", "26.99") {
+		t.Fatal("27.0 must sort after any 26.x")
+	}
+	if IsNewerVersion("26.100", "27.0") {
+		t.Fatal("26.100 must not be treated as newer than 27.0")
+	}
 }
 
 func TestStateRoundTrip(t *testing.T) {

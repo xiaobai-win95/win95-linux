@@ -6,7 +6,9 @@ import (
 	"time"
 	_ "time/tzdata"
 
+	"win95linux/internal/lanshare"
 	"win95linux/internal/ui"
+	"win95linux/internal/vnc"
 )
 
 type Desktop struct {
@@ -28,6 +30,15 @@ type Desktop struct {
 	startHover string
 	startSub   string
 	startSel   string
+
+	ws           int
+	wsToast      string
+	wsToastUntil time.Time
+	spotlight    *SpotlightApp
+	search       *SearchIndex
+	share        *lanshare.Server
+	vnc          *vnc.Server
+	macro        *MacroApp
 
 	icons         []*desktopIcon
 	baseIcons     []*desktopIcon
@@ -189,6 +200,7 @@ func (d *Desktop) Open(app App) *Window {
 		MinW:      220,
 		MinH:      140,
 		Resizable: true,
+		Workspace: d.ws,
 		menuOpen:  -1,
 		created:   time.Now(),
 	}
@@ -209,7 +221,7 @@ func (d *Desktop) Open(app App) *Window {
 	w.Y = (d.taskbarTop() - w.H) / 2
 	n := 0
 	for _, other := range d.windows {
-		if !other.Modal {
+		if !other.Modal && other.Workspace == d.ws {
 			n++
 		}
 	}
@@ -309,6 +321,10 @@ func (d *Desktop) Tick(now time.Time) {
 // Animate advances time-based visual effects. The host calls it on a short
 // frame ticker; the desktop stays mostly idle when nothing is animating.
 func (d *Desktop) Animate(now time.Time) {
+	if d.wsToast != "" && !now.Before(d.wsToastUntil) {
+		d.wsToast = ""
+		d.Invalidate()
+	}
 	if d.prank != nil {
 		d.prank.animate(d, now)
 		return
@@ -332,6 +348,9 @@ func (d *Desktop) Animate(now time.Time) {
 			d.Invalidate()
 		}
 		return
+	}
+	if d.macro != nil {
+		d.macro.step(d, now)
 	}
 	if len(d.notices) > 0 && d.visible() {
 		if d.noticeUntil.IsZero() {
@@ -362,6 +381,9 @@ func (d *Desktop) Animate(now time.Time) {
 		d.startSaver(now)
 		d.Invalidate()
 	}
+	if d.spotlight != nil && d.spotlight.active {
+		d.spotlight.refreshIndexing(now)
+	}
 	// Give live apps (browser timers, games) a chance to advance. Snapshot the
 	// window list because an animator may post callbacks that open dialogs.
 	windows := append([]*Window(nil), d.windows...)
@@ -378,6 +400,9 @@ func (d *Desktop) Animate(now time.Time) {
 func (d *Desktop) bringToFront(w *Window) {
 	if w == nil {
 		return
+	}
+	if w.Workspace != d.ws {
+		d.ws = w.Workspace
 	}
 	if w.Minimized {
 		w.Minimized = false
@@ -444,7 +469,7 @@ func (d *Desktop) removeWindow(w *Window, callClose bool) {
 		if d.active == nil {
 			for i := len(d.windows) - 1; i >= 0; i-- {
 				c := d.windows[i]
-				if !c.Minimized && !c.Modal {
+				if !c.Minimized && !c.Modal && c.Workspace == d.ws {
 					d.active = c
 					break
 				}

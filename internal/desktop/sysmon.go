@@ -152,8 +152,10 @@ func (d *Desktop) drawSysTray(c *ui.Canvas) {
 		ui.TinyText(c, x, y, fmt.Sprintf("%s%3d%%", row.label, row.pct), ui.ColText)
 		drawGauge(c, ui.Rect{x + 32, y, r.W - 36 - (x - r.X), 5}, row.pct, gaugeColor(row.pct))
 	}
+	d.drawLanTray(c)
 }
 
 func (d *Desktop) showSysMonitor() {
-	d.openTaskManager()
+	a := d.openTaskManager()
+	a.showTab(1)
 }

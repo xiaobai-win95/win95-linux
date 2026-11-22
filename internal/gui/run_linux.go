@@ -306,6 +306,7 @@ func Run(opt Options) error {
 			d.RunPosted()
 			d.Draw(canvas)
 			fb.blit(canvas)
+			d.PushFrame(canvas.Pix, canvas.Stride, canvas.W, canvas.H)
 			lastDraw = time.Now()
 		}
 		select {

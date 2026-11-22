@@ -8,7 +8,7 @@ import (
 	"win95linux/internal/ui"
 )
 
-const settingsVersion = "26.4"
+const settingsVersion = "26.5"
 
 type settingsPage int
 
@@ -194,7 +194,7 @@ func (a *SettingsApp) paintDisplay(d *Desktop, c *ui.Canvas, f *ui.Font, inner u
 func (a *SettingsApp) paintFonts(d *Desktop, c *ui.Canvas, f *ui.Font, inner ui.Rect) {
 	f.TextBold(c, inner.X, inner.Y, d.tr("字体预览"), ui.ColText)
 	samples := []string{
-		"Windows 95 Linux 26.4 — 中文 天地玄黄，宇宙洪荒。",
+		"Windows 95 Linux 26.5 — 中文 天地玄黄，宇宙洪荒。",
 		"English: The quick brown fox jumps over the lazy dog.",
 		"Ελληνικά · Русский · עברית · العربية · हिन्दी · ไทย",
 		"日本語：いろはにほへと ちりぬるを",
@@ -412,7 +412,7 @@ func (a *SettingsApp) paintLicense(d *Desktop, c *ui.Canvas, f *ui.Font, inner u
 }
 
 func (a *SettingsApp) licenseText() string {
-	return "Windows 95 Linux 26.4\nCopyright © 2026 Windows 95 Linux contributors\n\n" +
+	return "Windows 95 Linux 26.5\nCopyright © 2026 Windows 95 Linux contributors\n\n" +
 		apacheLicense + "\n\n第三方组件\n" +
 		"————————————————————————————\n" +
 		"Go 语言运行时与标准库：BSD 3-Clause License，Copyright © The Go Authors。\n" +

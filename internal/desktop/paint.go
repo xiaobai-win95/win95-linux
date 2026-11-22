@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"image"
+	"image/png"
 	"math"
 	"os"
 	"path/filepath"
@@ -13,7 +14,7 @@ import (
 	"win95linux/internal/ui"
 )
 
-var paintTools = []string{"铅笔", "画刷", "橡皮", "直线", "矩形", "椭圆"}
+var paintTools = []string{"铅笔", "画刷", "橡皮", "直线", "矩形", "椭圆", "选择", "马赛克"}
 
 var paintColors = []uint32{
 	0x000000, 0x808080, 0x800000, 0x808000, 0x008000, 0x008080, 0x000080, 0x800080,
@@ -27,6 +28,8 @@ const (
 	paintLine
 	paintRect
 	paintEllipse
+	paintSelect
+	paintMosaic
 )
 
 const (
@@ -53,6 +56,9 @@ type PaintApp struct {
 	lastX, lastY   int
 	backup         []uint32
 
+	selX0, selY0, selX1, selY1 int
+	hasSel                     bool
+
 	canvasR    ui.Rect
 	toolRects  []ui.Rect
 	widthRects []ui.Rect
@@ -60,16 +66,17 @@ type PaintApp struct {
 	press      string
 	status     string
 	path       string
+	shot       bool
 }
 
 func NewPaintApp(d *Desktop) *PaintApp {
-	return &PaintApp{d: d, color: 0x000000, brush: 3, status: "左键绘制；文件菜单可打开 PNG/BMP 或保存为 BMP"}
+	return &PaintApp{d: d, color: 0x000000, brush: 3, status: "左键绘制；“选择”框选后可用“马赛克”打码；Ctrl+S 保存 PNG"}
 }
 
 func (a *PaintApp) Title() string           { return "画图" }
 func (a *PaintApp) Icon() ui.IconKind       { return ui.IcoPaint }
 func (a *PaintApp) DefaultSize() (int, int) { return 760, 540 }
-func (a *PaintApp) MinSize() (int, int)     { return 520, 380 }
+func (a *PaintApp) MinSize() (int, int)     { return 620, 380 }
 func (a *PaintApp) Resizable() bool         { return true }
 
 func (a *PaintApp) Menus(d *Desktop, w *Window) []Menu {
@@ -77,7 +84,7 @@ func (a *PaintApp) Menus(d *Desktop, w *Window) []Menu {
 		{Label: "文件(F)", Items: []MenuItem{
 			{Label: "新建", Enabled: true, Action: func() { a.newImage(d) }},
 			{Label: "打开…", Accel: "Ctrl+O", Enabled: true, Action: func() { a.open(d) }},
-			{Label: "保存", Accel: "Ctrl+S", Enabled: true, Action: func() { a.save(d, false) }},
+			{Label: "保存 PNG", Accel: "Ctrl+S", Enabled: true, Action: func() { a.save(d, false) }},
 			{Label: "另存为…", Enabled: true, Action: func() { a.save(d, true) }},
 			{Separator: true},
 			{Label: "退出", Enabled: true, Action: func() { d.CloseWindow(w) }},
@@ -88,7 +95,7 @@ func (a *PaintApp) Menus(d *Desktop, w *Window) []Menu {
 		{Label: "帮助(H)", Items: []MenuItem{
 			{Label: "关于画图", Enabled: true, Action: func() {
 				d.MessageBox("关于画图",
-					"画图\n\n工具：铅笔、画刷、橡皮、直线、矩形、椭圆。\n下方调色板选择颜色，“笔宽”按钮调整粗细。\n\n可用“文件 → 打开”载入 PNG 或 BMP 图片，\n图像以 24 位 BMP 格式保存在 /root/图片。",
+					"画图\n\n工具：铅笔、画刷、橡皮、直线、矩形、椭圆、选择、马赛克。\n下方调色板选择颜色，“笔宽”按钮调整粗细。\n\n打码：先用“选择”拖出区域，再选“马赛克”点击该区域。\n按 Print Screen 可把整屏截图载入画图。\n\n可用“文件 → 打开”载入 PNG 或 BMP 图片，\n保存时默认写入 PNG（BMP 也可）。",
 					IconInfo, []string{"确定"}, nil)
 			}},
 		}},
@@ -140,9 +147,9 @@ func (a *PaintApp) Paint(d *Desktop, w *Window, c *ui.Canvas, r ui.Rect) {
 	f := ui.DefaultFont()
 
 	a.toolRects = a.toolRects[:0]
-	toolW := 56
+	toolW := 46
 	for i, name := range paintTools {
-		br := ui.Rect{r.X + 6 + i*(toolW+3), r.Y + 5, toolW, 24}
+		br := ui.Rect{r.X + 6 + i*(toolW+2), r.Y + 5, toolW, 24}
 		ui.Button(c, br, name, a.tool == i, true)
 		a.toolRects = append(a.toolRects, br)
 	}
@@ -165,6 +172,13 @@ func (a *PaintApp) Paint(d *Desktop, w *Window, c *ui.Canvas, r ui.Rect) {
 	for y := 0; y < a.ch; y++ {
 		dst := c.Pix[(a.canvasR.Y+y)*c.Stride+a.canvasR.X:]
 		copy(dst[:a.cw], a.pix[y*a.cw:(y+1)*a.cw])
+	}
+	if a.hasSel || (a.dragging && a.tool == paintSelect) {
+		x0, y0, x1, y1 := a.selX0, a.selY0, a.selX1, a.selY1
+		if a.dragging && a.tool == paintSelect {
+			x0, y0, x1, y1 = a.startX, a.startY, a.lastX, a.lastY
+		}
+		a.drawSelection(c, x0, y0, x1, y1)
 	}
 
 	palY := r.Bottom() - paintPaletteH + 4
@@ -288,6 +302,107 @@ func (a *PaintApp) ellipse(x0, y0, x1, y1, thickness int, col uint32) {
 	}
 }
 
+func (a *PaintApp) drawSelection(c *ui.Canvas, x0, y0, x1, y1 int) {
+	if x0 > x1 {
+		x0, x1 = x1, x0
+	}
+	if y0 > y1 {
+		y0, y1 = y1, y0
+	}
+	if x0 < 0 {
+		x0 = 0
+	}
+	if y0 < 0 {
+		y0 = 0
+	}
+	if x1 >= a.cw {
+		x1 = a.cw - 1
+	}
+	if y1 >= a.ch {
+		y1 = a.ch - 1
+	}
+	dash := func(x, y, phase int) {
+		col := uint32(0x000000)
+		if ((x+y+phase)/3)%2 == 0 {
+			col = 0xFFFFFF
+		}
+		c.Set(a.canvasR.X+x, a.canvasR.Y+y, col)
+	}
+	for x := x0; x <= x1; x++ {
+		dash(x, y0, 0)
+		dash(x, y1, 1)
+	}
+	for y := y0; y <= y1; y++ {
+		dash(x0, y, 0)
+		dash(x1, y, 1)
+	}
+}
+
+func (a *PaintApp) mosaicArea(x0, y0, x1, y1, block int) {
+	if block < 2 {
+		block = 2
+	}
+	if x0 > x1 {
+		x0, x1 = x1, x0
+	}
+	if y0 > y1 {
+		y0, y1 = y1, y0
+	}
+	if x0 < 0 {
+		x0 = 0
+	}
+	if y0 < 0 {
+		y0 = 0
+	}
+	if x1 >= a.cw {
+		x1 = a.cw - 1
+	}
+	if y1 >= a.ch {
+		y1 = a.ch - 1
+	}
+	for by := y0; by <= y1; by += block {
+		ey := by + block
+		if ey > y1+1 {
+			ey = y1 + 1
+		}
+		for bx := x0; bx <= x1; bx += block {
+			ex := bx + block
+			if ex > x1+1 {
+				ex = x1 + 1
+			}
+			var r, g, b, n uint32
+			for y := by; y < ey; y++ {
+				for x := bx; x < ex; x++ {
+					v := a.pix[y*a.cw+x]
+					r += v >> 16 & 0xFF
+					g += v >> 8 & 0xFF
+					b += v & 0xFF
+					n++
+				}
+			}
+			if n == 0 {
+				continue
+			}
+			col := r/n<<16 | g/n<<8 | b/n
+			for y := by; y < ey; y++ {
+				for x := bx; x < ex; x++ {
+					a.pix[y*a.cw+x] = col
+				}
+			}
+		}
+	}
+}
+
+func (a *PaintApp) mosaicAt(cx, cy int) {
+	if a.hasSel {
+		a.mosaicArea(a.selX0, a.selY0, a.selX1, a.selY1, 9)
+		a.status = "已对选区打码；按 Esc 可取消选区"
+		return
+	}
+	a.mosaicArea(cx-18, cy-18, cx+18, cy+18, 8)
+	a.status = "马赛克画笔；先用“选择”框选区域可整块打码"
+}
+
 func (a *PaintApp) begin(x, y int) {
 	cx, cy := a.toCanvas(x, y)
 	a.dragging = true
@@ -301,6 +416,10 @@ func (a *PaintApp) begin(x, y int) {
 		a.dot(cx, cy, a.brush, a.color)
 	case paintEraser:
 		a.dot(cx, cy, 9, 0xFFFFFF)
+	case paintSelect:
+		a.hasSel = false
+	case paintMosaic:
+		a.mosaicAt(cx, cy)
 	}
 }
 
@@ -322,6 +441,10 @@ func (a *PaintApp) drag(x, y int) {
 	case paintEllipse:
 		copy(a.pix, a.backup)
 		a.ellipse(a.startX, a.startY, cx, cy, a.brush, a.color)
+	case paintMosaic:
+		if !a.hasSel {
+			a.mosaicAt(cx, cy)
+		}
 	}
 	a.lastX, a.lastY = cx, cy
 }
@@ -376,6 +499,22 @@ func (a *PaintApp) Mouse(d *Desktop, w *Window, client ui.Rect, ev MouseEvent) {
 	case MouseUp:
 		if a.dragging {
 			a.dragging = false
+			if a.tool == paintSelect {
+				x0, y0, x1, y1 := a.startX, a.startY, a.lastX, a.lastY
+				if x0 > x1 {
+					x0, x1 = x1, x0
+				}
+				if y0 > y1 {
+					y0, y1 = y1, y0
+				}
+				if x1-x0 >= 3 && y1-y0 >= 3 {
+					a.selX0, a.selY0, a.selX1, a.selY1 = x0, y0, x1, y1
+					a.hasSel = true
+					a.status = fmt.Sprintf("已选区 %d × %d；选“马赛克”打码，Esc 取消", x1-x0+1, y1-y0+1)
+				} else {
+					a.hasSel = false
+				}
+			}
 		}
 		a.press = ""
 		d.Invalidate()
@@ -389,6 +528,12 @@ func (a *PaintApp) Key(d *Desktop, w *Window, ev KeyEvent) bool {
 	}
 	if ev.Ctrl && (ev.Rune == 'o' || ev.Rune == 'O') {
 		a.open(d)
+		return true
+	}
+	if ev.Name == "Esc" && a.hasSel {
+		a.hasSel = false
+		a.status = "已取消选区"
+		d.Invalidate()
 		return true
 	}
 	return false
@@ -542,7 +687,7 @@ func (a *PaintApp) newImage(d *Desktop) {
 
 func (a *PaintApp) save(d *Desktop, saveAs bool) {
 	if a.path == "" || saveAs {
-		name := "未命名.bmp"
+		name := "未命名.png"
 		if a.path != "" {
 			name = filepath.Base(a.path)
 		}
@@ -558,16 +703,49 @@ func (a *PaintApp) save(d *Desktop, saveAs bool) {
 }
 
 func (a *PaintApp) writeTo(d *Desktop, path string) {
-	if !strings.HasSuffix(strings.ToLower(path), ".bmp") {
-		path += ".bmp"
+	lower := strings.ToLower(path)
+	var err error
+	if strings.HasSuffix(lower, ".bmp") {
+		err = a.writeBMP(path)
+	} else {
+		if !strings.HasSuffix(lower, ".png") {
+			path += ".png"
+		}
+		err = a.writePNG(path)
 	}
-	if err := a.writeBMP(path); err != nil {
+	if err != nil {
 		d.MessageBox("画图", "保存失败: "+err.Error(), IconError, []string{"确定"}, nil)
 		return
 	}
 	a.path = path
 	a.status = "已保存到 " + path
 	d.Invalidate()
+}
+
+func (a *PaintApp) writePNG(path string) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	img := image.NewRGBA(image.Rect(0, 0, a.cw, a.ch))
+	for y := 0; y < a.ch; y++ {
+		for x := 0; x < a.cw; x++ {
+			v := a.pix[y*a.cw+x]
+			o := y*img.Stride + x*4
+			img.Pix[o] = byte(v >> 16)
+			img.Pix[o+1] = byte(v >> 8)
+			img.Pix[o+2] = byte(v)
+			img.Pix[o+3] = 0xFF
+		}
+	}
+	f, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+	if err := png.Encode(f, img); err != nil {
+		f.Close()
+		return err
+	}
+	return f.Close()
 }
 
 func (a *PaintApp) writeBMP(path string) error {

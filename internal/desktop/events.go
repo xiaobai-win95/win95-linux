@@ -29,6 +29,7 @@ func (d *Desktop) Mouse(ev MouseEvent) {
 		return
 	}
 	d.lastInput = time.Now()
+	d.macroRecordMouse(ev)
 	gx, gy := ev.X, ev.Y
 	d.MouseX, d.MouseY = gx, gy
 	d.hand = false
@@ -39,6 +40,11 @@ func (d *Desktop) Mouse(ev MouseEvent) {
 	}
 
 	if d.softKBMouse(ev) {
+		return
+	}
+
+	if d.spotlight != nil && d.spotlight.active {
+		d.spotlight.Mouse(ev)
 		return
 	}
 
@@ -189,6 +195,9 @@ func (d *Desktop) mouseMove(ev MouseEvent) {
 		return
 	}
 	for _, w := range d.windows {
+		if w.Workspace != d.ws {
+			continue
+		}
 		if w.drag {
 			nx := ev.X - w.dragDX
 			ny := ev.Y - w.dragDY
@@ -320,7 +329,7 @@ func (d *Desktop) mouseUp(ev MouseEvent) {
 func (d *Desktop) windowAt(x, y int) *Window {
 	for i := len(d.windows) - 1; i >= 0; i-- {
 		w := d.windows[i]
-		if w.Minimized {
+		if w.Minimized || w.Workspace != d.ws {
 			continue
 		}
 		if w.Outer().Contains(x, y) {
@@ -394,6 +403,7 @@ func (d *Desktop) mouseWindow(w *Window, ev MouseEvent, modal bool) {
 			grip := ui.Rect{w.X + w.W - 18, w.Y + w.H - 18, 18, 18}
 			if grip.Contains(gx, gy) {
 				w.resizing = true
+				w.tiled = false
 				w.resizeX, w.resizeY = gx, gy
 				w.restore = ui.Rect{w.X, w.Y, w.W, w.H}
 				d.capture = w
@@ -410,6 +420,7 @@ func (d *Desktop) mouseWindow(w *Window, ev MouseEvent, modal bool) {
 			}
 			w.titleClick = time.Now()
 			if !w.Maximized {
+				d.unfloatForDrag(w, gx, gy)
 				w.drag = true
 				w.dragDX = gx - w.X
 				w.dragDY = gy - w.Y
@@ -450,6 +461,10 @@ func (d *Desktop) mouseTaskbar(x, y int) {
 		d.MessageBox("日期/时间", d.statusClock(), IconInfo, []string{"确定"}, nil)
 		return
 	}
+	if d.lanTrayRect().Contains(x, y) {
+		d.openLANShare()
+		return
+	}
 	if d.sysTrayRect().Contains(x, y) {
 		d.showSysMonitor()
 		return
@@ -474,7 +489,7 @@ func (d *Desktop) minimize(w *Window) {
 		d.active = nil
 		for i := len(d.windows) - 1; i >= 0; i-- {
 			c := d.windows[i]
-			if c != w && !c.Minimized && !c.Modal {
+			if c != w && !c.Minimized && !c.Modal && c.Workspace == d.ws {
 				d.active = c
 				break
 			}
@@ -484,6 +499,7 @@ func (d *Desktop) minimize(w *Window) {
 }
 
 func (d *Desktop) toggleMax(w *Window) {
+	w.tiled = false
 	if w.Maximized {
 		w.X, w.Y, w.W, w.H = w.restore.X, w.restore.Y, w.restore.W, w.restore.H
 		w.Maximized = false
@@ -734,7 +750,7 @@ func (d *Desktop) Key(ev KeyEvent) {
 		return
 	}
 	if ev.Name == "Print" {
-		d.takeScreenshot()
+		d.printScreenToPaint()
 		if d.saver {
 			d.stopSaver(time.Now())
 		}
@@ -744,10 +760,67 @@ func (d *Desktop) Key(ev KeyEvent) {
 		d.stopSaver(time.Now())
 		return
 	}
+	if ev.Name == "Esc" && d.macro != nil && d.macro.playing {
+		d.macro.stopPlay(d)
+		return
+	}
 	d.lastInput = time.Now()
+	d.macroRecordKey(ev)
+	if d.spotlight != nil && d.spotlight.active {
+		if ev.Ctrl && !ev.Alt && (ev.Name == "Space" || ev.Rune == ' ') {
+			d.spotlight.Close()
+			return
+		}
+		d.spotlight.Key(ev)
+		d.Invalidate()
+		return
+	}
 	if ev.Ctrl && ev.Alt && (ev.Name == "K" || ev.Rune == 'k' || ev.Rune == 'K') {
 		d.toggleSoftKeyboard()
 		return
+	}
+	if d.modal == nil && ev.Ctrl && !ev.Alt && (ev.Name == "Space" || ev.Rune == ' ') {
+		d.ToggleSpotlight()
+		return
+	}
+	if d.modal == nil && ev.Ctrl && !ev.Alt && (ev.Name == "F" || ev.Rune == 'f' || ev.Rune == 'F') {
+		d.openFind()
+		return
+	}
+	if d.modal == nil && ev.Alt && !ev.Ctrl {
+		switch ev.Name {
+		case "1":
+			d.switchWorkspace(1)
+			return
+		case "2":
+			d.switchWorkspace(2)
+			return
+		case "3":
+			d.switchWorkspace(3)
+			return
+		case "4":
+			d.switchWorkspace(4)
+			return
+		case "0":
+			d.untileActive()
+			return
+		}
+		if d.active != nil && d.active.menuOpen < 0 {
+			switch ev.Name {
+			case "Left":
+				d.tileActive(tileLeft)
+				return
+			case "Right":
+				d.tileActive(tileRight)
+				return
+			case "Up":
+				d.tileActive(tileTop)
+				return
+			case "Down":
+				d.tileActive(tileBottom)
+				return
+			}
+		}
 	}
 	if d.ctx != nil {
 		d.ctxKey(ev)
@@ -859,7 +932,7 @@ func (d *Desktop) moveMenuSel(w *Window, dir int) {
 func (d *Desktop) cycleWindows() {
 	var list []*Window
 	for _, w := range d.windows {
-		if !w.Modal && !w.Minimized {
+		if !w.Modal && !w.Minimized && w.Workspace == d.ws {
 			list = append(list, w)
 		}
 	}

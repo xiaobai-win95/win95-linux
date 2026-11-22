@@ -85,7 +85,7 @@ func (a *ImageViewerApp) Menus(d *Desktop, w *Window) []Menu {
 		{Label: "帮助(H)", Items: []MenuItem{
 			{Label: "关于图片查看器(A)", Enabled: true, Action: func() {
 				d.MessageBox("关于图片查看器",
-					"Windows 95 Linux 图片查看器\n版本 26.4\n\n支持 PNG（含透明通道）与未压缩 BMP。\n拖动图片可平移，Ctrl+滚轮可缩放。\n\n截屏（Print Screen）会保存为 BMP。",
+					"Windows 95 Linux 图片查看器\n版本 26.5\n\n支持 PNG（含透明通道）与未压缩 BMP。\n拖动图片可平移，Ctrl+滚轮可缩放。\n\n截屏（Print Screen）会保存 PNG + BMP 到桌面，并在画图中打开。",
 					IconInfo, []string{"确定"}, nil)
 			}},
 		}},

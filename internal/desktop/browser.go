@@ -999,6 +999,7 @@ type BrowserApp struct {
 	curURL    string
 	addr      string
 	title     string
+	brand     string
 	raw       string
 	kind      pageKind
 	doc       *bDoc
@@ -1046,7 +1047,7 @@ type BrowserApp struct {
 }
 
 func NewBrowserApp(d *Desktop, start string) *BrowserApp {
-	a := &BrowserApp{d: d, visited: make(map[string]bool), histIdx: -1,
+	a := &BrowserApp{d: d, brand: "网络浏览器", visited: make(map[string]bool), histIdx: -1,
 		images: make(map[string]*bImage), imgPending: make(map[string]bool),
 		imgFailed: make(map[string]bool)}
 	if start == "" {
@@ -1066,12 +1067,17 @@ func (a *BrowserApp) Title() string {
 		return "网络浏览器 - 安装依赖"
 	}
 	if a.title != "" {
-		return a.title + " - 网络浏览器"
+		return a.title + " - " + a.brand
 	}
-	return "网络浏览器"
+	return a.brand
 }
 
-func (a *BrowserApp) Icon() ui.IconKind       { return ui.IcoBrowser }
+func (a *BrowserApp) Icon() ui.IconKind {
+	if a.brand == "Netscape Navigator 4.8" {
+		return ui.IcoNetscape
+	}
+	return ui.IcoBrowser
+}
 func (a *BrowserApp) DefaultSize() (int, int) { return 900, 640 }
 func (a *BrowserApp) MinSize() (int, int)     { return 540, 380 }
 func (a *BrowserApp) Resizable() bool         { return true }
@@ -1101,7 +1107,7 @@ func (a *BrowserApp) Menus(d *Desktop, w *Window) []Menu {
 			{Label: "浏览器帮助(A)", Enabled: true, Action: func() { a.Navigate("about:help") }},
 			{Label: "JavaScript 演示(D)", Enabled: true, Action: func() { a.Navigate("about:demo") }},
 			{Label: "关于(A)", Enabled: true, Action: func() {
-				d.MessageBox("关于网络浏览器", "Windows 95 Linux 网络浏览器\n版本 26.4\n\n支持 HTML 页面、超链接、本地文件、HTTP/HTTPS 访问、文件下载与 JavaScript（ECMAScript 5.1）。\n下载的文件保存在 "+downloadDir()+"。", IconInfo, []string{"确定"}, nil)
+				d.MessageBox("关于网络浏览器", "Windows 95 Linux 网络浏览器\n版本 26.5\n\n支持 HTML 页面、超链接、本地文件、HTTP/HTTPS 访问、文件下载与 JavaScript（ECMAScript 5.1）。\n下载的文件保存在 "+downloadDir()+"。", IconInfo, []string{"确定"}, nil)
 			}},
 		}},
 	}
@@ -1386,7 +1392,7 @@ func fetchImageResource(raw string) (*bImage, error) {
 			if err != nil {
 				return nil, err
 			}
-			req.Header.Set("User-Agent", "Mozilla/5.0 (X11; Linux aarch64) Win95Browser/26.4")
+			req.Header.Set("User-Agent", "Mozilla/5.0 (X11; Linux aarch64) Win95Browser/26.5")
 			req.Header.Set("Accept", "image/*,*/*;q=0.8")
 			resp, err := client.Do(req)
 			if err != nil {
@@ -2367,6 +2373,9 @@ func fetchPage(raw string, forceDownload bool) fetchResult {
 		return res
 	case lower == "about:demo":
 		res.entry = histEntry{url: raw, raw: demoPageHTML, title: "JavaScript 演示", kind: pageHTML}
+		return res
+	case lower == "about:netscape":
+		res.entry = histEntry{url: raw, raw: netscapePageHTML, title: "Netscape Navigator 4.8", kind: pageHTML}
 		return res
 	case strings.HasPrefix(lower, "about:"):
 		res.entry = histEntry{url: raw, raw: simplePageHTML("关于 "+raw, "此页面是浏览器内置页面。请访问主页或输入其他地址。"), title: raw, kind: pageHTML}

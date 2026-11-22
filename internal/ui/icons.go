@@ -34,6 +34,21 @@ const (
 	IcoGame
 	IcoGlitch
 	IcoOffice
+	IcoFind
+	IcoMail
+	IcoIE
+	IcoNetscape
+	IcoBriefcase
+	IcoOnline
+	IcoMSN
+	IcoMonitor
+	IcoShield
+	IcoVNC
+	IcoShare
+	IcoAI
+	IcoMacro
+	IcoMaze
+	IcoWine
 )
 
 // DrawIcon32 draws a 32x32 icon at x,y. selected dithers the background navy.
@@ -489,6 +504,238 @@ func DrawIcon32(c *Canvas, kind IconKind, x, y int, selected bool) {
 		set(8, 26, ColShadow)
 		set(11, 26, ColShadow)
 		set(14, 26, ColShadow)
+	case IcoFind:
+		IconFolder(c, x, y, 1)
+		for yy := 8; yy < 29; yy++ {
+			for xx := 12; xx < 30; xx++ {
+				dx, dy := xx-20, yy-15
+				d := dx*dx + dy*dy
+				if d <= 44 && d >= 24 {
+					set(xx, yy, 0x203040)
+				}
+			}
+		}
+		for i := 0; i < 8; i++ {
+			set(25+i, 20+i, 0x203040)
+			set(26+i, 20+i, 0x203040)
+			set(25+i, 21+i, 0x203040)
+		}
+	case IcoMail:
+		box(3, 7, 28, 24, ColWhite)
+		frame(3, 7, 28, 24, ColDark)
+		for i := 0; i < 11; i++ {
+			set(4+i, 8+i, ColShadow)
+			set(27-i, 8+i, ColShadow)
+		}
+		box(3, 7, 28, 7, ColNavy)
+		box(5, 10, 11, 10, 0x4060C0)
+	case IcoIE:
+		for yy := 3; yy < 29; yy++ {
+			for xx := 3; xx < 29; xx++ {
+				dx, dy := xx-16, yy-16
+				d := dx*dx + dy*dy
+				if d <= 150 && d >= 96 {
+					set(xx, yy, 0x1050A0)
+				}
+			}
+		}
+		for xx := 6; xx < 27; xx++ {
+			set(xx, 10, 0x40A0E0)
+			set(xx, 16, 0x40A0E0)
+			set(xx, 22, 0x40A0E0)
+		}
+		for yy := 10; yy < 23; yy++ {
+			set(16, yy, 0x80D0FF)
+		}
+		box(12, 13, 21, 14, ColWhite)
+		box(12, 13, 13, 19, ColWhite)
+		box(12, 19, 21, 20, ColWhite)
+		box(20, 16, 21, 20, ColWhite)
+	case IcoNetscape:
+		for yy := 4; yy < 27; yy++ {
+			for xx := 4; xx < 27; xx++ {
+				dx, dy := xx-15, yy-15
+				d := dx*dx + dy*dy
+				if d <= 120 && d >= 80 {
+					set(xx, yy, 0x107030)
+				}
+			}
+		}
+		for i := 0; i < 9; i++ {
+			set(9+i, 19-i, 0xE0FFE0)
+			set(10+i, 19-i, 0xE0FFE0)
+		}
+		for yy := 12; yy < 22; yy++ {
+			set(9, yy, 0xE0FFE0)
+			set(19, yy, 0xE0FFE0)
+		}
+	case IcoBriefcase:
+		box(8, 9, 23, 13, 0x806020)
+		frame(8, 9, 23, 13, 0x402800)
+		box(4, 12, 28, 28, 0xA07030)
+		frame(4, 12, 28, 28, 0x402800)
+		for xx := 5; xx < 28; xx++ {
+			set(xx, 18, 0x806020)
+		}
+		box(14, 18, 18, 21, 0xF0C040)
+		frame(14, 18, 18, 21, 0x402800)
+	case IcoOnline:
+		for yy := 5; yy < 23; yy++ {
+			for xx := 5; xx < 23; xx++ {
+				dx, dy := xx-14, yy-14
+				d := dx*dx + dy*dy
+				if d <= 82 && d >= 55 {
+					set(xx, yy, 0x2060C0)
+				}
+			}
+		}
+		for xx := 6; xx < 22; xx++ {
+			set(xx, 9, 0x40A0E0)
+			set(xx, 14, 0x40A0E0)
+			set(xx, 19, 0x40A0E0)
+		}
+		box(20, 20, 28, 25, 0x202020)
+		box(19, 19, 24, 21, 0x505050)
+		box(25, 24, 29, 27, 0x505050)
+	case IcoMSN:
+		for yy := 6; yy < 26; yy++ {
+			for xx := 4; xx < 29; xx++ {
+				dx, dy := xx-11, yy-16
+				d1 := dx*dx + dy*dy
+				dx2, dy2 := xx-21, yy-16
+				d2 := dx2*dx2 + dy2*dy2
+				if (d1 <= 52 && d1 >= 16) || (d2 <= 52 && d2 >= 16) {
+					set(xx, yy, 0x3070D0)
+				}
+			}
+		}
+		for yy := 9; yy < 24; yy++ {
+			set(16, yy, 0x102040)
+			set(17, yy, 0x102040)
+		}
+		set(15, 6, 0x102040)
+		set(18, 6, 0x102040)
+	case IcoMonitor:
+		box(2, 4, 29, 24, 0x101020)
+		frame(2, 4, 29, 24, ColDark)
+		for i := 0; i < 26; i++ {
+			x0 := 4 + i
+			set(x0, 20-i/3, 0x40E060)
+			set(x0, 21-i/3, 0x40E060)
+		}
+		box(4, 10, 9, 21, 0x2050C0)
+		box(9, 16, 13, 21, 0xE0C020)
+		box(13, 13, 17, 21, 0x40E060)
+		box(12, 25, 19, 28, ColShadow)
+		box(8, 29, 23, 29, ColShadow)
+	case IcoShield:
+		box(7, 4, 25, 8, 0x2060C0)
+		for i := 0; i < 20; i++ {
+			w := 18 - i*2
+			if w < 2 {
+				w = 2
+			}
+			box(7+i/2, 8+i, 25-i/2, 8+i, 0x2060C0)
+			_ = w
+		}
+		frame(7, 4, 25, 28, 0x103060)
+		for i := 0; i < 6; i++ {
+			set(11+i, 15+i, ColWhite)
+			set(12+i, 15+i, ColWhite)
+		}
+		for i := 0; i < 5; i++ {
+			set(17+i, 20-i, ColWhite)
+			set(17+i, 21-i, ColWhite)
+		}
+	case IcoVNC:
+		box(2, 5, 29, 23, 0x202020)
+		frame(2, 5, 29, 23, ColDark)
+		box(4, 7, 27, 21, ColDesktop)
+		for yy := 9; yy < 20; yy++ {
+			for xx := 8; xx < 24; xx++ {
+				dx, dy := xx-16, yy-14
+				d := dx*dx*2 + dy*dy*5
+				if d <= 34 && d >= 14 {
+					set(xx, yy, ColWhite)
+				}
+				if d < 5 {
+					set(xx, yy, 0x203060)
+				}
+			}
+		}
+		box(12, 24, 19, 27, ColShadow)
+		box(8, 28, 23, 29, ColShadow)
+	case IcoShare:
+		box(2, 8, 13, 18, ColFace)
+		frame(2, 8, 13, 18, ColDark)
+		box(4, 10, 11, 15, ColDesktop)
+		box(18, 12, 29, 22, ColFace)
+		frame(18, 12, 29, 22, ColDark)
+		box(20, 14, 27, 19, ColDesktop)
+		for i := 0; i < 7; i++ {
+			set(12+i, 13-i/3, 0x208020)
+			set(12+i, 15-i/3, 0x208020)
+		}
+		set(18, 11, 0x208020)
+		set(17, 10, 0x208020)
+		set(19, 10, 0x208020)
+	case IcoAI:
+		box(7, 8, 25, 25, 0xC0C8D0)
+		frame(7, 8, 25, 25, 0x304050)
+		box(10, 12, 15, 18, 0x103060)
+		box(17, 12, 22, 18, 0x103060)
+		set(12, 14, 0x40E0FF)
+		set(19, 14, 0x40E0FF)
+		box(11, 21, 21, 22, 0x304050)
+		set(16, 3, 0x304050)
+		box(15, 5, 17, 7, 0xE0C020)
+		box(3, 14, 6, 18, 0x304050)
+		box(26, 14, 29, 18, 0x304050)
+	case IcoMacro:
+		box(3, 5, 28, 22, 0x202020)
+		frame(3, 5, 28, 22, ColDark)
+		for i := 0; i < 12; i++ {
+			box(5+i*2, 9+(i%4)*3, 6+i*2, 10+(i%4)*3, 0x40A0E0)
+		}
+		box(10, 24, 21, 28, 0xA02020)
+		frame(10, 24, 21, 28, 0x601010)
+		for yy := 25; yy < 28; yy++ {
+			for xx := 12; xx < 20; xx++ {
+				set(xx, yy, 0xE04040)
+			}
+		}
+	case IcoMaze:
+		box(2, 6, 29, 28, 0x103020)
+		frame(2, 6, 29, 28, 0x001008)
+		for i := 0; i < 5; i++ {
+			x0 := 5 + i*5
+			for yy := 8; yy < 27; yy++ {
+				col := uint32(0x40C060)
+				if i%2 == 1 {
+					col = 0x208040
+				}
+				set(x0, yy, col)
+			}
+		}
+		for xx := 6; xx < 28; xx++ {
+			set(xx, 9+(xx%3)*5, 0x80E0A0)
+		}
+	case IcoWine:
+		box(9, 4, 22, 5, 0xD0D0D0)
+		for yy := 6; yy < 17; yy++ {
+			for xx := 9; xx < 23; xx++ {
+				set(xx, yy, 0x801020)
+			}
+		}
+		frame(9, 4, 22, 17, 0x400010)
+		for yy := 17; yy < 24; yy++ {
+			set(15, yy, 0xC0C0C0)
+			set(16, yy, 0xC0C0C0)
+		}
+		box(11, 24, 20, 27, ColFace)
+		frame(11, 24, 20, 27, ColShadow)
+		set(12, 7, 0xE06080)
+		set(13, 7, 0xE06080)
 	}
 }
 
@@ -766,6 +1013,192 @@ func DrawIcon16(c *Canvas, kind IconKind, x, y int) {
 		set(4, 12, ColShadow)
 		set(7, 12, ColShadow)
 		set(10, 12, ColShadow)
+	case IcoFind:
+		box(1, 5, 14, 13, 0xFFD040)
+		box(1, 3, 7, 5, 0xFFD040)
+		frame(1, 3, 14, 13, 0x806000)
+		for yy := 3; yy < 15; yy++ {
+			for xx := 5; xx < 16; xx++ {
+				dx, dy := xx-10, yy-8
+				d := dx*dx + dy*dy
+				if d <= 12 && d >= 6 {
+					set(xx, yy, 0x203040)
+				}
+			}
+		}
+		for i := 0; i < 4; i++ {
+			set(12+i, 10+i, 0x203040)
+			set(13+i, 10+i, 0x203040)
+		}
+	case IcoMail:
+		box(1, 3, 14, 12, ColWhite)
+		frame(1, 3, 14, 12, ColDark)
+		for i := 0; i < 5; i++ {
+			set(2+i, 4+i, ColShadow)
+			set(13-i, 4+i, ColShadow)
+		}
+		box(1, 3, 14, 3, ColNavy)
+	case IcoIE:
+		for yy := 1; yy < 15; yy++ {
+			for xx := 1; xx < 15; xx++ {
+				dx, dy := xx-8, yy-8
+				d := dx*dx + dy*dy
+				if d <= 40 && d >= 24 {
+					set(xx, yy, 0x1050A0)
+				}
+			}
+		}
+		for xx := 3; xx < 14; xx++ {
+			set(xx, 5, 0x40A0E0)
+			set(xx, 8, 0x40A0E0)
+			set(xx, 11, 0x40A0E0)
+		}
+		box(6, 7, 10, 7, ColWhite)
+		set(6, 8, ColWhite)
+		box(6, 9, 10, 9, ColWhite)
+	case IcoNetscape:
+		for yy := 2; yy < 14; yy++ {
+			for xx := 2; xx < 14; xx++ {
+				dx, dy := xx-8, yy-8
+				d := dx*dx + dy*dy
+				if d <= 34 && d >= 20 {
+					set(xx, yy, 0x107030)
+				}
+			}
+		}
+		for i := 0; i < 5; i++ {
+			set(4+i, 11-i, 0xE0FFE0)
+		}
+		for yy := 6; yy < 11; yy++ {
+			set(4, yy, 0xE0FFE0)
+			set(11, yy, 0xE0FFE0)
+		}
+	case IcoBriefcase:
+		box(4, 5, 11, 7, 0x806020)
+		frame(4, 5, 11, 7, 0x402800)
+		box(1, 7, 14, 14, 0xA07030)
+		frame(1, 7, 14, 14, 0x402800)
+		box(7, 9, 8, 11, 0xF0C040)
+	case IcoOnline:
+		for yy := 2; yy < 12; yy++ {
+			for xx := 2; xx < 12; xx++ {
+				dx, dy := xx-7, yy-7
+				if dx*dx+dy*dy <= 20 && dx*dx+dy*dy >= 13 {
+					set(xx, yy, 0x2060C0)
+				}
+			}
+		}
+		box(10, 10, 14, 13, 0x202020)
+		box(12, 8, 14, 9, 0x505050)
+	case IcoMSN:
+		for yy := 3; yy < 13; yy++ {
+			for xx := 2; xx < 15; xx++ {
+				dx, dy := xx-5, yy-8
+				d1 := dx*dx + dy*dy
+				dx2, dy2 := xx-11, yy-8
+				d2 := dx2*dx2 + dy2*dy2
+				if (d1 <= 13 && d1 >= 5) || (d2 <= 13 && d2 >= 5) {
+					set(xx, yy, 0x3070D0)
+				}
+			}
+		}
+		for yy := 5; yy < 12; yy++ {
+			set(8, yy, 0x102040)
+		}
+	case IcoMonitor:
+		box(1, 2, 14, 12, 0x101020)
+		frame(1, 2, 14, 12, ColDark)
+		for i := 0; i < 12; i++ {
+			set(2+i, 10-i/2, 0x40E060)
+			set(2+i, 11-i/2, 0x40E060)
+		}
+		box(5, 13, 10, 14, ColShadow)
+		box(3, 15, 12, 15, ColShadow)
+	case IcoShield:
+		box(3, 2, 12, 4, 0x2060C0)
+		for i := 0; i < 9; i++ {
+			box(3+i/2, 4+i, 12-i/2, 4+i, 0x2060C0)
+		}
+		for i := 0; i < 3; i++ {
+			set(6+i, 7+i, ColWhite)
+		}
+		for i := 0; i < 3; i++ {
+			set(9+i, 10-i, ColWhite)
+		}
+	case IcoVNC:
+		box(1, 2, 14, 12, 0x202020)
+		frame(1, 2, 14, 12, ColDark)
+		box(3, 4, 12, 10, ColDesktop)
+		for yy := 5; yy < 10; yy++ {
+			for xx := 5; xx < 11; xx++ {
+				dx, dy := xx-8, yy-7
+				d := dx*dx + dy*dy
+				if d <= 6 && d >= 3 {
+					set(xx, yy, ColWhite)
+				}
+				if d < 2 {
+					set(xx, yy, 0x203060)
+				}
+			}
+		}
+		box(6, 13, 9, 14, ColShadow)
+		box(3, 15, 12, 15, ColShadow)
+	case IcoShare:
+		box(1, 3, 7, 9, ColFace)
+		frame(1, 3, 7, 9, ColDark)
+		box(3, 5, 5, 7, ColDesktop)
+		box(8, 7, 14, 13, ColFace)
+		frame(8, 7, 14, 13, ColDark)
+		box(10, 9, 12, 11, ColDesktop)
+		set(8, 6, 0x208020)
+		set(7, 5, 0x208020)
+		set(9, 5, 0x208020)
+	case IcoAI:
+		box(3, 4, 12, 12, 0xC0C8D0)
+		frame(3, 4, 12, 12, 0x304050)
+		box(5, 6, 7, 9, 0x103060)
+		box(9, 6, 11, 9, 0x103060)
+		set(5, 7, 0x40E0FF)
+		set(9, 7, 0x40E0FF)
+		box(5, 11, 10, 11, 0x304050)
+		set(8, 1, 0x304050)
+		set(8, 2, 0xE0C020)
+		set(8, 3, 0xE0C020)
+	case IcoMacro:
+		box(1, 2, 14, 11, 0x202020)
+		frame(1, 2, 14, 11, ColDark)
+		for i := 0; i < 5; i++ {
+			set(2+i*2, 5+(i%2)*3, 0x40A0E0)
+			set(3+i*2, 5+(i%2)*3, 0x40A0E0)
+		}
+		box(5, 12, 10, 15, 0xA02020)
+		frame(5, 12, 10, 15, 0x601010)
+		for yy := 13; yy < 15; yy++ {
+			for xx := 6; xx < 10; xx++ {
+				set(xx, yy, 0xE04040)
+			}
+		}
+	case IcoMaze:
+		box(1, 3, 14, 14, 0x103020)
+		frame(1, 3, 14, 14, 0x001008)
+		for i := 0; i < 4; i++ {
+			for yy := 4; yy < 14; yy++ {
+				set(3+i*3, yy, 0x40C060)
+			}
+		}
+		for xx := 4; xx < 14; xx++ {
+			set(xx, 6+(xx%3)*3, 0x80E0A0)
+		}
+	case IcoWine:
+		box(4, 2, 11, 3, 0xD0D0D0)
+		box(4, 4, 11, 8, 0x801020)
+		frame(4, 2, 11, 8, 0x400010)
+		set(7, 9, 0xC0C0C0)
+		set(8, 9, 0xC0C0C0)
+		set(7, 10, 0xC0C0C0)
+		set(8, 10, 0xC0C0C0)
+		box(5, 11, 10, 13, ColFace)
+		frame(5, 11, 10, 13, ColShadow)
 	default:
 		box(3, 3, 12, 12, ColFace)
 		frame(3, 3, 12, 12, ColDark)

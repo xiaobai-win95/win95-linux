@@ -37,13 +37,14 @@ func (d *Desktop) drawScene(c *ui.Canvas, withCursor bool) {
 	d.drawDesktopBackground(c)
 	d.drawIcons(c)
 	for _, w := range d.windows {
-		if w.Minimized {
+		if w.Minimized || w.Workspace != d.ws {
 			continue
 		}
 		d.refreshMenus(w)
 		d.drawWindow(c, w)
 	}
 	d.drawTaskbar(c)
+	d.drawWorkspaceToast(c)
 	if d.startOpen && d.modal == nil {
 		d.drawStartMenu(c)
 	}
@@ -55,6 +56,9 @@ func (d *Desktop) drawScene(c *ui.Canvas, withCursor bool) {
 		d.drawContext(c)
 	}
 	d.drawNotifications(c)
+	if d.spotlight != nil && d.spotlight.active {
+		d.spotlight.Paint(c)
+	}
 	d.drawFileDrag(c)
 	d.drawSoftKeyboard(c)
 	if withCursor {
@@ -254,6 +258,19 @@ type startEntry struct {
 
 func (d *Desktop) menuEntries() []startEntry {
 	entries := []startEntry{
+		{id: "aoltrial", label: "AOL & Internet 免费试用", icon: ui.IcoOnline, enabled: true, action: func() { d.openAOL(0) }},
+		{id: "aol30", label: "AOL 3.0i（含 Internet Explorer 4.0）", icon: ui.IcoIE, enabled: true, action: func() { d.openAOL(1) }},
+		{id: "aolca", label: "AOL Canada 3.0i（含 IE 4.0）", icon: ui.IcoIE, enabled: true, action: func() { d.openAOL(2) }},
+		{sep: true},
+		{id: "newoffice", label: d.tr("新建 Office 文档(N)"), icon: ui.IcoOffice, enabled: true, action: func() { d.openOffice() }},
+		{id: "openoffice", label: d.tr("打开 Office 文档(O)…"), icon: ui.IcoOffice, enabled: true, action: func() {
+			d.FileDialog(FileOpen, "/root/文档", "", func(path string, ok bool) {
+				if ok {
+					d.openOfficeFile(path)
+				}
+			})
+		}},
+		{sep: true},
 		{id: "prog", label: d.tr("程序(P)"), icon: ui.IcoFolderOpen, enabled: true, children: d.programEntries()},
 		{id: "docs", label: d.tr("文档(D)"), icon: ui.IcoFolder, enabled: true, children: d.documentEntries()},
 		{id: "settings", label: d.tr("设置(S)"), icon: ui.IcoSetup, enabled: true, children: d.settingsEntries()},
@@ -354,7 +371,11 @@ func (d *Desktop) drawStartMenu(c *ui.Canvas) {
 		if hover && e.enabled {
 			col = ui.ColWhite
 		}
-		f.Text(c, ir.X+26, ir.Y+5, e.label, col)
+		avail := ir.W - 26
+		if len(e.children) > 0 {
+			avail -= 16
+		}
+		f.TextClip(c, ir.X+26, ir.Y+5, avail, e.label, col)
 		if len(e.children) > 0 {
 			ac := ui.ColText
 			if hover {
@@ -481,7 +502,24 @@ func (d *Desktop) subEntry(id string) *startEntry {
 
 func (d *Desktop) showAbout() {
 	d.MessageBox("关于 Windows 95 Linux",
-		"Windows 95 Linux 中文版\n版本 26.4 · ARM64 / UEFI\n\nWin95 风格桌面：多语言与设置中心、纸牌、扫雷、三维弹球、\n真正的 3D 体素方块世界、画图、PowerShell、JavaScript 浏览器、\n图片查看器、屏幕键盘、系统更新（OTA）、拖放与截屏（PNG + BMP）、\nOffice 365 全件套（组件按需安装，可随时补装）、苏尔科视觉整活。\nArch Linux ARM glibc 子系统与真实 pacman（清华 TUNA 源），\n可从开始菜单安装并启动官方微信 ARM64 版。\n浏览器支持图片、彩色控件与表单；mcjs.link 的 Minecraft 通过\n嵌套在 Win95 窗口里的 Firefox（Mesa WebGL2）运行。\nX11 嵌套代理用 Xvfb :1 + XGetImage/XTest，在 Win95 窗口里\n直接操作 X11 程序；需要完整桌面时，双击桌面的\n“切换到 XFCE 桌面”交给 Xorg/XFCE，注销后返回 Win95。\n\n"+d.Host.Info,
+		"Windows 95 Linux 中文版\n版本 26.5 · ARM64 / UEFI\n\n"+
+			"经典 Win95 外壳：桌面图标与开始菜单、收件箱、我的公文包、游戏、\n"+
+			"在线服务、AOL/MSN 离线拨号演示、Netscape Navigator 4.8 安装向导。\n"+
+			"极速全盘搜索与聚光灯（Ctrl+Space）、极客系统监视器、\n"+
+			"连接监视器与防火墙、局域网快传、系统级 VNC、宿主机 Z: 映射、\n"+
+			"按键精灵宏录制、DOOM 95 光线投射迷宫、截屏并打码。\n"+
+			"AI 助手：自然语言转 Linux 命令（危险命令二次确认）与赛博义体对话；\n"+
+			"Wine 兼容层可按需安装并运行 Windows 程序。\n"+
+			"多语言与设置中心、纸牌、扫雷、三维弹球、3D 体素方块世界、画图、\n"+
+			"PowerShell、JavaScript 浏览器、图片查看器、屏幕键盘、\n"+
+			"系统更新（OTA）、Office 365 全件套（组件按需安装）、苏尔科视觉整活。\n"+
+			"Arch Linux ARM glibc 子系统与真实 pacman（清华 TUNA 源），\n"+
+			"可从开始菜单安装并启动官方微信 ARM64 版。\n"+
+			"浏览器支持图片、彩色控件与表单；mcjs.link 的 Minecraft 通过\n"+
+			"嵌套在 Win95 窗口里的 Firefox（Mesa WebGL2）运行。\n"+
+			"X11 嵌套代理用 Xvfb :1 + XGetImage/XTest，在 Win95 窗口里\n"+
+			"直接操作 X11 程序；需要完整桌面时，双击桌面的\n"+
+			"“切换到 XFCE 桌面”交给 Xorg/XFCE，注销后返回 Win95。\n\n"+d.Host.Info,
 		IconInfo, []string{"确定"}, nil)
 }
 
@@ -551,6 +589,14 @@ func (d *Desktop) programEntries() []startEntry {
 		{id: "office", label: "Office 365 全件套", icon: ui.IcoOffice, enabled: true, action: func() { d.openOffice() }},
 		{id: "office-setup", label: "Office 组件管理", icon: ui.IcoOffice, enabled: true, action: func() { d.openOfficeSetup("", "", "") }},
 		{sep: true},
+		{id: "inbox", label: "收件箱", icon: ui.IcoMail, enabled: true, action: func() { d.openInbox() }},
+		{id: "briefcase", label: "我的公文包", icon: ui.IcoBriefcase, enabled: true, action: func() { d.openBriefcase() }},
+		{id: "games", label: "游戏", icon: ui.IcoGame, enabled: true, action: func() { d.openGames() }},
+		{id: "online", label: "在线服务", icon: ui.IcoOnline, enabled: true, action: func() { d.openOnlineServices() }},
+		{id: "netscape", label: "Netscape Navigator 4.8", icon: ui.IcoNetscape, enabled: true, action: func() { d.openNetscape() }},
+		{id: "ai", label: "AI 助手（命令 / 赛博义体）", icon: ui.IcoAI, enabled: true, action: func() { d.openAI(0) }},
+		{id: "wine", label: "Wine 兼容层（Windows 程序）", icon: ui.IcoWine, enabled: true, action: func() { d.openWine() }},
+		{sep: true},
 		{id: "notepad", label: d.tr("记事本"), icon: ui.IcoNotepad, enabled: true, action: func() { d.openNotepad("") }},
 		{id: "calc", label: d.tr("计算器"), icon: ui.IcoCalc, enabled: true, action: func() { d.openCalc() }},
 		{id: "calendar", label: d.tr("日历"), icon: ui.IcoCalendar, enabled: true, action: func() { d.openCalendar() }},
@@ -559,6 +605,11 @@ func (d *Desktop) programEntries() []startEntry {
 		{id: "ise", label: "Windows PowerShell ISE", icon: ui.IcoISE, enabled: true, action: func() { d.openISE() }},
 		{id: "files", label: d.tr("文件管理器"), icon: ui.IcoFolder, enabled: true, action: func() { d.openFiles("/root") }},
 		{id: "browser", label: d.tr("网络浏览器"), icon: ui.IcoBrowser, enabled: true, action: func() { d.openBrowser("") }},
+		{id: "netcenter", label: "网络属性", icon: ui.IcoNetwork, enabled: true, action: func() { d.openNetworkCenter(0) }},
+		{id: "netmon", label: "连接监视器与防火墙", icon: ui.IcoShield, enabled: true, action: func() { d.openNetworkCenter(1) }},
+		{id: "lanshare", label: "局域网快传（手机互传）", icon: ui.IcoShare, enabled: true, action: func() { d.openLANShare() }},
+		{id: "vnc", label: "系统级 VNC 服务器", icon: ui.IcoVNC, enabled: true, action: func() { d.openVNCServer() }},
+		{id: "macro", label: "按键精灵（宏录制）", icon: ui.IcoMacro, enabled: true, action: func() { d.openMacro() }},
 		{id: "taskmgr", label: d.tr("任务管理器"), icon: ui.IcoComputer, enabled: true, action: func() { d.openTaskManager() }},
 		{id: "regedit", label: d.tr("注册表编辑器"), icon: ui.IcoSetup, enabled: true, action: func() { d.openRegistryEditor() }},
 		{id: "x11proxy", label: "X11 嵌套代理", icon: ui.IcoComputer, enabled: true, action: func() { d.openX11Proxy("") }},
@@ -569,6 +620,7 @@ func (d *Desktop) programEntries() []startEntry {
 		{id: "mines", label: d.tr("扫雷"), icon: ui.IcoMine, enabled: true, action: func() { d.openMines() }},
 		{id: "blockworld", label: d.tr("方块世界 95"), icon: ui.IcoGame, enabled: true, action: func() { d.openBlockWorld() }},
 		{id: "pinball", label: d.tr("三维弹球"), icon: ui.IcoGame, enabled: true, action: func() { d.openPinball() }},
+		{id: "doom", label: "DOOM 95（光线投射）", icon: ui.IcoMaze, enabled: true, action: func() { d.openDoom() }},
 		{id: "paint", label: d.tr("画图"), icon: ui.IcoPaint, enabled: true, action: func() { d.openPaint() }},
 		{id: "imgview", label: d.tr("图片查看器"), icon: ui.IcoImage, enabled: true, action: func() { d.openImageViewer("") }},
 		{sep: true},
@@ -617,7 +669,7 @@ func (d *Desktop) settingsEntries() []startEntry {
 		{id: "office-setup", label: "Office 组件管理", icon: ui.IcoOffice, enabled: true, action: func() { d.openOfficeSetup("", "", "") }},
 		{id: "about", label: d.tr("关于本机"), icon: ui.IcoInfo, enabled: true, action: func() { d.showAbout() }},
 		{id: "display", label: d.tr("显示属性(D)"), icon: ui.IcoComputer, enabled: true, action: func() { d.openDisplayProperties() }},
-		{id: "shot", label: "截屏(S)  Print Screen", icon: ui.IcoComputer, enabled: true, action: func() { d.takeScreenshot() }},
+		{id: "shot", label: "截屏并打开画图(S)  Print Screen", icon: ui.IcoComputer, enabled: true, action: func() { d.printScreenToPaint() }},
 		{id: "osk", label: d.tr("屏幕键盘") + "  Ctrl+Alt+K", icon: ui.IcoKeyboard, enabled: true, action: func() { d.toggleSoftKeyboard() }},
 		{id: "pkgman", label: "添加/删除软件", icon: ui.IcoPackage, enabled: true, action: func() { d.openPkgMan() }},
 		{id: "ota", label: "Windows 更新", icon: ui.IcoPackage, enabled: true, action: func() { d.openOTA() }},
