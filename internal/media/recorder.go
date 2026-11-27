@@ -1,6 +1,7 @@
 package media
 
 import (
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"os"
@@ -40,16 +41,20 @@ type RecorderConfig struct {
 }
 
 type Recorder struct {
-	mu            sync.Mutex
-	config        RecorderConfig
-	process       Process
-	output        string
-	started       time.Time
-	stopRequested bool
-	finished      bool
-	result        error
-	finishedCh    chan struct{}
-	logFile       *os.File
+	mu               sync.Mutex
+	generation       uint64
+	config           RecorderConfig
+	process          Process
+	output           string
+	started          time.Time
+	stopRequested    bool
+	forceKilled      bool
+	finished         bool
+	result           error
+	finishedCh       chan struct{}
+	logFile          *os.File
+	interruptTimeout time.Duration
+	terminateTimeout time.Duration
 }
 
 func NewRecorder(config RecorderConfig) (*Recorder, error) {
@@ -90,7 +95,7 @@ func NewRecorder(config RecorderConfig) (*Recorder, error) {
 	if config.Start == nil {
 		config.Start = startProcess
 	}
-	return &Recorder{config: config}, nil
+	return &Recorder{config: config, interruptTimeout: 3 * time.Second, terminateTimeout: 2 * time.Second}, nil
 }
 
 func (r *Recorder) Start() error {
@@ -155,10 +160,12 @@ func (r *Recorder) Start() error {
 		_ = os.Remove(output)
 		return fmt.Errorf("cannot start ffmpeg: %w", err)
 	}
+	r.generation++
 	r.process = process
 	r.output = output
 	r.started = r.config.Now()
 	r.stopRequested = false
+	r.forceKilled = false
 	r.finished = false
 	r.result = nil
 	r.finishedCh = make(chan struct{})
@@ -172,7 +179,10 @@ func (r *Recorder) wait(process Process) {
 	valid := validMP4(r.output)
 	r.mu.Lock()
 	stopping := r.stopRequested
-	if !valid {
+	forceKilled := r.forceKilled
+	if forceKilled {
+		r.result = errors.New("ffmpeg was force-killed; recording is incomplete")
+	} else if !valid {
 		r.result = errors.New("ffmpeg did not produce a valid MP4 file")
 	} else if err != nil && !stopping {
 		r.result = fmt.Errorf("ffmpeg exited: %w", err)
@@ -197,21 +207,43 @@ func (r *Recorder) Stop() {
 	r.stopRequested = true
 	process := r.process
 	finishedCh := r.finishedCh
+	generation := r.generation
 	r.mu.Unlock()
 	_ = process.Signal(syscall.SIGINT)
 	go func() {
+		current := func() bool {
+			r.mu.Lock()
+			defer r.mu.Unlock()
+			return r.generation == generation && !r.finished
+		}
 		select {
 		case <-finishedCh:
 			return
-		case <-time.After(3 * time.Second):
+		case <-time.After(r.interruptTimeout):
+		}
+		if !current() {
+			return
 		}
 		_ = process.Signal(syscall.SIGTERM)
 		select {
 		case <-finishedCh:
 			return
-		case <-time.After(2 * time.Second):
+		case <-time.After(r.terminateTimeout):
 		}
-		_ = process.Signal(syscall.SIGKILL)
+		r.mu.Lock()
+		if r.generation != generation || r.finished {
+			r.mu.Unlock()
+			return
+		}
+		r.forceKilled = true
+		r.mu.Unlock()
+		if err := process.Signal(syscall.SIGKILL); err != nil {
+			r.mu.Lock()
+			if r.generation == generation {
+				r.forceKilled = false
+			}
+			r.mu.Unlock()
+		}
 	}()
 }
 
@@ -354,9 +386,46 @@ func validMP4(path string) bool {
 		return false
 	}
 	defer file.Close()
-	var header [12]byte
-	n, err := file.Read(header[:])
-	return err == nil && n == len(header) && string(header[4:8]) == "ftyp"
+	info, err := file.Stat()
+	if err != nil || !info.Mode().IsRegular() || info.Size() < 8 {
+		return false
+	}
+	var ftyp, moov, mdat bool
+	for offset := int64(0); offset < info.Size(); {
+		var header [8]byte
+		n, err := file.ReadAt(header[:], offset)
+		if err != nil || n != len(header) {
+			return false
+		}
+		size32 := binary.BigEndian.Uint32(header[:4])
+		boxSize := uint64(size32)
+		headerSize := uint64(len(header))
+		if size32 == 1 {
+			var extended [8]byte
+			n, err = file.ReadAt(extended[:], offset+8)
+			if err != nil || n != len(extended) {
+				return false
+			}
+			boxSize = binary.BigEndian.Uint64(extended[:])
+			headerSize += uint64(len(extended))
+		} else if size32 == 0 {
+			boxSize = uint64(info.Size() - offset)
+		}
+		remaining := uint64(info.Size() - offset)
+		if boxSize < headerSize || boxSize > remaining {
+			return false
+		}
+		switch string(header[4:8]) {
+		case "ftyp":
+			ftyp = boxSize > headerSize
+		case "moov":
+			moov = boxSize > headerSize
+		case "mdat":
+			mdat = boxSize > headerSize
+		}
+		offset += int64(boxSize)
+	}
+	return ftyp && moov && mdat
 }
 
 func freeSpace(path string) (uint64, error) {

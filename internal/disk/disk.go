@@ -15,16 +15,19 @@ type Option interface {
 
 type options struct {
 	allowRegularFile bool
+	expectedDeviceID string
 }
 
-// Options is the explicit regular-file escape hatch intended for synthetic
-// test images. It must not be enabled for production disk operations.
+// Options configures an edit operation. AllowRegularFile is a test-only escape
+// hatch; ExpectedDeviceID binds preflight validation to the opened device.
 type Options struct {
 	AllowRegularFile bool
+	ExpectedDeviceID string
 }
 
 func (o Options) apply(dst *options) {
 	dst.allowRegularFile = o.AllowRegularFile
+	dst.expectedDeviceID = o.ExpectedDeviceID
 }
 
 type allowRegularFileOption struct{}
@@ -142,6 +145,15 @@ func openEditable(path string, opts []Option) (*os.File, error) {
 	} else if !isBlockDevice(openedInfo.Mode()) {
 		f.Close()
 		return nil, fmt.Errorf("%q is not a block device or regular file", resolved)
+	}
+	openedID, err := openedDeviceID(f)
+	if err != nil {
+		f.Close()
+		return nil, fmt.Errorf("identify opened device: %w", err)
+	}
+	if cfg.expectedDeviceID != "" && openedID != cfg.expectedDeviceID {
+		f.Close()
+		return nil, fmt.Errorf("device changed after validation: expected %s, opened %s", cfg.expectedDeviceID, openedID)
 	}
 	return f, nil
 }

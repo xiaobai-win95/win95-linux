@@ -488,6 +488,72 @@ func TestMBRInspectEditBackupRestore(t *testing.T) {
 	}
 }
 
+func TestRestoreRejectsDifferentPartitionTableWithoutWrites(t *testing.T) {
+	gptPath := newGPTImage(t, nil)
+	mbrPath := newMBRImage(t)
+	gptBackup, err := BackupTable(gptPath, filepath.Join(t.TempDir(), "gpt.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	mbrBackup, err := BackupTable(mbrPath, filepath.Join(t.TempDir(), "mbr.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	metadata := func(path string) []byte {
+		data := readTestAt(t, path, 0, 34*SectorSize)
+		return append(data, readTestAt(t, path, int64((testDiskSectors-33)*SectorSize), 33*SectorSize)...)
+	}
+	beforeGPT := metadata(gptPath)
+	if err := RestoreTable(gptPath, mbrBackup, AllowRegularFile()); err == nil || !strings.Contains(err.Error(), "cannot restore mbr") {
+		t.Fatalf("MBR-to-GPT restore error = %v", err)
+	}
+	if after := metadata(gptPath); !bytes.Equal(after, beforeGPT) {
+		t.Fatal("rejected MBR-to-GPT restore changed GPT metadata")
+	}
+	beforeMBR := metadata(mbrPath)
+	if err := RestoreTable(mbrPath, gptBackup, AllowRegularFile()); err == nil || !strings.Contains(err.Error(), "cannot restore gpt") {
+		t.Fatalf("GPT-to-MBR restore error = %v", err)
+	}
+	if after := metadata(mbrPath); !bytes.Equal(after, beforeMBR) {
+		t.Fatal("rejected GPT-to-MBR restore changed destination metadata")
+	}
+	damagedGPT := newGPTImage(t, nil)
+	writeTestAt(t, mustOpenTest(t, damagedGPT), make([]byte, 34*SectorSize), 0)
+	beforeDamaged := metadata(damagedGPT)
+	if err := RestoreTable(damagedGPT, mbrBackup, AllowRegularFile()); err == nil || !strings.Contains(err.Error(), "cannot restore mbr") {
+		t.Fatalf("MBR restore with only backup GPT remaining error = %v", err)
+	}
+	if after := metadata(damagedGPT); !bytes.Equal(after, beforeDamaged) {
+		t.Fatal("rejected restore changed surviving backup GPT metadata")
+	}
+}
+
+func TestEditsRejectChangedDeviceIdentity(t *testing.T) {
+	path := newGPTImage(t, nil)
+	before := readTestAt(t, path, 0, 34*SectorSize)
+	err := CreatePartition(path, PartitionSpec{TypeGUID: TypeLinuxData, StartSector: 2048, SizeSectors: 2048}, Options{
+		AllowRegularFile: true,
+		ExpectedDeviceID: "8:16",
+	})
+	if err == nil || !strings.Contains(err.Error(), "device changed after validation") {
+		t.Fatalf("expected-device error = %v", err)
+	}
+	if after := readTestAt(t, path, 0, 34*SectorSize); !bytes.Equal(after, before) {
+		t.Fatal("rejected device identity changed the image")
+	}
+	backup, err := BackupTable(path, filepath.Join(t.TempDir(), "backup.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = RestoreTable(path, backup, Options{AllowRegularFile: true, ExpectedDeviceID: "8:16"})
+	if err == nil || !strings.Contains(err.Error(), "device changed after validation") {
+		t.Fatalf("restore expected-device error = %v", err)
+	}
+	if after := readTestAt(t, path, 0, 34*SectorSize); !bytes.Equal(after, before) {
+		t.Fatal("identity-rejected restore changed the image")
+	}
+}
+
 func TestEditsRequireExplicitRegularFileOption(t *testing.T) {
 	path := newGPTImage(t, []testPartition{{number: 1, name: "DATA", typeID: TypeLinuxData, start: 2048, end: 6143}})
 	backup, err := BackupTable(path, filepath.Join(t.TempDir(), "backup.json"))

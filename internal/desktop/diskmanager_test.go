@@ -118,6 +118,11 @@ func TestDiskGeometryAndPartitionGuards(t *testing.T) {
 	if sameDiskGeometry(want, &got) {
 		t.Fatal("changed geometry accepted")
 	}
+	got = *want
+	got.DeviceID = "8:16"
+	if sameDiskGeometry(want, &got) {
+		t.Fatal("replaced device with identical geometry accepted")
+	}
 	p := disk.Partition{Number: 2, Table: disk.TableGPT, StartSector: 2048, EndSector: 4095, SectorSize: 512}
 	p2 := p
 	if !sameDiskPartition(&p, &p2) {

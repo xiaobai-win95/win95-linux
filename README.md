@@ -20,7 +20,7 @@ shasum -a 256 -c win95-installer-aarch64.img.sha256
 镜像 SHA-256（随 v26.6 Release 上传）：
 
 ```
-c10aedc9726ad1511243bb99847cf50f7f5916bdb10cd7724aed4e6bdbc26967
+701299dac4c5282128cbd156f28d16bc1ea0b717f1e8b568b259adabaa9c080a
 ```
 
 > 这是**磁盘镜像**，不是 ISO，不要挂到“CD/DVD”上。必须作为 UTM 的硬盘设备导入。

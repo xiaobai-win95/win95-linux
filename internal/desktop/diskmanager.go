@@ -667,8 +667,8 @@ func detectDiskFilesystem(path string) string {
 }
 
 func sameDiskGeometry(want, got *disk.Device) bool {
-	return want != nil && got != nil && want.Size == got.Size && want.SectorSize == got.SectorSize &&
-		want.TotalSectors == got.TotalSectors && want.Table == got.Table
+	return want != nil && got != nil && want.DeviceID == got.DeviceID && want.Size == got.Size &&
+		want.SectorSize == got.SectorSize && want.TotalSectors == got.TotalSectors && want.Table == got.Table
 }
 
 func sameDiskPartition(want, got *disk.Partition) bool {
@@ -757,20 +757,21 @@ func findDesktopPartition(dev *disk.Device, number int) (disk.Partition, bool) {
 }
 
 func executeDiskOperation(op diskManagerOp, target diskOperationTarget) error {
+	opts := []disk.Option{disk.Options{ExpectedDeviceID: target.device.DeviceID}}
 	switch op {
 	case diskManagerCreate:
-		return disk.CreatePartition(target.path, target.spec)
+		return disk.CreatePartition(target.path, target.spec, opts...)
 	case diskManagerDelete:
-		return disk.DeletePartition(target.path, target.partition.Number)
+		return disk.DeletePartition(target.path, target.partition.Number, opts...)
 	case diskManagerResize:
-		return disk.ResizePartition(target.path, target.partition.Number, target.spec.EndSector)
+		return disk.ResizePartition(target.path, target.partition.Number, target.spec.EndSector, opts...)
 	case diskManagerFormat:
-		return disk.FormatPartition(target.path, target.partition.Number, target.filesystem)
+		return disk.FormatPartition(target.path, target.partition.Number, target.filesystem, opts...)
 	case diskManagerBackup:
 		_, err := disk.BackupTable(target.path, target.backupPath)
 		return err
 	case diskManagerRestore:
-		return disk.RestoreTable(target.path, target.backup)
+		return disk.RestoreTable(target.path, target.backup, opts...)
 	default:
 		return errors.New("未知磁盘操作")
 	}

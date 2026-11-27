@@ -11,10 +11,10 @@ import (
 	"strings"
 )
 
-// FormatPartition initializes an existing partition with ext4 or FAT. Only the
-// exact partition device is passed to mkfs, as an absolute resolved path and a
-// single argument (never through a shell). Formatting synthetic regular-file
-// images is deliberately unsupported.
+// FormatPartition initializes an existing partition with ext4 or FAT. The
+// validated partition file descriptor is inherited by mkfs, preventing a path
+// replacement between validation and formatting. Synthetic regular-file images
+// are deliberately unsupported.
 func FormatPartition(path string, number int, fs string, opts ...Option) error {
 	filesystem := strings.ToLower(strings.TrimSpace(fs))
 	var toolName string
@@ -57,9 +57,13 @@ func FormatPartition(path string, number int, fs string, opts ...Option) error {
 	if err != nil {
 		return fmt.Errorf("resolve partition %d (the kernel may need to rescan the table): %w", number, err)
 	}
-	partitionInfo, err := validatePartitionNode(loaded.device.Path, partitionPath, partition.Bytes())
+	partitionFile, partitionInfo, err := validatePartitionNode(f, partitionPath, partition.Bytes())
 	if err != nil {
 		return err
+	}
+	defer partitionFile.Close()
+	if err := validatePartitionIdentity(f, partitionFile, partition); err != nil {
+		return fmt.Errorf("validate partition identity: %w", err)
 	}
 	mounted, err := partitionMounted(partitionPath, partitionInfo)
 	if err != nil {
@@ -83,11 +87,12 @@ func FormatPartition(path string, number int, fs string, opts ...Option) error {
 	if !toolInfo.Mode().IsRegular() || toolInfo.Mode().Perm()&0o111 == 0 {
 		return fmt.Errorf("%s is not an executable regular file", toolPath)
 	}
-	args = append(args, partitionPath)
+	args = append(args, partitionFDPath())
 	if filesystem == "ext4" {
 		args = append([]string{"-F"}, args...)
 	}
 	command := exec.Command(toolPath, args...)
+	command.ExtraFiles = []*os.File{partitionFile}
 	var output limitedOutput
 	command.Stdout = &output
 	command.Stderr = &output
@@ -120,34 +125,45 @@ func partitionDevicePath(diskPath string, number int) (string, error) {
 	}
 }
 
-func validatePartitionNode(diskPath, partitionPath string, expectedBytes uint64) (os.FileInfo, error) {
-	diskInfo, err := os.Stat(diskPath)
+func validatePartitionNode(diskFile *os.File, partitionPath string, expectedBytes uint64) (*os.File, os.FileInfo, error) {
+	diskInfo, err := diskFile.Stat()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	f, err := os.OpenFile(partitionPath, os.O_RDWR, 0)
 	if err != nil {
-		return nil, fmt.Errorf("open partition %s for writing: %w", partitionPath, err)
+		return nil, nil, fmt.Errorf("open partition %s for writing: %w", partitionPath, err)
 	}
-	defer f.Close()
 	info, err := f.Stat()
 	if err != nil {
-		return nil, err
+		f.Close()
+		return nil, nil, err
 	}
 	if !isBlockDevice(info.Mode()) {
-		return nil, fmt.Errorf("partition path %s is not a block device", partitionPath)
+		f.Close()
+		return nil, nil, fmt.Errorf("partition path %s is not a block device", partitionPath)
 	}
 	if os.SameFile(diskInfo, info) {
-		return nil, fmt.Errorf("refusing to format whole disk %s as a partition", partitionPath)
+		f.Close()
+		return nil, nil, fmt.Errorf("refusing to format whole disk %s as a partition", partitionPath)
 	}
 	size, _, err := deviceGeometry(f, info.Mode())
 	if err != nil {
-		return nil, fmt.Errorf("get partition size: %w", err)
+		f.Close()
+		return nil, nil, fmt.Errorf("get partition size: %w", err)
 	}
 	if size != expectedBytes {
-		return nil, fmt.Errorf("partition %s has %d bytes, table expects %d", partitionPath, size, expectedBytes)
+		f.Close()
+		return nil, nil, fmt.Errorf("partition %s has %d bytes, table expects %d", partitionPath, size, expectedBytes)
 	}
-	return info, nil
+	return f, info, nil
+}
+
+func partitionFDPath() string {
+	if runtime.GOOS == "darwin" {
+		return "/dev/fd/3"
+	}
+	return "/proc/self/fd/3"
 }
 
 func partitionMounted(path string, info os.FileInfo) (bool, error) {

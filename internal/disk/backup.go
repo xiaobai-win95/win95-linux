@@ -1,6 +1,7 @@
 package disk
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -100,6 +101,13 @@ func RestoreTable(path string, backup Backup, opts ...Option) error {
 	if totalSectors != snapshot.device.TotalSectors {
 		return fmt.Errorf("backup has %d sectors but destination has %d", snapshot.device.TotalSectors, totalSectors)
 	}
+	destinationTable, err := inspectDestinationTable(f, sectorSize, totalSectors)
+	if err != nil {
+		return err
+	}
+	if destinationTable != "" && destinationTable != snapshot.device.Table {
+		return fmt.Errorf("cannot restore %s partition table to a %s disk", snapshot.device.Table, destinationTable)
+	}
 	if snapshot.gpt != nil {
 		if err := snapshot.gpt.write(f); err != nil {
 			return fmt.Errorf("restore GPT: %w", err)
@@ -116,6 +124,42 @@ func RestoreTable(path string, backup Backup, opts ...Option) error {
 		return fmt.Errorf("sync restored table: %w", err)
 	}
 	return nil
+}
+
+func inspectDestinationTable(f *os.File, sectorSize uint32, totalSectors uint64) (string, error) {
+	var sectors [2][]byte
+	for i := range sectors {
+		buf := make([]byte, int(sectorSize))
+		n, err := f.ReadAt(buf, int64(i)*int64(sectorSize))
+		if err != nil && n != len(buf) {
+			return "", fmt.Errorf("cannot inspect destination partition table: %w", err)
+		}
+		sectors[i] = buf
+	}
+	if string(sectors[1][:8]) == "EFI PART" {
+		return TableGPT, nil
+	}
+	if totalSectors > 0 {
+		last, err := readSector(f, sectorSize, totalSectors-1)
+		if err != nil {
+			return "", fmt.Errorf("cannot inspect backup partition table: %w", err)
+		}
+		if string(last[:8]) == "EFI PART" {
+			return TableGPT, nil
+		}
+	}
+	if bytes.Equal(sectors[0], make([]byte, int(sectorSize))) && bytes.Equal(sectors[1], make([]byte, int(sectorSize))) {
+		return "", nil
+	}
+	for i := 0; i < 4; i++ {
+		if sectors[0][mbrEntryOff+i*16+4] == 0xee {
+			return TableGPT, nil
+		}
+	}
+	if little16(sectors[0][510:512]) == mbrSignature {
+		return TableMBR, nil
+	}
+	return "", errors.New("cannot determine destination partition table")
 }
 
 func validateBackup(backup Backup) (*loadedDevice, error) {

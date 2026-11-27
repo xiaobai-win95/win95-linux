@@ -3,6 +3,7 @@
 package disk
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"syscall"
@@ -51,4 +52,8 @@ func openedDeviceID(f *os.File) (string, error) {
 	major := (rdev >> 24) & 0xff
 	minor := rdev & 0xffffff
 	return fmt.Sprintf("%d:%d", major, minor), nil
+}
+
+func validatePartitionIdentity(diskFile, partitionFile *os.File, partition Partition) error {
+	return errors.New("safe partition formatting is only supported on linux")
 }
