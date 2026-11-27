@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"win95linux/internal/media"
 	"win95linux/internal/ui"
 )
 
@@ -22,6 +23,8 @@ func (d *Desktop) openFileDefault(path string) {
 		d.openBrowser("file://" + path)
 	case ext == ".png" || ext == ".bmp" || ext == ".jpg" || ext == ".jpeg" || ext == ".gif":
 		d.openImageViewer(path)
+	case media.IsMediaFile(path):
+		d.openMediaFile(path)
 	case ext == ".sh":
 		d.runScript(path, "/bin/sh")
 	case ext == ".bash":

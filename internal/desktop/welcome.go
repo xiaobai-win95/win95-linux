@@ -65,7 +65,7 @@ func (a *welcomeApp) Paint(d *Desktop, w *Window, c *ui.Canvas, client ui.Rect) 
 	f.Text(c, client.X+56, client.Y+52, "接受后本协议不会再次弹出；拒绝则下次启动仍会显示。", 0xB0C8E0)
 
 	// Read-only license text.
-	c.FillRect(a.textR, ui.ColWhite)
+	c.FillRect(a.textR, ui.ColField)
 	c.Sunken(a.textR)
 	for i := a.scroll.Pos; i < len(a.lines) && i < a.scroll.Pos+a.scroll.Visible; i++ {
 		y := a.textR.Y + 4 + (i-a.scroll.Pos)*welcomeLineH

@@ -10,29 +10,33 @@ import (
 )
 
 func (d *Desktop) openWeChat() {
+	if _, err := os.Stat("/usr/bin/win95-wechat-install"); err != nil {
+		d.MessageBox("微信", "当前镜像缺少微信安装分流组件（需要 v26.6 或更新）。", IconError, []string{"确定"}, nil)
+		return
+	}
 	if _, err := os.Stat("/usr/bin/win95-wechat"); err != nil {
-		d.MessageBox("微信", "当前镜像缺少微信启动组件（需要 v26.5 或更新）。", IconError, []string{"确定"}, nil)
+		d.MessageBox("微信", "当前镜像缺少 Arch 微信启动组件（需要 v26.6 或更新）。", IconError, []string{"确定"}, nil)
 		return
 	}
 	d.MessageBox("微信 WeChat",
-		"微信会运行在 Win95 窗口内的 X11 嵌套代理中；需要完整桌面时，\n"+
-			"可以双击桌面的“切换到 XFCE 桌面”，注销后返回 Win95。\n\n"+
-			"首次使用需要联网安装以下内容：\n\n"+
-			"· Arch Linux ARM glibc 子系统（约 800MB）\n"+
-			"· Mesa 图形运行库（约 200MB）\n"+
-			"· 微信官方 ARM64 安装包（约 200MB）\n"+
-			"· X11 代理组件（Xvfb 等，首次也会自动安装）\n\n"+
-			"至少需要 5GB 可用磁盘空间。安装期间 Win95 桌面仍可使用，\n"+
-			"进度会显示在“安装进度”窗口中，完成后微信会出现在 X11 代理窗口里。",
-		IconQuestion, []string{"继续", "取消"}, func(i int) {
-			if i != 0 {
+		"请选择微信安装方式。两种方式都会真实安装并启动，\n"+
+			"运行在 Win95 窗口内的 X11 嵌套代理中。\n\n"+
+			"· Wine 版：官方 Windows 4.2.1 x64，使用源码构建的 Box64\n"+
+			"  和独立 x86_64 Wine 11 子系统，首次约需 4GB 空间。\n"+
+			"· Arch 原生版：官方 ARM64 微信与 Arch Linux ARM，\n"+
+			"  首次约需 5GB 空间。\n"+
+			"· 两者都装：依次安装两条独立路线，首次约需 9GB 空间；\n"+
+			"  任一路失败都不会报告总成功。\n\n"+
+			"安装期间桌面仍可使用。Windows 安装器需要操作时，\n"+
+			"请关闭进度窗口并在 X11 代理中完成安装。",
+		IconQuestion, []string{"Wine 版", "Arch 原生版", "两者都装", "取消"}, func(i int) {
+			route, ok := wechatRouteForChoice(i)
+			if !ok {
 				return
 			}
-			if _, err := os.Stat("/opt/archlinux/opt/wechat/.win95-ok"); err != nil {
-				d.openInstallStatus("微信安装")
-			}
-			d.openX11Proxy("win95-wechat")
-			d.Notify("微信", "将在 X11 嵌套代理中安装并启动；完整桌面可用“切换到 XFCE 桌面”。")
+			d.openInstallStatus("微信安装")
+			d.openX11ProxyArgs("/usr/bin/win95-wechat-install", []string{route})
+			d.Notify("微信", "正在按所选路线安装并启动微信，进度见“安装进度”窗口。")
 		})
 }
 

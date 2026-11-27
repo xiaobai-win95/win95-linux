@@ -307,7 +307,7 @@ func (a *InstallerApp) Paint(d *Desktop, w *Window, c *ui.Canvas, client ui.Rect
 			y += 18
 		}
 		ui.GroupBox(c, ui.Rect{x0, client.Y + 88, right - x0, 180}, "目标磁盘(T)")
-		c.FillRect(a.listR, ui.ColWhite)
+		c.FillRect(a.listR, ui.ColField)
 		c.Sunken(a.listR)
 		a.paintDiskList(c, f)
 		scrollR := ui.Rect{a.listR.Right() - 15, a.listR.Y + 1, 14, a.listR.H - 2}
@@ -352,7 +352,7 @@ func (a *InstallerApp) Paint(d *Desktop, w *Window, c *ui.Canvas, client ui.Rect
 			f.TextRight(c, right, client.Y+70, fmt.Sprintf("%d%%", a.pct), ui.ColText)
 		}
 		logR := ui.Rect{x0, client.Y + 104, right - x0, client.Bottom() - client.Y - 124}
-		c.FillRect(logR, ui.ColWhite)
+		c.FillRect(logR, ui.ColField)
 		c.Sunken(logR)
 		a.paintLog(c, f, logR, 6)
 	case instDone:
@@ -375,7 +375,7 @@ func (a *InstallerApp) Paint(d *Desktop, w *Window, c *ui.Canvas, client ui.Rect
 		}
 		logR := ui.Rect{x0, y + 6, right - x0, client.Bottom() - y - 56}
 		if logR.H > 20 {
-			c.FillRect(logR, ui.ColWhite)
+			c.FillRect(logR, ui.ColField)
 			c.Sunken(logR)
 			a.paintLog(c, f, logR, 6)
 		}
@@ -390,7 +390,7 @@ func (a *InstallerApp) Paint(d *Desktop, w *Window, c *ui.Canvas, client ui.Rect
 		}
 		logR := ui.Rect{x0, y + 8, right - x0, client.Bottom() - y - 56}
 		if logR.H > 20 {
-			c.FillRect(logR, ui.ColWhite)
+			c.FillRect(logR, ui.ColField)
 			c.Sunken(logR)
 			a.paintLog(c, f, logR, 6)
 		}

@@ -205,7 +205,6 @@ func (s *x11Session) ensureWM() {
 		"DISPLAY="+x11Display,
 		"HOME=/root",
 		"XDG_RUNTIME_DIR=/run/user/0",
-		"LANG=zh_CN.UTF-8",
 	)
 	if s.busAddr != "" {
 		env = append(env, "DBUS_SESSION_BUS_ADDRESS="+s.busAddr)
@@ -249,7 +248,6 @@ func (s *x11Session) ensureIM() {
 		"DISPLAY="+x11Display,
 		"HOME=/root",
 		"XDG_RUNTIME_DIR=/run/user/0",
-		"LANG=zh_CN.UTF-8",
 		"XMODIFIERS=@im=fcitx",
 		"GTK_IM_MODULE=fcitx",
 		"QT_IM_MODULE=fcitx",
@@ -601,9 +599,19 @@ var x11NamedKeysyms = map[string]xproto.Keysym{
 
 // Launch starts an X11 application on :1, detached from the Win95 process.
 func (s *x11Session) Launch(app string, extra ...string) error {
+	cmd, err := s.LaunchProcess(app, extra...)
+	if err != nil {
+		return err
+	}
+	_ = cmd.Process.Release()
+	return nil
+}
+
+// LaunchProcess starts an X11 application and leaves process ownership to the caller.
+func (s *x11Session) LaunchProcess(app string, extra ...string) (*exec.Cmd, error) {
 	exe, err := exec.LookPath(app)
 	if err != nil {
-		return &x11AppMissingError{name: app}
+		return nil, &x11AppMissingError{name: app}
 	}
 	s.ensureWM()
 	s.ensureIM()
@@ -619,10 +627,10 @@ func (s *x11Session) Launch(app string, extra ...string) error {
 		"XDG_RUNTIME_DIR=/run/user/0",
 		"XDG_SESSION_TYPE=x11",
 		"PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
-		"LANG=zh_CN.UTF-8",
-		"LANGUAGE=zh_CN:zh",
 		"LIBGL_ALWAYS_SOFTWARE=1",
 		"GALLIUM_DRIVER=llvmpipe",
+		"SDL_VIDEODRIVER=x11",
+		"SDL_AUDIODRIVER=alsa",
 		"MOZ_DISABLE_CONTENT_SANDBOX=1",
 		"MOZ_ENABLE_WAYLAND=0",
 		"XMODIFIERS=@im=fcitx",
@@ -646,11 +654,10 @@ func (s *x11Session) Launch(app string, extra ...string) error {
 		if logFile != nil {
 			logFile.Close()
 		}
-		return err
+		return nil, err
 	}
-	_ = cmd.Process.Release()
 	if logFile != nil {
-		logFile.Close()
+		_ = logFile.Close()
 	}
-	return nil
+	return cmd, nil
 }

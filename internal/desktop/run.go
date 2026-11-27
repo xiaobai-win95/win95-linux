@@ -48,7 +48,7 @@ func (a *RunDialogApp) Paint(d *Desktop, w *Window, c *ui.Canvas, r ui.Rect) {
 	}
 	f.Text(c, r.X+16, r.Y+66, "打开(O):", ui.ColText)
 	a.fieldR = ui.Rect{r.X + 16, r.Y + 84, r.W - 32, 26}
-	c.FillRect(a.fieldR, ui.ColWhite)
+	c.FillRect(a.fieldR, ui.ColField)
 	c.Sunken(a.fieldR)
 	f.TextClip(c, a.fieldR.X+5, a.fieldR.Y+5, a.fieldR.W-10, string(a.value), ui.ColText)
 	before := string(a.value[:a.caret])

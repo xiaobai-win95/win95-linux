@@ -72,9 +72,16 @@ func (d *Desktop) FileDialog(mode FileMode, dir, name string, cb func(string, bo
 
 func (a *FileDialogApp) Title() string {
 	if a.mode == FileSave {
-		return "另存为"
+		return a.d.tr("另存为")
 	}
-	return "打开"
+	return a.d.tr("打开")
+}
+
+func (a *FileDialogApp) okLabel() string {
+	if a.mode == FileSave {
+		return a.d.tr("保存")
+	}
+	return a.d.tr("打开")
 }
 
 func (a *FileDialogApp) Icon() ui.IconKind       { return ui.IcoFolder }
@@ -86,7 +93,7 @@ func (a *FileDialogApp) load() {
 	a.entries = nil
 	ents, err := os.ReadDir(a.dir)
 	if err != nil {
-		a.err = "无法读取文件夹: " + err.Error()
+		a.err = a.d.tr("无法读取文件夹: ") + err.Error()
 		return
 	}
 	for _, e := range ents {
@@ -116,17 +123,17 @@ func (a *FileDialogApp) Paint(d *Desktop, w *Window, c *ui.Canvas, r ui.Rect) {
 	f := ui.DefaultFont()
 
 	// Location row.
-	f.Text(c, r.X+8, r.Y+9, "位置:", ui.ColText)
+	f.Text(c, r.X+8, r.Y+9, d.tr("位置:"), ui.ColText)
 	pathR := ui.Rect{r.X + 46, r.Y + 6, r.W - 46 - 90, 24}
-	c.FillRect(pathR, ui.ColWhite)
+	c.FillRect(pathR, ui.ColField)
 	c.Sunken(pathR)
 	f.TextClip(c, pathR.X+5, pathR.Y+4, pathR.W-10, a.dir, ui.ColText)
 	a.upR = ui.Rect{r.Right() - 78, r.Y + 6, 70, 24}
-	ui.Button(c, a.upR, "上一级", a.press == "up", a.dir != "/")
+	ui.Button(c, a.upR, d.tr("上一级"), a.press == "up", a.dir != "/")
 
 	// File list.
 	a.listR = ui.Rect{r.X + 8, r.Y + 38, r.W - 16, r.Bottom() - r.Y - 38 - 72}
-	c.FillRect(a.listR, ui.ColWhite)
+	c.FillRect(a.listR, ui.ColField)
 	c.Sunken(a.listR)
 	inner := a.listR.Inset(2)
 	scrollW := 16
@@ -137,9 +144,9 @@ func (a *FileDialogApp) Paint(d *Desktop, w *Window, c *ui.Canvas, r ui.Rect) {
 	headH := 20
 	c.FillRect(ui.Rect{inner.X, inner.Y, inner.W - scrollW, headH}, ui.ColFace)
 	c.HLine(inner.X, inner.Y+headH-1, inner.W-scrollW, ui.ColShadow)
-	f.Text(c, inner.X+5, inner.Y+3, "名称", ui.ColText)
-	f.Text(c, inner.X+nameW, inner.Y+3, "大小", ui.ColText)
-	f.Text(c, inner.X+nameW+90, inner.Y+3, "修改时间", ui.ColText)
+	f.Text(c, inner.X+5, inner.Y+3, d.tr("名称"), ui.ColText)
+	f.Text(c, inner.X+nameW, inner.Y+3, d.tr("大小"), ui.ColText)
+	f.Text(c, inner.X+nameW+90, inner.Y+3, d.tr("修改时间"), ui.ColText)
 	rows := (inner.H - headH - 4) / 20
 	if rows < 1 {
 		rows = 1
@@ -165,9 +172,9 @@ func (a *FileDialogApp) Paint(d *Desktop, w *Window, c *ui.Canvas, r ui.Rect) {
 		}
 		f.TextClip(c, rr.X+23, rr.Y+2, nameW-24, e.name, col)
 		if e.isDir {
-			f.Text(c, inner.X+nameW, rr.Y+2, "<文件夹>", col)
+			f.Text(c, inner.X+nameW, rr.Y+2, d.tr("<文件夹>"), col)
 		} else {
-			f.Text(c, inner.X+nameW, rr.Y+2, sizeText(e.size), col)
+			f.Text(c, inner.X+nameW, rr.Y+2, a.sizeText(e.size), col)
 			f.Text(c, inner.X+nameW+90, rr.Y+2, e.mod.Format("2006-01-02 15:04"), col)
 		}
 		y += 20
@@ -177,9 +184,9 @@ func (a *FileDialogApp) Paint(d *Desktop, w *Window, c *ui.Canvas, r ui.Rect) {
 
 	// Filename row.
 	fy := r.Bottom() - 64
-	f.Text(c, r.X+8, fy+7, "文件名:", ui.ColText)
+	f.Text(c, r.X+8, fy+7, d.tr("文件名:"), ui.ColText)
 	a.nameR = ui.Rect{r.X + 54, fy + 3, r.W - 54 - 16, 25}
-	c.FillRect(a.nameR, ui.ColWhite)
+	c.FillRect(a.nameR, ui.ColField)
 	c.Sunken(a.nameR)
 	txt := string(a.filename)
 	if f.Width(txt) > a.nameR.W-10 {
@@ -195,15 +202,18 @@ func (a *FileDialogApp) Paint(d *Desktop, w *Window, c *ui.Canvas, r ui.Rect) {
 	}
 	a.okR = ui.Rect{r.Right() - 188, fy + 36, 84, 26}
 	a.cancelR = ui.Rect{r.Right() - 96, fy + 36, 84, 26}
-	okLabel := "打开"
-	if a.mode == FileSave {
-		okLabel = "保存"
-	}
-	ui.Button(c, a.okR, okLabel, a.press == "ok", true)
-	ui.Button(c, a.cancelR, "取消", a.press == "cancel", true)
+	ui.Button(c, a.okR, a.okLabel(), a.press == "ok", true)
+	ui.Button(c, a.cancelR, d.tr("取消"), a.press == "cancel", true)
 	if a.err != "" {
 		f.TextClip(c, r.X+8, r.Bottom()-22, r.W-16, a.err, ui.ColRed)
 	}
+}
+
+func (a *FileDialogApp) sizeText(n int64) string {
+	if n < 1024 {
+		return a.d.trf("%d 字节", n)
+	}
+	return sizeText(n)
 }
 
 func sizeText(n int64) string {
@@ -328,7 +338,7 @@ func (a *FileDialogApp) activate(idx int) {
 func (a *FileDialogApp) accept() {
 	name := strings.TrimSpace(string(a.filename))
 	if name == "" {
-		a.err = "请输入文件名。"
+		a.err = a.d.tr("请输入文件名。")
 		return
 	}
 	path := name
@@ -338,7 +348,7 @@ func (a *FileDialogApp) accept() {
 	if a.mode == FileOpen {
 		st, err := os.Stat(path)
 		if err != nil || st.IsDir() {
-			a.err = "找不到文件: " + name
+			a.err = a.d.tr("找不到文件: ") + name
 			return
 		}
 		a.finish(path, true)
@@ -346,7 +356,7 @@ func (a *FileDialogApp) accept() {
 	}
 	if st, err := os.Stat(path); err == nil && !st.IsDir() {
 		dlg := a
-		a.d.MessageBox("另存为", "文件“"+st.Name()+"”已经存在，要替换它吗？", IconQuestion,
+		a.d.MessageBox(a.d.tr("另存为"), a.d.trf("文件“%s”已经存在，要替换它吗？", st.Name()), IconQuestion,
 			[]string{"是", "否"}, func(i int) {
 				if i == 0 {
 					dlg.finish(path, true)

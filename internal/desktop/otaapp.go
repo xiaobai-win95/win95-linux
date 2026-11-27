@@ -362,7 +362,7 @@ func (a *OTAApp) Paint(d *Desktop, w *Window, c *ui.Canvas, r ui.Rect) {
 	notesTop := a.progressR.Bottom() + 10
 	f.Text(c, x, notesTop, "更新说明:", ui.ColText)
 	a.notesR = ui.Rect{x, notesTop + 20, width, 70}
-	c.FillRect(a.notesR, ui.ColWhite)
+	c.FillRect(a.notesR, ui.ColField)
 	c.Sunken(a.notesR)
 	if len(a.notes) == 0 {
 		f.TextClip(c, a.notesR.X+6, a.notesR.Y+5, a.notesR.W-12, "（暂无更新说明）", ui.ColTextDis)
@@ -382,7 +382,7 @@ func (a *OTAApp) Paint(d *Desktop, w *Window, c *ui.Canvas, r ui.Rect) {
 	if a.logR.H < 30 {
 		a.logR.H = 30
 	}
-	c.FillRect(a.logR, ui.ColWhite)
+	c.FillRect(a.logR, ui.ColField)
 	c.Sunken(a.logR)
 	lines := a.log
 	if max := a.logR.H / 16; len(lines) > max && max > 0 {

@@ -221,7 +221,8 @@ func (a *NotepadApp) Paint(d *Desktop, w *Window, c *ui.Canvas, client ui.Rect) 
 	c.HLine(client.X+4, client.Y+32, client.W-8, ui.ColWhite)
 
 	// Editor.
-	c.FillRect(a.editorR, ui.ColWhite)
+	d.imeFocus(w, a.textR, a.insertIMEText)
+	c.FillRect(a.editorR, ui.ColField)
 	c.Sunken(a.editorR)
 	rows := a.textR.H / 16
 	if rows < 1 {
@@ -728,6 +729,21 @@ func (a *NotepadApp) Key(d *Desktop, w *Window, ev KeyEvent) bool {
 	a.ensureCaret()
 	d.Invalidate()
 	return true
+}
+
+func (a *NotepadApp) insertIMEText(text string) {
+	a.deleteSelection()
+	parts := strings.Split(text, "\n")
+	for i, part := range parts {
+		if i > 0 {
+			a.insertNewline()
+		}
+		if part != "" {
+			a.insertText(part)
+		}
+	}
+	a.ensureCaret()
+	a.d.Invalidate()
 }
 
 func (a *NotepadApp) insertText(s string) {

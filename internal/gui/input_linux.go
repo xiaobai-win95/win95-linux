@@ -151,6 +151,83 @@ func waitForInputs() []*inputDevice {
 	}
 }
 
+func openPS2Mouse() int {
+	fd, err := syscall.Open("/dev/input/mice", syscall.O_RDONLY|syscall.O_NONBLOCK|syscall.O_CLOEXEC, 0)
+	if err != nil {
+		return -1
+	}
+	return fd
+}
+
+func readPS2Mouse(fd int, ch chan<- inputEvent) {
+	var packet [4]byte
+	n := 0
+	buttons := 0
+	send := func(typ uint16, code uint16, val int32) {
+		select {
+		case ch <- inputEvent{typ: typ, code: code, val: val}:
+		default:
+		}
+	}
+	emit := func() {
+		next := int(packet[0] & 3)
+		for bit, code := range map[int]uint16{1: btnLeft, 2: btnRight} {
+			was, now := buttons&bit != 0, next&bit != 0
+			if was != now {
+				value := int32(0)
+				if now {
+					value = 1
+				}
+				send(evKey, code, value)
+			}
+		}
+		buttons = next
+		send(evRel, 0, int32(int8(packet[1])))
+		send(evRel, 1, int32(int8(packet[2])))
+		if z := int8(packet[3]); z != 0 {
+			wheel := int32(z)
+			if wheel > 3 {
+				wheel = 3
+			} else if wheel < -3 {
+				wheel = -3
+			}
+			send(evRel, relWheel, wheel)
+		}
+	}
+	buf := make([]byte, 128)
+	for {
+		got, err := syscall.Read(fd, buf)
+		if err != nil {
+			if errors.Is(err, syscall.EAGAIN) || errors.Is(err, syscall.EWOULDBLOCK) {
+				time.Sleep(3 * time.Millisecond)
+				continue
+			}
+			if errors.Is(err, syscall.EINTR) {
+				continue
+			}
+			return
+		}
+		for _, b := range buf[:got] {
+			if n == 0 && b&0xC8 != 0x08 {
+				continue
+			}
+			packet[n] = b
+			n++
+			if n == 4 {
+				if b&0xC8 == 0x08 {
+					packet[3] = 0
+					emit()
+					n = 1
+					packet[0] = b
+					continue
+				}
+				emit()
+				n = 0
+			}
+		}
+	}
+}
+
 func (d *inputDevice) readLoop(ch chan<- inputEvent) {
 	buf := make([]byte, 24*64)
 	for {
@@ -310,19 +387,35 @@ var keyTable = map[uint16]keyDef{
 }
 
 type inputState struct {
-	fbW, fbH int
-	shift    bool
-	ctrl     bool
-	alt      bool
-	caps     bool
-	haveX    bool
-	haveY    bool
+	fbW, fbH     int
+	rotation     int
+	physX, physY int
+	shift        bool
+	ctrl         bool
+	alt          bool
+	caps         bool
+	haveX        bool
+	haveY        bool
 
 	lastAltTap time.Time
 }
 
 func newInputState(w, h int) *inputState {
-	return &inputState{fbW: w, fbH: h}
+	return &inputState{fbW: w, fbH: h, physX: w / 2, physY: h / 2}
+}
+
+func (s *inputState) setGeometry(w, h, rotation int, d *desktop.Desktop) {
+	mode := desktop.DisplayMode{Rotation: rotation}
+	if s.fbW == w && s.fbH == h {
+		logicalW, logicalH := mode.LogicalSize()
+		x := max(0, min(d.MouseX, logicalW-1))
+		y := max(0, min(d.MouseY, logicalH-1))
+		s.physX, s.physY = mode.PhysicalPoint(x, y, w, h)
+		d.MouseX, d.MouseY = x, y
+	}
+	s.fbW, s.fbH, s.rotation = w, h, rotation
+	s.physX, s.physY = s.clampX(s.physX), s.clampY(s.physY)
+	d.MouseX, d.MouseY = mode.LogicalPoint(s.physX, s.physY, w, h)
 }
 
 // resetModifiers drops keys that may still have been held when the VT was
@@ -354,7 +447,9 @@ func (s *inputState) clampY(y int) int {
 }
 
 func (s *inputState) move(d *desktop.Desktop, x, y int) {
-	d.Mouse(desktop.MouseEvent{Kind: desktop.MouseMove, X: s.clampX(x), Y: s.clampY(y)})
+	s.physX, s.physY = s.clampX(x), s.clampY(y)
+	lx, ly := (desktop.DisplayMode{Rotation: s.rotation}).LogicalPoint(s.physX, s.physY, s.fbW, s.fbH)
+	d.Mouse(desktop.MouseEvent{Kind: desktop.MouseMove, X: lx, Y: ly})
 }
 
 func (s *inputState) handle(ev inputEvent, d *desktop.Desktop) {
@@ -452,9 +547,9 @@ func (s *inputState) handle(ev inputEvent, d *desktop.Desktop) {
 	case evRel:
 		switch ev.code {
 		case 0:
-			s.move(d, d.MouseX+int(ev.val), d.MouseY)
+			s.move(d, s.physX+int(ev.val), s.physY)
 		case 1:
-			s.move(d, d.MouseX, d.MouseY+int(ev.val))
+			s.move(d, s.physX, s.physY+int(ev.val))
 		case relWheel:
 			if ev.val == 0 {
 				return

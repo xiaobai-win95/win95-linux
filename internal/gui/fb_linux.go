@@ -90,6 +90,7 @@ type fbDevice struct {
 	fixInfo   fbFixScreeninfo
 	direct    bool
 	stridePx  int
+	rotation  int
 }
 
 func ioctlPtr(fd int, req uintptr, ptr unsafe.Pointer) error {
@@ -190,6 +191,10 @@ func (f *fbDevice) packColor(col uint32) uint32 {
 
 // blit copies a 32-bit XRGB canvas into the framebuffer's native format.
 func (f *fbDevice) blit(c *ui.Canvas) {
+	if f.rotation != 0 {
+		f.blitRotated(c)
+		return
+	}
 	if f.direct {
 		dst := unsafe.Slice((*uint32)(unsafe.Pointer(&f.mm[0])), len(f.mm)/4)
 		xoff := int(f.varInfo.Xoffset)
@@ -213,6 +218,60 @@ func (f *fbDevice) blit(c *ui.Canvas) {
 			off := rowBase + (x+xoff)*bytesPer
 			if off+bytesPer > len(f.mm) {
 				break
+			}
+			packed := f.packColor(c.Pix[y*c.Stride+x])
+			for i := 0; i < bytesPer; i++ {
+				f.mm[off+i] = byte(packed >> (8 * i))
+			}
+		}
+	}
+}
+
+func (f *fbDevice) blitRotated(c *ui.Canvas) {
+	xoff := int(f.varInfo.Xoffset)
+	yoff := int(f.varInfo.Yoffset)
+	if f.direct {
+		dst := unsafe.Slice((*uint32)(unsafe.Pointer(&f.mm[0])), len(f.mm)/4)
+		for y := 0; y < c.H; y++ {
+			for x := 0; x < c.W; x++ {
+				dx, dy := x, y
+				switch f.rotation {
+				case 90:
+					dx, dy = f.w-1-y, x
+				case 180:
+					dx, dy = f.w-1-x, f.h-1-y
+				case 270:
+					dx, dy = y, f.h-1-x
+				}
+				if dx < 0 || dx >= f.w || dy < 0 || dy >= f.h {
+					continue
+				}
+				off := (dy+yoff)*f.stridePx + dx + xoff
+				if off >= 0 && off < len(dst) {
+					dst[off] = c.Pix[y*c.Stride+x]
+				}
+			}
+		}
+		return
+	}
+	bytesPer := f.bpp / 8
+	for y := 0; y < c.H; y++ {
+		for x := 0; x < c.W; x++ {
+			dx, dy := x, y
+			switch f.rotation {
+			case 90:
+				dx, dy = f.w-1-y, x
+			case 180:
+				dx, dy = f.w-1-x, f.h-1-y
+			case 270:
+				dx, dy = y, f.h-1-x
+			}
+			if dx < 0 || dx >= f.w || dy < 0 || dy >= f.h {
+				continue
+			}
+			off := (dy+yoff)*f.lineBytes + (dx+xoff)*bytesPer
+			if off < 0 || off+bytesPer > len(f.mm) {
+				continue
 			}
 			packed := f.packColor(c.Pix[y*c.Stride+x])
 			for i := 0; i < bytesPer; i++ {

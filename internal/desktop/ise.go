@@ -179,7 +179,7 @@ func (a *PShellISEApp) Paint(d *Desktop, w *Window, c *ui.Canvas, client ui.Rect
 	c.HLine(client.X+4, client.Y+32, client.W-8, ui.ColWhite)
 
 	// Editor.
-	c.FillRect(a.editorR, ui.ColWhite)
+	c.FillRect(a.editorR, ui.ColField)
 	c.Sunken(a.editorR)
 	c.FillRect(a.gutterR, 0xE8E8E8)
 	c.VLine(a.gutterR.Right()-1, a.gutterR.Y, a.gutterR.H, 0xC0C0C0)

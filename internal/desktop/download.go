@@ -77,7 +77,7 @@ func (a *DownloaderApp) Paint(d *Desktop, w *Window, c *ui.Canvas, r ui.Rect) {
 
 	f.Text(c, r.X+18, r.Y+70, "网址(U):", ui.ColText)
 	a.fieldR = ui.Rect{r.X + 18, r.Y + 90, r.W - 36, 27}
-	c.FillRect(a.fieldR, ui.ColWhite)
+	c.FillRect(a.fieldR, ui.ColField)
 	c.Sunken(a.fieldR)
 	editing := a.state != dlWorking
 	col := ui.ColText

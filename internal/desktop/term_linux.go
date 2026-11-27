@@ -102,12 +102,12 @@ func startTerminalOpts(cols, rows int, opt termOptions) (*termProc, error) {
 		"TERM=xterm-256color",
 		"HOME=/root",
 		"PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin",
-		"LANG=C.UTF-8",
 		"ENV=/etc/profile",
 		"PS1=\\033[1;32m\\u@win95\\033[0m:\\033[1;34m\\w\\033[0m\\$ ",
 		"HOSTNAME=win95",
 		"PWD=" + cmd.Dir,
 	}
+	cmd.Env = append(cmd.Env, currentLocaleEnv()...)
 	cmd.Env = append(cmd.Env, opt.env...)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true, Setctty: true, Ctty: 0}
 	if err := cmd.Start(); err != nil {

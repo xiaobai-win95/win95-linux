@@ -71,42 +71,162 @@ var extraTranslations = map[string]map[string]string{
 	"zh-TW": {
 		"三维弹球": "3D 彈珠台", "重新开始": "重新開始", "发射": "發射", "分数": "分數",
 		"剩余球": "剩餘球", "最高分": "最高分", "游戏结束": "遊戲結束",
+		"任务管理器": "工作管理員", "切换到 XFCE 桌面": "切換到 XFCE 桌面", "在线服务": "線上服務",
+		"我的公文包": "我的公事包", "打开 Office 文档(O)…": "開啟 Office 文件(O)…", "收件箱": "收件匣",
+		"新建 Office 文档(N)": "新增 Office 文件(N)", "游戏": "遊戲", "网上邻居": "網路上的芳鄰",
+		"设置会保存在 /root/.config/win95/desktop.json": "設定會儲存在 /root/.config/win95/desktop.json",
+		"语言设置会立即刷新桌面图标、开始菜单和任务栏。":                 "語言設定會立即重新整理桌面圖示、開始功能表和工作列。",
+		"是": "是", "否": "否", "保存": "儲存", "继续": "繼續",
+		"另存为": "另存為", "位置:": "位置:", "上一级": "上一層", "名称": "名稱",
+		"大小": "大小", "修改时间": "修改時間", "<文件夹>": "<資料夾>", "文件名:": "檔案名稱:",
+		"无法读取文件夹: ": "無法讀取資料夾: ", "请输入文件名。": "請輸入檔案名稱。",
+		"找不到文件: ": "找不到檔案: ", "文件“%s”已经存在，要替换它吗？": "檔案「%s」已經存在，要取代它嗎？",
+		"%d 字节": "%d 位元組", "名称不能为空。": "名稱不能空白。", "这个名称无效。": "這個名稱無效。",
+		"名称中不能包含斜杠。": "名稱中不能包含斜線。", "名称太长了。": "名稱太長了。",
 	},
 	"en-US": {
 		"三维弹球": "3D Pinball", "重新开始": "New Game", "发射": "Launch", "分数": "Score",
 		"剩余球": "Balls", "最高分": "High Score", "游戏结束": "Game Over",
+		"任务管理器": "Task Manager", "切换到 XFCE 桌面": "Switch to XFCE Desktop", "在线服务": "Online Services",
+		"我的公文包": "My Briefcase", "打开 Office 文档(O)…": "Open Office Document…", "收件箱": "Inbox",
+		"新建 Office 文档(N)": "New Office Document", "游戏": "Games", "网上邻居": "Network Neighborhood",
+		"设置会保存在 /root/.config/win95/desktop.json": "Settings are saved to /root/.config/win95/desktop.json.",
+		"语言设置会立即刷新桌面图标、开始菜单和任务栏。":                 "Language changes immediately refresh desktop icons, the Start menu and the taskbar.",
+		"是": "Yes", "否": "No", "保存": "Save", "继续": "Continue",
+		"另存为": "Save As", "位置:": "Location:", "上一级": "Up one level", "名称": "Name",
+		"大小": "Size", "修改时间": "Modified", "<文件夹>": "<Folder>", "文件名:": "File name:",
+		"无法读取文件夹: ": "Cannot read folder: ", "请输入文件名。": "Please enter a file name.",
+		"找不到文件: ": "File not found: ", "文件“%s”已经存在，要替换它吗？": "The file “%s” already exists. Replace it?",
+		"%d 字节": "%d bytes", "名称不能为空。": "The name cannot be empty.", "这个名称无效。": "This name is invalid.",
+		"名称中不能包含斜杠。": "The name cannot contain slashes.", "名称太长了。": "The name is too long.",
 	},
 	"ja-JP": {
 		"三维弹球": "3D ピンボール", "重新开始": "新しいゲーム", "发射": "発射", "分数": "スコア",
 		"剩余球": "残り球", "最高分": "ハイスコア", "游戏结束": "ゲームオーバー",
+		"任务管理器": "タスク マネージャー", "切换到 XFCE 桌面": "XFCE デスクトップへ切替", "在线服务": "オンライン サービス",
+		"我的公文包": "マイ ブリーフケース", "打开 Office 文档(O)…": "Office ドキュメントを開く(O)…", "收件箱": "受信トレイ",
+		"新建 Office 文档(N)": "Office ドキュメントを新規作成(N)", "游戏": "ゲーム", "网上邻居": "ネットワーク コンピュータ",
+		"设置会保存在 /root/.config/win95/desktop.json": "設定は /root/.config/win95/desktop.json に保存されます。",
+		"语言设置会立即刷新桌面图标、开始菜单和任务栏。":                 "言語を変更すると、デスクトップのアイコン、スタート メニュー、タスクバーがすぐに更新されます。",
+		"是": "はい", "否": "いいえ", "保存": "保存", "继续": "続行",
+		"另存为": "名前を付けて保存", "位置:": "場所:", "上一级": "上の階層", "名称": "名前",
+		"大小": "サイズ", "修改时间": "更新日時", "<文件夹>": "<フォルダー>", "文件名:": "ファイル名:",
+		"无法读取文件夹: ": "フォルダーを読み込めません: ", "请输入文件名。": "ファイル名を入力してください。",
+		"找不到文件: ": "ファイルが見つかりません: ", "文件“%s”已经存在，要替换它吗？": "ファイル「%s」はすでに存在します。置き換えますか？",
+		"%d 字节": "%d バイト", "名称不能为空。": "名前を入力してください。", "这个名称无效。": "この名前は無効です。",
+		"名称中不能包含斜杠。": "名前にスラッシュを含めることはできません。", "名称太长了。": "名前が長すぎます。",
 	},
 	"ko-KR": {
 		"三维弹球": "3D 핀볼", "重新开始": "새 게임", "发射": "발사", "分数": "점수",
 		"剩余球": "남은 공", "最高分": "최고 점수", "游戏结束": "게임 오버",
+		"任务管理器": "작업 관리자", "切换到 XFCE 桌面": "XFCE 데스크톱으로 전환", "在线服务": "온라인 서비스",
+		"我的公文包": "내 휴대용 문서", "打开 Office 文档(O)…": "Office 문서 열기(O)…", "收件箱": "받은 편지함",
+		"新建 Office 文档(N)": "Office 문서 새로 만들기(N)", "游戏": "게임", "网上邻居": "네트워크 컴퓨터",
+		"设置会保存在 /root/.config/win95/desktop.json": "설정은 /root/.config/win95/desktop.json에 저장됩니다.",
+		"语言设置会立即刷新桌面图标、开始菜单和任务栏。":                 "언어를 변경하면 바탕 화면 아이콘, 시작 메뉴 및 작업 표시줄이 즉시 새로 고침됩니다.",
+		"是": "예", "否": "아니요", "保存": "저장", "继续": "계속",
+		"另存为": "다른 이름으로 저장", "位置:": "위치:", "上一级": "위로", "名称": "이름",
+		"大小": "크기", "修改时间": "수정 날짜", "<文件夹>": "<폴더>", "文件名:": "파일 이름:",
+		"无法读取文件夹: ": "폴더를 읽을 수 없습니다: ", "请输入文件名。": "파일 이름을 입력하세요.",
+		"找不到文件: ": "파일을 찾을 수 없습니다: ", "文件“%s”已经存在，要替换它吗？": "파일 “%s”이(가) 이미 있습니다. 바꾸시겠습니까?",
+		"%d 字节": "%d 바이트", "名称不能为空。": "이름은 비워 둘 수 없습니다.", "这个名称无效。": "이 이름은 올바르지 않습니다.",
+		"名称中不能包含斜杠。": "이름에는 슬래시를 사용할 수 없습니다.", "名称太长了。": "이름이 너무 깁니다.",
 	},
 	"fr-FR": {
 		"三维弹球": "Pinball 3D", "重新开始": "Nouvelle partie", "发射": "Lancer", "分数": "Score",
 		"剩余球": "Balles", "最高分": "Record", "游戏结束": "Partie terminée",
+		"任务管理器": "Gestionnaire des tâches", "切换到 XFCE 桌面": "Basculer vers le bureau XFCE", "在线服务": "Services en ligne",
+		"我的公文包": "Mon porte-documents", "打开 Office 文档(O)…": "Ouvrir un document Office (O)…", "收件箱": "Boîte de réception",
+		"新建 Office 文档(N)": "Nouveau document Office (N)", "游戏": "Jeux", "网上邻居": "Voisinage réseau",
+		"设置会保存在 /root/.config/win95/desktop.json": "Les paramètres sont enregistrés dans /root/.config/win95/desktop.json.",
+		"语言设置会立即刷新桌面图标、开始菜单和任务栏。":                 "Le changement de langue actualise immédiatement les icônes du bureau, le menu Démarrer et la barre des tâches.",
+		"是": "Oui", "否": "Non", "保存": "Enregistrer", "继续": "Continuer",
+		"另存为": "Enregistrer sous", "位置:": "Emplacement :", "上一级": "Monter d'un niveau", "名称": "Nom",
+		"大小": "Taille", "修改时间": "Modification", "<文件夹>": "<Dossier>", "文件名:": "Nom du fichier :",
+		"无法读取文件夹: ": "Impossible de lire le dossier : ", "请输入文件名。": "Saisissez un nom de fichier.",
+		"找不到文件: ": "Fichier introuvable : ", "文件“%s”已经存在，要替换它吗？": "Le fichier « %s » existe déjà. Le remplacer ?",
+		"%d 字节": "%d octets", "名称不能为空。": "Le nom ne peut pas être vide.", "这个名称无效。": "Ce nom n'est pas valide.",
+		"名称中不能包含斜杠。": "Le nom ne peut pas contenir de barres obliques.", "名称太长了。": "Le nom est trop long.",
 	},
 	"de-DE": {
 		"三维弹球": "3D-Flipper", "重新开始": "Neues Spiel", "发射": "Abschuss", "分数": "Punkte",
 		"剩余球": "Kugeln", "最高分": "Bestwert", "游戏结束": "Spiel vorbei",
+		"任务管理器": "Task-Manager", "切换到 XFCE 桌面": "Zum XFCE-Desktop wechseln", "在线服务": "Onlinedienste",
+		"我的公文包": "Mein Aktenkoffer", "打开 Office 文档(O)…": "Office-Dokument öffnen (O)…", "收件箱": "Posteingang",
+		"新建 Office 文档(N)": "Neues Office-Dokument (N)", "游戏": "Spiele", "网上邻居": "Netzwerkumgebung",
+		"设置会保存在 /root/.config/win95/desktop.json": "Die Einstellungen werden unter /root/.config/win95/desktop.json gespeichert.",
+		"语言设置会立即刷新桌面图标、开始菜单和任务栏。":                 "Sprachänderungen aktualisieren sofort Desktopsymbole, Startmenü und Taskleiste.",
+		"是": "Ja", "否": "Nein", "保存": "Speichern", "继续": "Weiter",
+		"另存为": "Speichern unter", "位置:": "Speicherort:", "上一级": "Eine Ebene nach oben", "名称": "Name",
+		"大小": "Größe", "修改时间": "Geändert", "<文件夹>": "<Ordner>", "文件名:": "Dateiname:",
+		"无法读取文件夹: ": "Ordner kann nicht gelesen werden: ", "请输入文件名。": "Bitte geben Sie einen Dateinamen ein.",
+		"找不到文件: ": "Datei nicht gefunden: ", "文件“%s”已经存在，要替换它吗？": "Die Datei „%s“ ist bereits vorhanden. Ersetzen?",
+		"%d 字节": "%d Bytes", "名称不能为空。": "Der Name darf nicht leer sein.", "这个名称无效。": "Dieser Name ist ungültig.",
+		"名称中不能包含斜杠。": "Der Name darf keine Schrägstriche enthalten.", "名称太长了。": "Der Name ist zu lang.",
 	},
 	"es-ES": {
 		"三维弹球": "Pinball 3D", "重新开始": "Nueva partida", "发射": "Lanzar", "分数": "Puntos",
 		"剩余球": "Bolas", "最高分": "Récord", "游戏结束": "Fin de la partida",
+		"任务管理器": "Administrador de tareas", "切换到 XFCE 桌面": "Cambiar al escritorio XFCE", "在线服务": "Servicios en línea",
+		"我的公文包": "Mi portafolios", "打开 Office 文档(O)…": "Abrir documento de Office (O)…", "收件箱": "Bandeja de entrada",
+		"新建 Office 文档(N)": "Nuevo documento de Office (N)", "游戏": "Juegos", "网上邻居": "Entorno de red",
+		"设置会保存在 /root/.config/win95/desktop.json": "La configuración se guarda en /root/.config/win95/desktop.json.",
+		"语言设置会立即刷新桌面图标、开始菜单和任务栏。":                 "Los cambios de idioma actualizan inmediatamente los iconos del escritorio, el menú Inicio y la barra de tareas.",
+		"是": "Sí", "否": "No", "保存": "Guardar", "继续": "Continuar",
+		"另存为": "Guardar como", "位置:": "Ubicación:", "上一级": "Subir un nivel", "名称": "Nombre",
+		"大小": "Tamaño", "修改时间": "Modificación", "<文件夹>": "<Carpeta>", "文件名:": "Nombre de archivo:",
+		"无法读取文件夹: ": "No se puede leer la carpeta: ", "请输入文件名。": "Escriba un nombre de archivo.",
+		"找不到文件: ": "Archivo no encontrado: ", "文件“%s”已经存在，要替换它吗？": "El archivo “%s” ya existe. ¿Desea reemplazarlo?",
+		"%d 字节": "%d bytes", "名称不能为空。": "El nombre no puede estar vacío.", "这个名称无效。": "Este nombre no es válido.",
+		"名称中不能包含斜杠。": "El nombre no puede contener barras.", "名称太长了。": "El nombre es demasiado largo.",
 	},
 	"ru-RU": {
 		"三维弹球": "Пинбол 3D", "重新开始": "Новая игра", "发射": "Запуск", "分数": "Счёт",
 		"剩余球": "Шары", "最高分": "Рекорд", "游戏结束": "Игра окончена",
+		"任务管理器": "Диспетчер задач", "切换到 XFCE 桌面": "Переключиться на рабочий стол XFCE", "在线服务": "Сетевые службы",
+		"我的公文包": "Мой портфель", "打开 Office 文档(O)…": "Открыть документ Office (O)…", "收件箱": "Входящие",
+		"新建 Office 文档(N)": "Создать документ Office (N)", "游戏": "Игры", "网上邻居": "Сетевое окружение",
+		"设置会保存在 /root/.config/win95/desktop.json": "Настройки сохраняются в /root/.config/win95/desktop.json.",
+		"语言设置会立即刷新桌面图标、开始菜单和任务栏。":                 "Смена языка сразу обновляет значки рабочего стола, меню «Пуск» и панель задач.",
+		"是": "Да", "否": "Нет", "保存": "Сохранить", "继续": "Продолжить",
+		"另存为": "Сохранить как", "位置:": "Расположение:", "上一级": "На один уровень вверх", "名称": "Имя",
+		"大小": "Размер", "修改时间": "Изменён", "<文件夹>": "<Папка>", "文件名:": "Имя файла:",
+		"无法读取文件夹: ": "Не удалось прочитать папку: ", "请输入文件名。": "Введите имя файла.",
+		"找不到文件: ": "Файл не найден: ", "文件“%s”已经存在，要替换它吗？": "Файл «%s» уже существует. Заменить его?",
+		"%d 字节": "%d байт", "名称不能为空。": "Имя не может быть пустым.", "这个名称无效。": "Это имя недопустимо.",
+		"名称中不能包含斜杠。": "Имя не может содержать косые черты.", "名称太长了。": "Имя слишком длинное.",
 	},
 	"pt-BR": {
 		"三维弹球": "Pinball 3D", "重新开始": "Novo jogo", "发射": "Lançar", "分数": "Pontos",
 		"剩余球": "Bolas", "最高分": "Recorde", "游戏结束": "Fim de jogo",
+		"任务管理器": "Gerenciador de tarefas", "切换到 XFCE 桌面": "Mudar para a área de trabalho XFCE", "在线服务": "Serviços online",
+		"我的公文包": "Meu portfólio", "打开 Office 文档(O)…": "Abrir documento do Office (O)…", "收件箱": "Caixa de entrada",
+		"新建 Office 文档(N)": "Novo documento do Office (N)", "游戏": "Jogos", "网上邻居": "Rede",
+		"设置会保存在 /root/.config/win95/desktop.json": "As configurações são salvas em /root/.config/win95/desktop.json.",
+		"语言设置会立即刷新桌面图标、开始菜单和任务栏。":                 "A alteração de idioma atualiza imediatamente os ícones da área de trabalho, o menu Iniciar e a barra de tarefas.",
+		"是": "Sim", "否": "Não", "保存": "Salvar", "继续": "Continuar",
+		"另存为": "Salvar como", "位置:": "Local:", "上一级": "Subir um nível", "名称": "Nome",
+		"大小": "Tamanho", "修改时间": "Modificado", "<文件夹>": "<Pasta>", "文件名:": "Nome do arquivo:",
+		"无法读取文件夹: ": "Não foi possível ler a pasta: ", "请输入文件名。": "Digite um nome de arquivo.",
+		"找不到文件: ": "Arquivo não encontrado: ", "文件“%s”已经存在，要替换它吗？": "O arquivo “%s” já existe. Deseja substituí-lo?",
+		"%d 字节": "%d bytes", "名称不能为空。": "O nome não pode ficar vazio.", "这个名称无效。": "Este nome é inválido.",
+		"名称中不能包含斜杠。": "O nome não pode conter barras.", "名称太长了。": "O nome é muito longo.",
 	},
 	"it-IT": {
 		"三维弹球": "Pinball 3D", "重新开始": "Nuova partita", "发射": "Lancio", "分数": "Punti",
 		"剩余球": "Palline", "最高分": "Record", "游戏结束": "Partita finita",
+		"任务管理器": "Gestione attività", "切换到 XFCE 桌面": "Passa al desktop XFCE", "在线服务": "Servizi online",
+		"我的公文包": "Il mio portafoglio", "打开 Office 文档(O)…": "Apri documento Office (O)…", "收件箱": "Posta in arrivo",
+		"新建 Office 文档(N)": "Nuovo documento Office (N)", "游戏": "Giochi", "网上邻居": "Risorse di rete",
+		"设置会保存在 /root/.config/win95/desktop.json": "Le impostazioni vengono salvate in /root/.config/win95/desktop.json.",
+		"语言设置会立即刷新桌面图标、开始菜单和任务栏。":                 "La modifica della lingua aggiorna subito le icone del desktop, il menu Start e la barra delle applicazioni.",
+		"是": "Sì", "否": "No", "保存": "Salva", "继续": "Continua",
+		"另存为": "Salva con nome", "位置:": "Percorso:", "上一级": "Sali di un livello", "名称": "Nome",
+		"大小": "Dimensione", "修改时间": "Modificato", "<文件夹>": "<Cartella>", "文件名:": "Nome file:",
+		"无法读取文件夹: ": "Impossibile leggere la cartella: ", "请输入文件名。": "Immettere un nome file.",
+		"找不到文件: ": "File non trovato: ", "文件“%s”已经存在，要替换它吗？": "Il file “%s” esiste già. Sostituirlo?",
+		"%d 字节": "%d byte", "名称不能为空。": "Il nome non può essere vuoto.", "这个名称无效。": "Questo nome non è valido.",
+		"名称中不能包含斜杠。": "Il nome non può contenere barre.", "名称太长了。": "Il nome è troppo lungo.",
 	},
 }
 
@@ -586,6 +706,7 @@ func (d *Desktop) applyLanguage(code string) {
 		d.dateFmt = 0
 	}
 	d.clock12 = def.Clock12
+	osSetLocale(d.lang)
 	d.refreshIconLabels()
 	d.clock = d.formatClock(time.Now())
 	d.savePrefs()
@@ -669,11 +790,46 @@ func (d *Desktop) applyRegion(i int) {
 	d.Invalidate()
 }
 
+// localeStatePath is read by the launcher scripts after win95gui exits. A Go
+// process cannot change its parent's environment, so the shell needs this
+// hand-off before it starts a full XFCE session.
+var localeStatePath = "/run/win95-locale.env"
+
+func localeValues(code string) (locale, language string) {
+	def := desktopLanguages[languageIndex(code)]
+	base := strings.ReplaceAll(def.Code, "-", "_")
+	return base + ".UTF-8", base + ":" + strings.SplitN(def.Code, "-", 2)[0]
+}
+
+// currentLocaleEnv supplies the desktop's locale to children that build an
+// explicit environment instead of inheriting os.Environ.
+func currentLocaleEnv() []string {
+	lang := os.Getenv("LANG")
+	if lang == "" {
+		lang = "C.UTF-8"
+	}
+	lcTime := os.Getenv("LC_TIME")
+	if lcTime == "" {
+		lcTime = lang
+	}
+	language := os.Getenv("LANGUAGE")
+	if language == "" {
+		language = lang
+	}
+	return []string{"LANG=" + lang, "LC_TIME=" + lcTime, "LANGUAGE=" + language}
+}
+
 // osSetLocale exposes the selection to child processes (terminal, XFCE).
 func osSetLocale(code string) {
-	locale := strings.ReplaceAll(code, "-", "_") + ".UTF-8"
-	_ = os.Setenv("LANG", locale)
-	_ = os.Setenv("LC_TIME", locale)
+	locale, language := localeValues(code)
+	env := []string{"LANG=" + locale, "LC_TIME=" + locale, "LANGUAGE=" + language}
+	for _, entry := range env {
+		key, value, _ := strings.Cut(entry, "=")
+		_ = os.Setenv(key, value)
+	}
+	if localeStatePath != "" {
+		_ = os.WriteFile(localeStatePath, []byte(strings.Join(env, "\n")+"\n"), 0o644)
+	}
 }
 
 func (d *Desktop) dateSample() string {

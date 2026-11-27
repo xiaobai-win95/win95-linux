@@ -1,0 +1,188 @@
+#!/bin/sh
+# Shared checks and chroot plumbing for the Box64/x86_64 Wine WeChat route.
+# This file is sourced by win95-wechat-wine-setup and -run.
+
+LC_ALL=C
+export LC_ALL
+
+WINE_ROOT=/opt/win95-wine-x64
+WINE_PREFIX=/root/.wine-wechat-x64
+WINE_PREFIX_MARKER=$WINE_PREFIX/.win95-prefix-ready
+WINE_ROOT_MARKER=$WINE_ROOT/.win95-wine-ready
+WECHAT_MARKER=$WINE_PREFIX/.win95-wechat-installed
+WECHAT_EXE_FILE=$WINE_PREFIX/.win95-wechat-exe
+BOX64_MARKER=/usr/local/share/win95/box64.version
+BOX64_TAG=v0.4.5-1
+BOX64_COMMIT=e99ca51299ec897e6a96da6d00983d90406a836f
+BOX64_SHA256=b92b91ad062568f280b449375ea9d6085bff13957285a3fc3b45cbd6d8fe210c
+BOX64_URL=https://codeload.github.com/ptitSeb/box64/tar.gz/$BOX64_COMMIT
+WINE_LOCKDIR=/run/win95-wechat-wine.lock
+WINE_LOCKPID=/run/win95-wechat-wine.pid
+WINE_LOCK_OWNED=0
+WINE_MOUNTED=
+
+wine_status_value() {
+	wsv_key=$1
+	wsv_file=$2
+	[ -f "$wsv_file" ] || return 1
+	sed -n "s/^$wsv_key=//p" "$wsv_file" 2>/dev/null | head -n 1
+}
+
+# Validate the PE header without executing the file. WeChat 4.2.1 is x64; an
+# ARM64 Wine prefix or a corrupt/32-bit download must never be called success.
+pe_is_x64() {
+	pei_file=$1
+	[ -s "$pei_file" ] || return 1
+	pei_size=$(wc -c <"$pei_file" 2>/dev/null) || return 1
+	[ "$pei_size" -ge 128 ] || return 1
+	pei_magic=$(od -An -tx1 -N2 "$pei_file" 2>/dev/null | tr -d ' \n')
+	[ "$pei_magic" = 4d5a ] || return 1
+	pei_hex=$(od -An -tx4 -j60 -N4 "$pei_file" 2>/dev/null | tr -d ' \n')
+	[ "$pei_hex" ] || return 1
+	pei_offset=$((0x$pei_hex))
+	[ "$pei_offset" -ge 64 ] || return 1
+	[ "$pei_offset" -le $((pei_size - 26)) ] || return 1
+	pei_sig=$(od -An -tx1 -j"$pei_offset" -N4 "$pei_file" 2>/dev/null | tr -d ' \n')
+	[ "$pei_sig" = 50450000 ] || return 1
+	pei_machine=$(od -An -tx1 -j$((pei_offset + 4)) -N2 "$pei_file" 2>/dev/null | tr -d ' \n')
+	[ "$pei_machine" = 6486 ] || return 1
+	pei_optional=$(od -An -tx1 -j$((pei_offset + 24)) -N2 "$pei_file" 2>/dev/null | tr -d ' \n')
+	[ "$pei_optional" = 0b02 ]
+}
+
+box64_healthy() {
+	[ -x /usr/local/bin/box64 ] || return 1
+	[ -f "$BOX64_MARKER" ] || return 1
+	[ "$(wine_status_value tag "$BOX64_MARKER")" = "$BOX64_TAG" ] || return 1
+	[ "$(wine_status_value commit "$BOX64_MARKER")" = "$BOX64_COMMIT" ] || return 1
+	[ "$(wine_status_value sha256 "$BOX64_MARKER")" = "$BOX64_SHA256" ] || return 1
+	readelf -h /usr/local/bin/box64 2>/dev/null | grep -q 'Machine:.*AArch64' || return 1
+	readelf -l /usr/local/bin/box64 2>/dev/null | grep -q '/lib/ld-musl-aarch64.so.1' || return 1
+	/usr/local/bin/box64 --version 2>/dev/null | grep -q 'Box64 v0.4.5' || return 1
+	[ -x "$WINE_ROOT/usr/local/bin/box64" ] || return 1
+	cmp -s /usr/local/bin/box64 "$WINE_ROOT/usr/local/bin/box64" || return 1
+	[ -f "$WINE_ROOT/lib/ld-musl-aarch64.so.1" ] || return 1
+	[ -f "$WINE_ROOT/lib/libc.musl-aarch64.so.1" ] || return 1
+	return 0
+}
+
+wine_root_healthy() {
+	[ -f "$WINE_ROOT_MARKER" ] || return 1
+	[ -x "$WINE_ROOT/usr/bin/wine64" ] || return 1
+	[ -f "$WINE_ROOT/lib/ld-musl-x86_64.so.1" ] || return 1
+	[ -f "$WINE_ROOT/usr/lib/wine/x86_64-windows/kernel32.dll" ] || return 1
+	[ -f "$WINE_ROOT/usr/lib/wine/x86_64-unix/ntdll.so" ] || return 1
+	readelf -h "$WINE_ROOT/usr/bin/wine64" 2>/dev/null | grep -q 'Machine:.*X86-64' || return 1
+	find "$WINE_ROOT/usr/lib/dri" -name '*swrast_dri.so' 2>/dev/null | grep -q . || return 1
+	return 0
+}
+
+wine_prefix_healthy() {
+	[ -f "$WINE_PREFIX_MARKER" ] || return 1
+	[ -f "$WINE_PREFIX/system.reg" ] || return 1
+	[ -d "$WINE_PREFIX/drive_c/windows/system32" ] || return 1
+	[ -f "$WINE_PREFIX/drive_c/windows/system32/kernel32.dll" ] || return 1
+	pe_is_x64 "$WINE_PREFIX/drive_c/windows/system32/kernel32.dll" || return 1
+	return 0
+}
+
+wechat_healthy() {
+	wch_exe=$(cat "$WECHAT_EXE_FILE" 2>/dev/null) || return 1
+	[ -f "$WECHAT_MARKER" ] || return 1
+	case "$wch_exe" in
+	"$WINE_PREFIX"/drive_c/*) ;;
+	*) return 1 ;;
+	esac
+	pe_is_x64 "$wch_exe"
+}
+
+wine_lock_acquire() {
+	if mkdir "$WINE_LOCKDIR" 2>/dev/null; then
+		WINE_LOCK_OWNED=1
+	elif [ -f "$WINE_LOCKPID" ] && kill -0 "$(cat "$WINE_LOCKPID" 2>/dev/null)" 2>/dev/null; then
+		return 1
+	else
+		rmdir "$WINE_LOCKDIR" 2>/dev/null || return 1
+		mkdir "$WINE_LOCKDIR" 2>/dev/null || return 1
+		WINE_LOCK_OWNED=1
+	fi
+	echo $$ >"$WINE_LOCKPID"
+	return 0
+}
+
+wine_lock_release() {
+	[ "$WINE_LOCK_OWNED" = 1 ] || return 0
+	rm -f "$WINE_LOCKPID"
+	rmdir "$WINE_LOCKDIR" 2>/dev/null || true
+	WINE_LOCK_OWNED=0
+}
+
+wine_mounted() {
+	grep -qs " $1 " /proc/mounts
+}
+
+# The x86_64 Wine ELF loader and PE DLLs live in an isolated Alpine x86_64
+# root. Box64 itself remains ARM64/musl and runs inside that root; host /run,
+# /tmp, /root and the installer cache are shared for X11, D-Bus and WINEPREFIX.
+wine_mount_all() {
+	wine_mount_all_rc=0
+	for wma_pair in \
+		"/tmp:$WINE_ROOT/tmp" \
+		"/var/cache/win95:$WINE_ROOT/var/cache/win95" \
+		"/run:$WINE_ROOT/run" \
+		"/sys:$WINE_ROOT/sys" \
+		"/proc:$WINE_ROOT/proc" \
+		"/dev:$WINE_ROOT/dev" \
+		"/root:$WINE_ROOT/root"
+	do
+		wma_src=${wma_pair%%:*}
+		wma_dst=${wma_pair#*:}
+		mkdir -p "$wma_dst" 2>/dev/null || true
+		if wine_mounted "$wma_dst"; then
+			continue
+		fi
+		if ! mount --bind "$wma_src" "$wma_dst"; then
+			echo "无法挂载 x86_64 Wine 子系统：$wma_src -> $wma_dst" >&2
+			wine_mount_all_rc=1
+			break
+		fi
+		WINE_MOUNTED="$WINE_MOUNTED $wma_dst"
+	done
+	[ "$wine_mount_all_rc" = 0 ] || wine_umount_all
+	return "$wine_mount_all_rc"
+}
+
+wine_umount_all() {
+	for wua_target in $WINE_MOUNTED; do
+		umount "$wua_target" 2>/dev/null || true
+	done
+	WINE_MOUNTED=
+}
+
+# Use the host env/chroot binaries, then execute ARM64 Box64 inside the guest.
+# Wine tools and /usr/bin/wine are x86_64 ELFs and are therefore emulated.
+wine_guest_command() {
+	wgc_exe=$1
+	shift
+	/usr/bin/env -i \
+		PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+		HOME=/root USER=root LOGNAME=root \
+		DISPLAY="${DISPLAY:-:1}" \
+		XAUTHORITY="${XAUTHORITY:-/root/.Xauthority}" \
+		XDG_RUNTIME_DIR=/run/user/0 XDG_SESSION_TYPE=x11 XDG_CURRENT_DESKTOP=XFCE \
+		DBUS_SESSION_BUS_ADDRESS="${DBUS_SESSION_BUS_ADDRESS:-unix:path=/run/user/0/bus}" \
+		WINEPREFIX="$WINE_PREFIX" WINEARCH=win64 \
+		WINEDEBUG="${WIN95_WECHAT_WINE_DEBUG:--all,+err}" \
+		WINEDLLOVERRIDES="${WINEDLLOVERRIDES:-mscoree,mshtml=}" \
+		LD_LIBRARY_PATH=/usr/lib/wine/x86_64-unix:/usr/lib:/lib \
+		BOX64_DYNAREC=1 BOX64_DYNACACHE=1 BOX64_LOG=0 \
+		LANG=zh_CN.UTF-8 LANGUAGE=zh_CN:zh \
+		XMODIFIERS=@im=fcitx GTK_IM_MODULE=fcitx QT_IM_MODULE=fcitx \
+		GDK_BACKEND=x11 QT_QPA_PLATFORM=xcb NO_AT_BRIDGE=1 \
+		LIBGL_ALWAYS_SOFTWARE=1 GALLIUM_DRIVER=llvmpipe \
+		chroot "$WINE_ROOT" /usr/local/bin/box64 "$wgc_exe" "$@"
+}
+
+wine_guest() {
+	wine_guest_command /usr/bin/wine "$@"
+}

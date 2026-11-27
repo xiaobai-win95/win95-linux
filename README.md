@@ -1,39 +1,26 @@
-# win95-linux
-This is a linux OS which has the win95 style GUI (Chinese).
-
-### Screenshots Xfce4
-<img width="1920" height="1080" alt="Win95 Linux Xfce4" src="https://github.com/user-attachments/assets/0425cba7-33f4-4ac7-86bc-66abd78ad75b" />
-
-
-
-# Windows 95 Linux 中文版 26.5 · UTM 配置与安装说明（经典 Win95 外壳、AI 助手、极速搜索与 OTA 更新客户端）
+# Windows 95 Linux 中文版 26.6（显示设置、中文输入、AI Agent、系统工具与媒体） · UTM 配置与安装说明
 
 ## 一、交付文件
 
 | 文件 | 说明 |
 | --- | --- |
-| `win95-installer-aarch64.img` | 可启动的 UEFI 安装盘镜像（raw GPT，130 MiB），系统版本 26.5，内置经典 Win95 外壳、AI 助手、OTA 更新客户端与 Office 365 启动器；**随 26.5 Release 上传** |
+| `win95-installer-aarch64.img` | 可启动的 UEFI 安装盘镜像（raw GPT，130 MiB），系统版本 26.6，内置经典 Win95 外壳、AI 助手、Agent Studio、OTA 更新客户端、Office 365 启动器、屏幕录像机与音视频播放器；**随 26.6 Release 上传** |
 | `win95-installer-aarch64.img.sha256` | SHA-256 校验值 |
 | `win95-ota-<版本>-aarch64.tar.gz` | 更新包，由构建脚本按 `VERSION` 生成；**从 26.4 起**随 Release 上传 |
 | `win95-ota-<版本>-aarch64.tar.gz.sha256` | 更新包 SHA-256 校验值 |
 | `latest.json` | 更新清单；**从 26.4 起**上传到 Release，客户端通过 `releases/latest/download/latest.json` 读取 |
 
-校验方法（在镜像所在目录执行）：
+校验方法：
 
-```zsh
+```sh
+cd /Users/madic/aiwork/win95linux/out
 shasum -a 256 -c win95-installer-aarch64.img.sha256
 ```
 
-26.5 安装镜像 SHA-256（随 v26.5 Release 上传）：
+镜像 SHA-256（随 v26.6 Release 上传）：
 
-```sha256
-f20f6605e2c6a0fef1983aa28887dd2d8da98708713b0551c450646eb6272bfc
 ```
-
-26.5 更新包 SHA-256（随 v26.5 Release 上传）：
-
-```sha256
-f8726203c97678ec4ac8a7b18286dc67ad11f3fe33c81b111f74fffd2b1cd99d
+c10aedc9726ad1511243bb99847cf50f7f5916bdb10cd7724aed4e6bdbc26967
 ```
 
 > 这是**磁盘镜像**，不是 ISO，不要挂到“CD/DVD”上。必须作为 UTM 的硬盘设备导入。
@@ -124,10 +111,10 @@ f8726203c97678ec4ac8a7b18286dc67ad11f3fe33c81b111f74fffd2b1cd99d
 ## 六、安装后的系统
 
 - 图形桌面：Win95 风格任务栏、开始菜单、窗口、对话框。
-- 程序菜单：收件箱、我的公文包、游戏、在线服务、Netscape Navigator 4.8、AI 助手、Wine 兼容层、记事本、计算器、日历、终端、Windows PowerShell、PowerShell ISE、文件管理器、网络浏览器、**Office 365 全件套**、**Office 组件管理**、微信 WeChat、纸牌、扫雷、方块世界 95、DOOM 95、三维弹球、画图、图片查看器、图形化下载器、软件包管理器、**系统更新（OTA）**、Arch Linux (glibc / pacman)、网络属性、连接监视器与防火墙、局域网快传、系统级 VNC 服务器、按键精灵、设置中心、屏幕键盘、视觉整活演示、任务管理器、注册表编辑器、**切换到 XFCE 桌面**，以及 X11 嵌套代理（XFCE 终端、Firefox、微信等 X11 程序都显示在 Win95 窗口里）。
+- 程序菜单：收件箱、我的公文包、游戏、在线服务、Netscape Navigator 4.8、AI 助手、Wine 兼容层、记事本、计算器、日历、终端、Windows PowerShell、PowerShell ISE、文件管理器、网络浏览器、**Office 365 全件套**、**Office 组件管理**、微信 WeChat、纸牌、扫雷、方块世界 95、DOOM 95、三维弹球、画图、图片查看器、图形化下载器、软件包管理器、**系统更新（OTA）**、Arch Linux (glibc / pacman)、网络属性、连接监视器与防火墙、局域网快传、系统级 VNC 服务器、按键精灵、设置中心、屏幕键盘、视觉整活演示、任务管理器、资源监视器、硬件传感器、数据包嗅探器、万能压缩、磁盘管理、快照管理、Agent Studio、屏幕录像机、媒体播放器、注册表编辑器、**切换到 XFCE 桌面**，以及 X11 嵌套代理（XFCE 终端、Firefox、微信等 X11 程序都显示在 Win95 窗口里）。
 - **X11 代理与完整 XFCE 并存**：X11 代理只负责把单个程序嵌进 Win95 窗口；桌面的“切换到 XFCE 桌面”仍会关闭 Win95 桌面、启动完整的 Xorg/XFCE 会话，注销后自动返回 Win95。两者互不替代。
 - 设置中心包含语言、显示、字体、主题、时间、地区、关于与许可协议；界面支持简体中文、繁體中文、English、日本語、한국어、Français、Deutsch、Español、Русский、Português、Italiano 等，安装镜像自带全部语言。
-- 显示属性：6 种桌面背景（经典青色、纯青色、海洋蓝、云彩、午夜星空、石板灰），并可配置飞线、星空或飞行窗口屏保与 1–120 分钟的等待时间；设置会保存到 `/root/.config/win95/desktop.json`。
+- 显示属性：6 种桌面背景（经典青色、纯青色、海洋蓝、云彩、午夜星空、石板灰），并可配置飞线、星空或飞行窗口屏保与 1–120 分钟的等待时间；监视器页支持动态分辨率、刷新率与 0°/90°/180°/270° 转向，窗口会自动保留并重新排布，设置保存到 `/root/.config/win95/desktop.json`。
 - 运行与查找：开始菜单新增“运行”（支持程序别名、文件/文件夹路径、网址和最近命令历史）；“查找”（Ctrl+F）打开经典“查找：所有文件”对话框，可同时填写文件名称与包含文字，后台索引 + 全盘遍历，毫秒级返回，双击结果在文件管理器中定位。Ctrl+Space 或连续按两次 Alt 可呼出屏幕中央的聚光灯搜索框，↑/↓ 选择、Enter 打开。
 - 回收站：可右键回收站图标或在回收站窗口中选择“清空回收站”，一次永久删除全部项目。
 - 文件拖放：从文件管理器把文件拖到回收站图标/回收站窗口会删除文件；拖到桌面空白处会创建名为“原名 - 快捷方式”的快捷方式。
@@ -137,33 +124,27 @@ f8726203c97678ec4ac8a7b18286dc67ad11f3fe33c81b111f74fffd2b1cd99d
 - **注册表编辑器**（开始 → 程序 → 注册表编辑器）：以树状结构编辑 `/etc/win95.ini` 中的桌面背景色、字体、主题、语言等键值；保存后当前桌面立即热更新，无需重启。
 - 终端：BusyBox ash，支持伪终端、ANSI 颜色、滚动。
 - 浏览器：支持 JavaScript（ECMAScript 5.1）、本地页面、HTTP/HTTPS、超链接跳转与文件下载；页面中的图片（含 data URI）、彩色按钮、输入框、密码框、下拉框、复选框可正常显示和交互；首次打开会自动安装本地运行时依赖包；若缺少系统 CA 证书会尝试通过 apk 联网补装（离线时仅提示，不影响本地页面）。下载保存到 `/root/下载`。mcjs.link 的 Minecraft 需要 WebGL2，会引导到 Firefox（Mesa llvmpipe 软件 WebGL2）。
-- 文档目录：`/root/文档`、`/root/桌面`、`/root/下载`；画图保存的图片在 `/root/图片`。
+- 文档目录：`/root/文档`、`/root/桌面`、`/root/下载`、`/root/图片`、`/root/录像`；画图保存的图片在 `/root/图片`，屏幕录像保存在 `/root/录像`。
 - 右键菜单：桌面、桌面图标、窗口标题栏、任务栏（开始按钮/任务按钮/时钟/托盘/空白处）均可右键。
 - 桌面文件操作：新建文件夹/文本文档、重命名、删除到回收站、查看属性、拖动排列、自动排列与排序、F5 刷新。
 - 关机和睡眠：开始菜单底部提供 **注销**、**重新启动**、**关闭计算机**，以及 **睡眠**，均带确认框。
 - 网络：按第三节配置为 **桥接 Wi-Fi**，系统通过 DHCP 获取局域网地址；可在终端用 `ifconfig`、`ping` 检查。
 - 系统盘数据保存在目标 raw 磁盘镜像中，重启后保留。
 
-### 26.5 新增功能
+### 26.6 新增功能
 
-- **经典桌面图标**：我的电脑、网上邻居、收件箱、Internet Explorer、Netscape Navigator、回收站、我的公文包、游戏、在线服务、尝试 The Microsoft Network、AI 助手、切换到 XFCE 桌面、设置中心。开始菜单顶部是 AOL & Internet 免费试用、AOL 3.0i（含 IE 4.0）、AOL Canada 3.0i（含 IE 4.0）、新建 Office 文档、打开 Office 文档。
-- **在线服务**：AOL / AOL Canada / MSN 使用经典登录框与 56.6 Kbps 模拟拨号进度，连接后显示频道（今日焦点、邮件、新闻、游戏、MSN Today 等）。全部为离线演示，不会拨号、联网或计费。连接后可一键打开收件箱、游戏或浏览器。
-- **Netscape Navigator 4.8**：双击图标首次启动会询问是否安装，模拟安装约 2.4 秒后写入 `/root/.win95-netscape48`；之后直接打开 Netscape 品牌窗口，首页为 `about:netscape`。它与 Internet Explorer 各自使用独立窗口，互不抢占。可在“在线服务”中再次启动。
-- **收件箱**：收件箱 / 已发送 / 已删除三个文件夹，支持预览、未读标记、删除与永久清除；工具栏“新邮件”在记事本中撰写。
-- **我的公文包**：添加文件时复制到 `/root/公文包` 并在 `.origins.json` 记录来源；修改后点“同步”，较新的版本会写回原路径。适合在桌面与项目目录之间搬运文件。
-- **极速搜索**：开始 → 查找（Ctrl+F）呼出经典“查找：所有文件”，可同时填写名称与包含文字。后台索引 + 全盘遍历，毫秒级返回；双击结果在文件管理器中定位。
-- **聚光灯**：Ctrl+Space 或连续按两次 Alt，屏幕中央出现 Win95 输入框；输入后在后台搜索文件名与内容，↑/↓ 选择，Enter 用默认程序打开，Esc 关闭。
-- **极客系统监视器与任务管理器**：系统监视器使用 Win95 折线/网格图显示 CPU、内存、网络上行/下行与磁盘 I/O；任务管理器提供 htop 风格进程树，右键可结束进程、限制 CPU（cgroup v2 `cpu.max`）与网络带宽（`tc tbf`）。
-- **网络属性与防火墙**：开始 → 程序 → 网络属性，实时显示 IP、网关、DNS，一键 Ping 与 DNS 测速；连接监视器读取 `/proc/net` 列出 TCP/UDP 连接，右键可“切断连接”或“永久封禁该 IP”（iptables `WIN95-BAN`）。
-- **局域网快传**：任务栏网络图标或桌面“网上邻居”，显示本机 IP 与共享页面（端口 8765–8784）。手机/Mac 用浏览器上传文件到 `/root/下载`；在 Win95 中选择文件可生成二维码供手机下载。
-- **系统级 VNC 服务器**：开始 → 程序 → 系统级 VNC 服务器，纯 Go RFB 3.8 帧缓冲推流，Mac 的 VNC 客户端可直接控制整个桌面（鼠标、键盘与剪贴板）。
-- **宿主机 Z: 盘**：我的电脑 → 添加 Z: 盘，输入 Mac 宿主机共享目录路径，即可在 Win95 中读写；路径会保存在桌面配置中。
-- **截屏与画图**：Print Screen 截取全屏，保存 PNG 到 `/root/桌面` 并自动在画图中打开；新增选区与马赛克工具，可对截图打码后保存。
-- **按键精灵**：程序 → 按键精灵，录制键盘/鼠标为 JSON 脚本（`/root/宏`），支持回放、循环次数与间隔；Esc 停止。
-- **DOOM 95**：纯 Go 光线投射 3D 迷宫，带纹理墙面、地面与天花板，WASD + 鼠标转向，锁定 30 FPS，M 键切换小地图。
-- **虚拟桌面与平铺**：Alt+1 / Alt+2 切换工作区；Alt+←/→ 左右半屏，Alt+↑/↓ 上下半屏，窗口随工作区自动调整。
-- **AI 助手**：桌面“AI 助手”。命令助手把中文需求转成 Linux 命令：未配置密钥时使用本地规则（查看磁盘、内存、网络、查找、安装等）；在“设置”中选择通义千问或 DeepSeek 并填入 API Key 后调用真实 OpenAI 兼容接口。命令只会在点击“执行”后运行，`rm -rf`、`mkfs`、`dd of=/dev/…` 等危险命令会弹出二次确认。“赛博义体”标签页提供真实大模型聊天，可保存到记事本。API Key 保存在 `/root/.win95-ai.json`（0600）。
-- **Wine 兼容层**：程序 → Wine 兼容层。首次运行需点击“安装 Wine”，从 Alpine community 安装 Wine 11（约数百 MB，需联网）。安装后可运行 `.exe` / `.msi`，C: 盘位于 `/root/.wine/drive_c`，winecfg 显示在 X11 嵌套代理中。本机是 ARM64：可运行 ARM64 Windows 程序；x86 程序还需要 Box64/Box86 或 Arch 子系统。
+- **Office 365 与主题**：组件选择、补装和启动状态可重复操作；高对比度主题、窗口按钮与 Office 对话框同步适配，安装失败会显示真实原因。
+- **开始菜单与窗口交互**：长菜单支持滚动与虚线滚动条，鼠标滚轮兼容 `/dev/input/mice`；窗口四边和四角均可拖动缩放，X11 代理指针坐标按实际显示比例换算。
+- **完整多语言**：桌面、开始菜单、任务栏、设置、AI、Agent Studio、归档、磁盘、快照、传感器与媒体界面统一本地化；系统 locale 与终端、XFCE 启动环境保持一致。
+- **原生 Markdown 与中文拼音**：赛博义体支持标题、粗斜体、代码复制、表格和简单数学；中文输入法提供浮动候选窗与数字选词。
+- **AI 命令解释与 Agent Studio**：命令助手可解释用途、参数、风险与警告；Agent Studio 提供权限级别、搜索可视化、思考/工具轨迹、修改文件列表和上下文压缩确认，危险操作始终需要二次确认。
+- **微信双路线**：开始菜单提供微信 Wine / Arch / 两者都装入口，按当前架构与已安装组件自动选择可用路线。
+- **万能压缩**：读取 ZIP、7z、RAR、TAR、TAR.GZ、TAR.XZ、TAR.ZST，创建 ZIP 或 TAR.GZ；解压拒绝路径穿越、链接、特殊文件和加密成员，覆盖前必须确认。
+- **磁盘管理**：DiskGenius 风格 GPT/MBR 分区列表，支持创建、删除、调整容量、格式化、备份和恢复分区表；系统盘与数据盘默认锁定，所有修改均需两次确认。
+- **资源、传感器与抓包**：资源雷达显示 CPU/内存/网络/磁盘曲线，传感器页读取温度、风扇和电池；数据包嗅探器仅捕获本机 IPv4 TCP/UDP/ICMP 元数据，不自动修改共享网络或防火墙。
+- **系统快照**：可创建带说明的目录快照并恢复到明确选择的目标；恢复会覆盖快照内的现有文件，必须经过两次醒目确认。
+- **屏幕录像机**：开始 → 程序 → 屏幕录像机，F9 开始、F10 停止；直接捕获 `/dev/fb0`，保存 H.264 MP4 到 `/root/录像`，自动检查剩余空间并在停止时完成文件封装。
+- **音视频播放**：开始 → 程序 → 媒体播放器，或在文件管理器中双击常见音视频文件；FFplay 在 X11 代理内播放，SDL 使用 X11 视频与 ALSA 音频，关闭代理或打开下一个文件会安全停止当前播放。
 
 ### 应用与软件安装
 
@@ -195,14 +176,14 @@ f8726203c97678ec4ac8a7b18286dc67ad11f3fe33c81b111f74fffd2b1cd99d
 
 - **Arch Linux ARM 子系统**：开始 → 程序 → **Arch Linux (glibc / pacman)**。首次使用会下载约 800 MB 的 Arch Linux ARM 根文件系统到 `/opt/archlinux`，并配置 **清华 TUNA 镜像（唯一源）**；桌面保持可用，下载、解压和 pacman 初始化会显示在“安装进度”窗口中。下载优先使用 `curl`（首次会自动用 apk 安装；BusyBox wget 的 TLS 实现无法校验证书，部分镜像会直接返回 403），源依次为：清华 TUNA（HTTPS）→ TUNA（跳过证书校验）→ TUNA（HTTP）→ 中科大 → 北外 → 美国 FL 镜像（`fl.us.mirror.archlinuxarm.org`）→ Arch Linux ARM 官方。所有失败都会记录 HTTP 状态和错误原因。
 - **真实 pacman**：在终端直接运行：
-  ```ash
+  ```sh
   pacman -Syu            # 同步并升级
   pacman -S 包名          # 安装软件（下载自清华镜像）
   win95-arch-run bash    # 进入 glibc 子系统的 shell
   ```
   pacman 运行在 chroot 中，与 Alpine 的 apk 互不干扰；首次安装会初始化密钥环，若镜像签名校验失败会自动退回到跳过签名校验的方式（配置写入 `/opt/archlinux/etc/pacman.conf`，日志在 `/var/log/win95-arch-bootstrap.log`）。
 - **证书或 pacman 数据库损坏时**：开始 → 程序 → **Arch Linux (glibc / pacman)** → **检查并修复**，或在终端运行：
-  ```ash
+  ```sh
   win95-arch-repair          # 修复证书、pacman 数据库并只保留 TUNA 源
   win95-arch-repair --check  # 只检查，不修改
   ```
@@ -210,7 +191,7 @@ f8726203c97678ec4ac8a7b18286dc67ad11f3fe33c81b111f74fffd2b1cd99d
 - **微信 WeChat**：开始 → 程序 → **微信 WeChat**。首次运行会按顺序自动准备：X11 运行库 + Mesa 图形组件 → Arch glibc 子系统 → 官方 ARM64 微信安装包（约 200 MB，来自 `dldir1v6.qq.com`，失败时自动换用 `dldir1.qq.com`）→ 用 pacman 从清华镜像安装运行库，然后在 Win95 的 X11 嵌套代理窗口中启动微信（`DISPLAY=:1`），不会切换控制台。首次总下载量约 1.5 GB，需要约 5 GB 空闲磁盘和稳定网络；“安装进度”窗口会显示下载字节数、pacman 的 `(n/m)` 安装进度和阶段日志，关闭窗口不会中断安装。日志在 `/var/log/win95-wechat-setup.log`。微信以 `--no-sandbox` 运行在 root 用户下（Chromium/CEF 应用在 root 下的常规做法）。
   - **安装包路径**：`/var/cache/win95/WeChatLinux_arm64.deb` 在 Alpine 侧，chroot 里看不到它。安装器会先复制到 `/opt/archlinux/tmp/win95-wechat.deb`，再在 chroot 内用 `bsdtar` 按 `dpkg -x` 的方式解压到 `/opt/wechat`。
   - **libandromeda.so 报错的手动修复**：如果你自己解压后运行 `./wechat` 出现 `error while loading shared libraries: libandromeda.so`，说明动态库搜索路径没有指向解压目录，或内核拒绝了可执行栈标记。按下面的顺序在 chroot 内修复（先运行 `win95-arch-mounts`，否则 X11 和 DBus 也连不上）：
-    ```ash
+    ```sh
     # 宿主机（Alpine）侧：把 deb 复制进 Arch 子系统
     mkdir -p /opt/archlinux/tmp
     cp /var/cache/win95/WeChatLinux_arm64.deb /opt/archlinux/tmp/win95-wechat.deb
@@ -289,7 +270,7 @@ f8726203c97678ec4ac8a7b18286dc67ad11f3fe33c81b111f74fffd2b1cd99d
   - **在此处打开终端**：工具栏的“终端”按钮或右键菜单“在此处打开终端”，会在当前目录启动一个 Win95 终端；进入 Arch 子系统后按钮变为“在此处打开 Arch 终端”，执行 `win95-arch-run bash` 进入 glibc chroot。
   - **创建快捷方式**：右键文件或文件夹 → “创建快捷方式”，在当前目录生成符号链接，名称为“原名 - 快捷方式.扩展名”，重名自动加编号；双击快捷方式打开原目标。
   - **显示隐藏文件**：按 Ctrl+H 或查看菜单 → “显示隐藏文件”，列出以 `.` 开头的文件与目录；再次切换即隐藏。
-  - **更多文件类型**：文本/源码/配置（.txt/.md/.go/.c/.py/.json/.yaml/.toml/.ini…）用记事本打开；HTML 用浏览器；PNG/BMP/JPG/JPEG/GIF 用图片查看器；`.sh`/`.bash` 在终端中执行；压缩包（.zip/.tar/.gz/.xz/.7z…）在终端里列出内容；`.desktop` 快捷方式解析后启动；Word/Excel/PowerPoint/Draw/Math/Base/PDF 等办公文档交给 **Office 365 全件套**（缺少组件时先提示安装）；`.exe`/`.msi`/`.bat`/`.cmd` 交给 **Wine 兼容层**（未安装时先提示安装）；音视频、字体和磁盘镜像会给出对应说明或交给合适的程序。
+  - **更多文件类型**：文本/源码/配置（.txt/.md/.go/.c/.py/.json/.yaml/.toml/.ini…）用记事本打开；HTML 用浏览器；PNG/BMP/JPG/JPEG/GIF 用图片查看器；`.sh`/`.bash` 在终端中执行；压缩包（.zip/.tar/.gz/.xz/.7z/.rar/.zst…）用万能压缩打开；`.desktop` 快捷方式解析后启动；Word/Excel/PowerPoint/Draw/Math/Base/PDF 等办公文档交给 **Office 365 全件套**（缺少组件时先提示安装）；`.exe`/`.msi`/`.bat`/`.cmd` 交给 **Wine 兼容层**（未安装时先提示安装）；常见音视频文件交给 **媒体播放器**；字体和磁盘镜像会给出对应说明。
   - **UTM 共享文件夹**：启动时读取 `/proc/self/mounts`，自动把 `virtiofs` / `9p` 挂载点（如 UTM 的共享目录）显示为“共享文件夹 - 名称”，双击即可浏览。
   - **进入子系统**：在“我的电脑”中双击“Arch Linux 子系统”直接浏览 `/opt/archlinux`；右键“Arch 子系统终端”或在 Arch 目录内点终端按钮进入 chroot。
 - **文件操作**：在文件管理器中右键可新建文件夹、重命名（F2，带输入框和非法字符校验）、删除（移入 `/tmp/.trash` 回收站）、查看属性（路径、类型、大小、修改时间）；在回收站里再次删除才是永久删除。系统根目录、`/root` 等关键路径受保护，不能删除或重命名。
@@ -374,17 +355,18 @@ Office 组件不随系统镜像打包，首次使用时从 Alpine 软件源下�
 ### X11 应用与统一通知
 
 - **XFCE 终端 / Firefox**：从桌面图标、开始菜单或运行对话框启动后，程序画面出现在代理窗口中；窗口工具栏提供“终端”“浏览器”“重连”快捷按钮。
+- **媒体播放器**：从开始菜单或文件管理器打开音视频后，FFplay 画面嵌入同一 X11 代理；工具栏显示播放状态并提供“停止播放”，关闭代理会终止播放进程。
 - **性能提示**：UTM Apple 虚拟化没有 GPU，Firefox 使用 Mesa llvmpipe 软件渲染，首次冷启动和复杂页面会较慢；代理固定 24 位色、1024×768，适合轻量网页和 mcjs.link 的 WebGL2 演示。
 - 统一通知系统把后台事件送到 Win95 托盘：
   - 各脚本通过 `/usr/bin/win95-notify "标题" "内容"` 追加到 `/run/win95-notify`；Win95 桌面每秒读取该队列，在任务栏右下角显示黄色气泡，约 8 秒后自动消失。
   - `win95-download-watch` 会监视 `/root/下载`，新文件出现后发送“下载完成”通知；X11 程序退出时也会发送通知。
   - 通知队列不会因为代理窗口打开而丢失。
 
-> Office 组件按需安装，其余新功能随系统镜像安装。26.3 首次引入 WIN95SUPER 超级分区与 A/B 双插槽；已安装 26.4 的系统可直接通过 OTA 升级到 26.5，不必重装。更早的单根分区版本仍需用安装镜像重装一次，之后即可持续 OTA 更新。
+> Office 组件按需安装，其余新功能随系统镜像安装。26.3 首次引入 WIN95SUPER 超级分区与 A/B 双插槽；已安装 26.5 的系统可直接通过 OTA 升级到 26.6，不必重装。更早的单根分区版本仍需用安装镜像重装一次，之后即可持续 OTA 更新。
 
 ### 系统更新（OTA）
 
-- **版本关系**：本次发布的系统版本是 **26.5**，已内置更新客户端，26.5 的安装镜像、更新包、SHA-256 与 `latest.json` 随本次 Release 全部上传。26.4 系统打开“系统更新”即可下载并升级到 26.5。版本号按“26.x → 27.0”递增：26.5 之后的下一个大版本是 **27.0**，不会出现 26.6。
+- **版本关系**：本次发布的系统版本是 **26.6**，已内置更新客户端，26.6 的安装镜像、更新包、SHA-256 与 `latest.json` 随本次 Release 全部上传。已安装 26.5 的系统打开“系统更新”即可下载并升级到 26.6。版本号按 26.0、26.1、26.2… 递增：26.6 之后的下一个版本是 **26.7**。
 - **入口**：开始 → 设置 → **Windows 更新**，或 开始 → 程序 → **系统更新**。窗口显示当前版本、运行插槽、状态、进度、更新说明与日志。
 - **检查更新**：客户端读取
   `https://github.com/xiaobai-win95/win95-linux/releases/latest/download/latest.json`，
@@ -411,14 +393,14 @@ Office 组件不随系统镜像打包，首次使用时从 Alpine 软件源下�
   ```
   两个插槽共享整个超级分区的剩余空间，不需要预先划分固定大小的 B 分区。安装器与更新客户端占用的是“当前系统 + 用户数据 + 一个更新包”的空间。
 - **版本文件**：`/etc/win95-version` 包含 `VERSION=`、`BUILD=`、`SLOT_LAYOUT=super-v1`；终端可用 `cat /etc/win95-version` 查看。
-- **GitHub 发布约定（26.4 起）**：每个 Release（标签如 `v26.5`）上传完整交付物：
+- **GitHub 发布约定（26.4 起）**：每个 Release（标签如 `v26.6`）上传完整交付物：
   - `win95-installer-aarch64.img`、`win95-installer-aarch64.img.sha256`；
-  - `win95-ota-26.5-aarch64.tar.gz`、`win95-ota-26.5-aarch64.tar.gz.sha256`；
+  - `win95-ota-26.6-aarch64.tar.gz`、`win95-ota-26.6-aarch64.tar.gz.sha256`；
   - `latest.json`（内容由构建脚本生成，`package.url` 指向该 Release 的更新包）。
-  **26.5 安装镜像、更新包、SHA256 与 latest.json 全部上传**；已安装 26.4 的虚拟机可直接 OTA 升级，新虚拟机用 26.5 镜像全新安装。
+  **26.6 安装镜像、更新包、SHA256 与 latest.json 全部上传**；已安装 26.5 的虚拟机可直接 OTA 升级，新虚拟机用 26.6 镜像全新安装。
   只有挂在 **latest release** 上的 `latest.json` 会被 `releases/latest/download/` 解析；客户端不读取 Release 正文。
-  **本机构建也会在 `out/` 留下旧版本的更新包与清单，不要上传**；26.5 的 Release 发布后，其 `latest.json` 才会被客户端读取。
-  构建 26.5 时可用 `VERSION=26.5 OTA_NOTES="更新说明…" ./build-installer.sh` 生成对应版本的镜像、更新包与清单。下一大版本号为 27.0。
+  **本机构建也会在 `out/` 留下旧版本的更新包与清单，不要上传**；26.6 的 Release 发布后，其 `latest.json` 才会被客户端读取。
+  构建 26.6 时可用 `VERSION=26.6 OTA_NOTES="更新说明…" ./build-installer.sh` 生成对应版本的镜像、更新包与清单。下一版本号为 26.7。
 - **与 Android 虚拟 A/B 的差别**：本系统没有 Android 的 liblp 超级分区元数据、dm-linear / dm-snapshot、update_engine、boot_control HAL 与 AVB/dm-verity 验证链。这里用 ext4 目录 + 文件级硬链接快照实现同样的用户体验（共享超级分区、后台写备用槽、试用与自动回退），不是 Android 的块级快照。OTA 只替换根文件系统；内核、initrd 与 `BOOTAA64.EFI` 仍在 EFI 分区上，不随 OTA 更新。如果未来版本需要换内核，需发布新的安装镜像。
 - **离线或 GitHub 不可达**：检查更新会显示失败原因，不影响当前系统；可以照常使用。更新包 SHA-256 校验失败会拒绝安装。
 
@@ -452,17 +434,17 @@ Office 组件不随系统镜像打包，首次使用时从 Alpine 软件源下�
 
 - 这是 libinput 没有拿到带 udev 标记的输入设备。26.3 已修复：`startgui` 会从 `/sbin/udevd`、`/lib/udev/udevd`、`/usr/lib/udev/udevd` 等实际路径启动 eudev（不再只查 PATH），等待 `/run/udev/control` 就绪后执行 `udevadm trigger --action=add` 与 `udevadm settle`。
 - 如果仍然无输入，切到 tty2（Ctrl+Alt+F2，按回车）查看日志：
-  ```ash
+  ```sh
   grep -E 'udev|ID_INPUT|libinput|xinput' /var/log/xfce.log
   grep -iE 'libinput|input|\(EE\)' /var/log/Xorg.0.log | tail -n 40
   ```
   `xinput list` 为空说明 X 没有输入设备；`ID_INPUT_*` 为空说明 udev 没打标签。确认已安装 `eudev`、`xf86-input-libinput` 和 `xinput`：
-  ```ash
+  ```sh
   apk add eudev xf86-input-libinput xinput
   /usr/bin/switch-to-xfce
   ```
 - 确认 UTM 的指针设备是 **USB Tablet**（或默认 USB 鼠标）；PS/2 设备在部分 Apple 虚拟化配置下不会被自动识别。
-- 桌面上找不到“切换到 XFCE 桌面”时，确认镜像为 26.5 且没有被旧版快捷方式缓存覆盖；开始 → 程序 → “切换到 XFCE 桌面”与桌面图标使用同一个入口，也可以直接执行 `/usr/bin/switch-to-xfce`。
+- 桌面上找不到“切换到 XFCE 桌面”时，确认镜像为 26.6 且没有被旧版快捷方式缓存覆盖；开始 → 程序 → “切换到 XFCE 桌面”与桌面图标使用同一个入口，也可以直接执行 `/usr/bin/switch-to-xfce`。
 
 **微信报 libandromeda.so 或其它共享库找不到**
 
@@ -496,7 +478,7 @@ Office 组件不随系统镜像打包，首次使用时从 Alpine 软件源下�
 
 - 首次使用会弹出组件安装确认，选择“确定”后由 `win95-x11-setup` 自动执行 `apk add`（`xvfb`、`dbus`、`xfce4-terminal`、`firefox`、`font-wqy-zenhei`、Mesa 等），进度显示在“安装进度”窗口；完成后会自动启动刚才请求的程序。
 - 若安装失败，查看 `/var/log/win95-x11-setup.log`；也可在 Win95 终端手动执行：
-  ```ash
+  ```sh
   apk update && apk add xvfb dbus dbus-x11 xfce4-terminal firefox font-wqy-zenhei mesa mesa-egl mesa-gles mesa-gl mesa-dri-gallium
   ```
   然后重新双击图标。
@@ -514,7 +496,7 @@ Office 组件不随系统镜像打包，首次使用时从 Alpine 软件源下�
   2. 把文件放进虚拟机的 `/root/下载/`；
   3. 重新点击“Arch Linux”，脚本会校验 gzip 后自动导入缓存，不再联网下载。
 - 如果 `pacman` 报 `error adding trust anchors from file: /etc/ssl/certs/ca-certificates.crt`、`failed to initialize alpm library ... /var/lib/pacman/`，或提交事务时报 `could not open file: /etc/mtab`、`could not determine filesystem mount points`、`could not determine cachedir mount point`，说明 chroot 处于半初始化状态。运行 `win95-arch-repair`（或开始菜单 Arch → **检查并修复**）即可：它会补齐 `local`/`sync` 目录、写入带 `/` 根挂载项的 `/etc/mtab`、从缓存的压缩包恢复被删掉的包数据库、用 Alpine 的 Mozilla 根证书包修复 SSL，并在 HTTPS 失败时自动把 TUNA 源切换为 HTTP。紧急情况下也可在 Alpine 终端（退出 chroot 后）手动执行：
-  ```ash
+  ```sh
   mkdir -p /opt/archlinux/var/lib/pacman/local /opt/archlinux/var/lib/pacman/sync
   # pacman 提交事务前要读 /etc/mtab，里面必须有一行挂载点是 "/"
   printf 'rootfs / rootfs rw,relatime 0 0\n' > /opt/archlinux/etc/mtab
@@ -595,7 +577,7 @@ Office 组件不随系统镜像打包，首次使用时从 Alpine 软件源下�
 
   出问题的只是目标盘 EFI 分区里的 `/initrd`，系统本体完好。完全关机 → 用新镜像覆盖 UTM 里的安装盘文件 → 启动到安装器 → 点 **终端**，执行：
 
-  ```ash
+  ```sh
   mkdir -p /mnt/esp
   mount /dev/vda1 /mnt/esp          # 目标盘的 EFI 分区；若目标盘是 vdb 则写 /dev/vdb1
   cp /payload/initrd-installed.img /mnt/esp/initrd
@@ -630,7 +612,7 @@ Office 组件不随系统镜像打包，首次使用时从 Alpine 软件源下�
 - 若日志提示网络错误，先在终端确认地址：`ifconfig` 应有与 Mac 同网段的局域网地址（如 `192.168.x.x`），`cat /etc/resolv.conf` 应有 `nameserver`。没有地址时见上一条 `CONFIG_PACKET` 的说明。
 - 清华镜像不可用或同步滞后时，可切回官方源，在终端执行：
 
-  ```ash
+  ```sh
   sed -i 's|mirrors.tuna.tsinghua.edu.cn|dl-cdn.alpinelinux.org|' /etc/apk/repositories
   apk update
   ```
@@ -644,29 +626,12 @@ Office 组件不随系统镜像打包，首次使用时从 Alpine 软件源下�
 
 - 删除该虚拟机的目标磁盘，重新创建一块 16 GiB raw 磁盘（只装桌面可用 8 GiB），再按本说明安装。
 
-**Xfce图标太丑甚至缺失**
-
-- 安装时请这样执行：
-
-  ```ash
-  apk add alpine-conf
-  setup-desktop
-  # 请选择xfce
-  # 请自行安装中文字体
-  # ====================
-  #       启动Xfce4
-  # ====================
-  switch-to-xfce # 中文
-  # 或者
-  startxfce4 # 英文
-  ```
-
 ---
 
 ## 八、说明
 
 - 安装镜像与已安装系统均为 ARM64 UEFI，面向 Apple Virtualization / UTM。
-- 本说明中的镜像由离线素材构建；构建者已在 UTM 中实际启动过虚拟机，运行时行为需要按上述步骤配置UTM，若无法启动，请检查配置。
+- 本说明中的镜像由离线素材构建；构建者未在 UTM 中实际启动过虚拟机，运行时行为需要按上述步骤自行验证。
 - UTM 的 Apple Virtualization 后端只支持 raw 磁盘；qcow2 仅适用于 QEMU 后端。
 
 参考：UTM 官方文档《Drive》（Apple Virtualization）  

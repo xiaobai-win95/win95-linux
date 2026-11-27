@@ -625,7 +625,7 @@ func (a *TaskManagerApp) Paint(d *Desktop, w *Window, c *ui.Canvas, r ui.Rect) {
 	if a.listR.H < 20 {
 		a.listR.H = 20
 	}
-	c.FillRect(a.listR, ui.ColWhite)
+	c.FillRect(a.listR, ui.ColField)
 	c.Sunken(a.listR)
 
 	inner := a.listR.Inset(2)

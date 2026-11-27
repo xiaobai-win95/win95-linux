@@ -124,7 +124,7 @@ func (a *FindApp) Paint(d *Desktop, w *Window, c *ui.Canvas, r ui.Rect) {
 
 	listTop := y + 38
 	a.listR = ui.Rect{r.X + 12, listTop, r.W - 24, r.Bottom() - listTop - 64}
-	c.FillRect(a.listR, ui.ColWhite)
+	c.FillRect(a.listR, ui.ColField)
 	c.Sunken(a.listR)
 	inner := a.listR.Inset(2)
 	scrollW := 16
@@ -210,7 +210,7 @@ func (a *FindApp) Paint(d *Desktop, w *Window, c *ui.Canvas, r ui.Rect) {
 }
 
 func (a *FindApp) drawField(c *ui.Canvas, f *ui.Font, r ui.Rect, value []rune, caret int, focused bool) {
-	c.FillRect(r, ui.ColWhite)
+	c.FillRect(r, ui.ColField)
 	c.Sunken(r)
 	f.TextClip(c, r.X+5, r.Y+4, r.W-10, string(value), ui.ColText)
 	if focused {

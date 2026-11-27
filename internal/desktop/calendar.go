@@ -87,7 +87,7 @@ func (a *CalendarApp) Paint(d *Desktop, w *Window, c *ui.Canvas, r ui.Rect) {
 	}
 
 	grid := ui.Rect{r.X + 8, header.Bottom() + 6, r.W - 16, r.Bottom() - header.Bottom() - 42}
-	c.FillRect(grid, ui.ColWhite)
+	c.FillRect(grid, ui.ColField)
 	c.Sunken(grid)
 	cw := grid.W / 7
 	headH := 24

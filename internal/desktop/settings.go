@@ -160,7 +160,7 @@ func (a *SettingsApp) paintLanguage(d *Desktop, c *ui.Canvas, f *ui.Font, inner 
 		r := ui.Rect{inner.X, y, inner.W - 4, 30}
 		a.langRects[i] = r
 		if l.Code == d.lang {
-			c.FillRect(r, ui.ColWhite)
+			c.FillRect(r, ui.ColField)
 			c.Sunken(r)
 		}
 		drawRadio(c, ui.Rect{r.X + 8, r.Y + 7, 16, 16}, l.Code == d.lang)
@@ -232,7 +232,7 @@ func (a *SettingsApp) paintTheme(d *Desktop, c *ui.Canvas, f *ui.Font, inner ui.
 		r := ui.Rect{inner.X, y, inner.W - 4, 44}
 		a.themeRects[i] = r
 		if i == d.theme {
-			c.FillRect(r, ui.ColWhite)
+			c.FillRect(r, ui.ColField)
 			c.Sunken(r)
 		} else {
 			c.FillRect(r, ui.ColFace)

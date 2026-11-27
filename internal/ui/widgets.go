@@ -124,6 +124,75 @@ func Cursor(c *Canvas, x, y int) {
 	}
 }
 
+// CursorResize draws a double-headed resize cursor centred on x,y.
+func CursorResize(c *Canvas, x, y int, direction string) {
+	var ax, ay, bx, by, px, py int
+	switch direction {
+	case "ew":
+		ax, ay, bx, by, px, py = 3, 7, 12, 7, 0, 1
+	case "ns":
+		ax, ay, bx, by, px, py = 7, 3, 7, 12, 1, 0
+	case "nwse":
+		ax, ay, bx, by, px, py = 3, 3, 12, 12, 1, -1
+	case "nesw":
+		ax, ay, bx, by, px, py = 12, 3, 3, 12, 1, 1
+	default:
+		Cursor(c, x, y)
+		return
+	}
+	line := func(x0, y0, x1, y1 int, col uint32) {
+		dx, dy := x1-x0, y1-y0
+		if dx < 0 {
+			dx = -dx
+		}
+		if dy < 0 {
+			dy = -dy
+		}
+		sx, sy := 1, 1
+		if x0 > x1 {
+			sx = -1
+		}
+		if y0 > y1 {
+			sy = -1
+		}
+		err := dx - dy
+		for {
+			c.Set(x0, y0, col)
+			if x0 == x1 && y0 == y1 {
+				break
+			}
+			e2 := 2 * err
+			if e2 > -dy {
+				err -= dy
+				x0 += sx
+			}
+			if e2 < dx {
+				err += dx
+				y0 += sy
+			}
+		}
+	}
+	line(x+ax, y+ay, x+bx, y+by, ColDark)
+	line(x+ax+px, y+ay+py, x+bx-px, y+by-py, ColWhite)
+	ex, ey := bx-ax, by-ay
+	if ex > 0 {
+		ex = 1
+	} else if ex < 0 {
+		ex = -1
+	}
+	if ey > 0 {
+		ey = 1
+	} else if ey < 0 {
+		ey = -1
+	}
+	for _, tip := range [][2]int{{ax, ay}, {bx, by}} {
+		line(x+tip[0], y+tip[1], x+tip[0]-4*ex+3*px, y+tip[1]-4*ey+3*py, ColDark)
+		line(x+tip[0], y+tip[1], x+tip[0]-4*ex-3*px, y+tip[1]-4*ey-3*py, ColDark)
+		line(x+tip[0]+px, y+tip[1]+py, x+tip[0]-3*ex+2*px, y+tip[1]-3*ey+2*py, ColWhite)
+		line(x+tip[0]-px, y+tip[1]-py, x+tip[0]-3*ex-2*px, y+tip[1]-3*ey-2*py, ColWhite)
+	}
+}
+
 // IconComputer draws a small desktop computer icon.
 func IconComputer(c *Canvas, x, y, scale int, selected bool) {
 	// 32x32 design scaled up.

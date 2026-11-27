@@ -1,0 +1,339 @@
+#!/bin/sh
+# Install official Windows WeChat 4.2.1 x64 with pinned Box64 and an isolated
+# Alpine x86_64 Wine 11 root. Alpine's native aarch64 Wine cannot supply the
+# x86_64 PE libraries WeChat needs, so the host deliberately does not install
+# the native wine package for this route.
+
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+. /usr/bin/win95-wechat-wine-common
+
+STATUS=/usr/bin/win95-install-status
+NOTIFY=/usr/bin/win95-notify
+CACHE=/var/cache/win95
+LOG=${WIN95_WECHAT_WINE_LOG:-/var/log/win95-wechat-wine-setup.log}
+INSTALLER=$CACHE/WeChatWin_4.2.1.exe
+INSTALLER_URL=https://dldir1v6.qq.com/weixin/Universal/Windows/WeChatWin_4.2.1.exe
+INSTALLER_SIZE=262761400
+INSTALLER_MD5=41941cba8eef9317c64aee71b89d4516
+BUILD_ROOT=/var/tmp/win95-box64-$BOX64_COMMIT
+BUILD_DEPS=0
+CHECK_ONLY=0
+
+case "${1:-}" in
+--check) CHECK_ONLY=1 ;;
+'') ;;
+*) echo "usage: win95-wechat-wine-setup [--check]" >&2; exit 2 ;;
+esac
+[ "$#" -le 1 ] || { echo "usage: win95-wechat-wine-setup [--check]" >&2; exit 2; }
+
+mkdir -p /var/log /run "$CACHE" /usr/local/share/win95 2>/dev/null || true
+
+log() {
+	echo "$(date '+%F %T') $*" >>"$LOG" 2>/dev/null
+}
+
+status() {
+	[ -x "$STATUS" ] && "$STATUS" "$@" >/dev/null 2>&1
+}
+
+notify() {
+	[ -x "$NOTIFY" ] && "$NOTIFY" "$1" "$2" >/dev/null 2>&1
+}
+
+fail() {
+	wsw_message=$1
+	log "FAILED: $wsw_message"
+	status fail "$wsw_message"
+	notify "微信 Wine 版" "$wsw_message"
+	echo "win95-wechat-wine-setup: $wsw_message" >&2
+	exit 1
+}
+
+cleanup() {
+	wsw_rc=$?
+	trap - EXIT INT TERM
+	if [ -n "$WINE_MOUNTED" ]; then
+		timeout 20 /bin/sh -c '. /usr/bin/win95-wechat-wine-common; wine_guest_command /usr/bin/wineserver -k' \
+			>/dev/null 2>&1 || true
+	fi
+	wine_umount_all
+	if [ "$BUILD_DEPS" = 1 ]; then
+		log "cleaning temporary Box64 build dependencies"
+		apk del .win95-box64-build >>"$LOG" 2>&1 || true
+	fi
+	wine_lock_release
+	exit "$wsw_rc"
+}
+
+if [ "$CHECK_ONLY" = 1 ]; then
+	box64_healthy || { echo "Box64 $BOX64_TAG 缺失或校验失败" >&2; exit 1; }
+	wine_root_healthy || { echo "x86_64 Wine 11 子系统缺失或架构不正确" >&2; exit 1; }
+	wine_prefix_healthy || { echo "x64 Wine 前缀不完整：$WINE_PREFIX" >&2; exit 1; }
+	wechat_healthy || { echo "微信 x64 可执行文件或安装标记缺失" >&2; exit 1; }
+	exit 0
+fi
+
+[ "$(id -u)" = 0 ] || { echo "win95-wechat-wine-setup: must run as root" >&2; exit 1; }
+[ "$(uname -m)" = aarch64 ] || { echo "win95-wechat-wine-setup: Box64 route requires ARM64" >&2; exit 1; }
+[ -x /sbin/apk ] || { echo "win95-wechat-wine-setup: Alpine apk is required" >&2; exit 1; }
+: >"$LOG" 2>/dev/null || true
+trap cleanup EXIT INT TERM
+if box64_healthy && wine_root_healthy && wine_prefix_healthy && wechat_healthy && \
+	! apk info -e .win95-box64-build >/dev/null 2>&1; then
+	status begin "微信 Wine 版安装" "正在检查已安装的 Box64、Wine 与微信…"
+	status done "Wine 版微信已安装，健康检查通过"
+	exit 0
+fi
+wine_lock_acquire || fail "另一个微信 Wine 安装或启动任务正在运行"
+
+WIN95_INSTALL_JOB=${WIN95_INSTALL_JOB:-wechat-wine}
+WIN95_INSTALL_PID=$$
+export WIN95_INSTALL_JOB WIN95_INSTALL_PID
+status begin "微信 Wine 版安装" "正在检查磁盘与 ARM64 环境…"
+if apk info -e .win95-box64-build >/dev/null 2>&1; then
+	log "removing stale Box64 build dependency group"
+	apk del .win95-box64-build >>"$LOG" 2>&1 || fail "上次中断遗留的 Box64 编译依赖无法清理"
+fi
+
+avail=$(df -Pk /opt 2>/dev/null | awk 'NR==2 {print $4}')
+if [ -z "$avail" ] || [ "$avail" -lt 4500000 ]; then
+	fail "磁盘空间不足：Wine 版首次安装至少需要 4.5GB 可用空间"
+fi
+
+box64_host_healthy() {
+	[ -x /usr/local/bin/box64 ] || return 1
+	[ -f "$BOX64_MARKER" ] || return 1
+	[ "$(wine_status_value tag "$BOX64_MARKER")" = "$BOX64_TAG" ] || return 1
+	[ "$(wine_status_value commit "$BOX64_MARKER")" = "$BOX64_COMMIT" ] || return 1
+	[ "$(wine_status_value sha256 "$BOX64_MARKER")" = "$BOX64_SHA256" ] || return 1
+	readelf -h /usr/local/bin/box64 2>/dev/null | grep -q 'Machine:.*AArch64' || return 1
+	readelf -l /usr/local/bin/box64 2>/dev/null | grep -q '/lib/ld-musl-aarch64.so.1' || return 1
+	/usr/local/bin/box64 --version 2>/dev/null | grep -q 'Box64 v0.4.5'
+}
+
+wine_guest_timeout() {
+	wgt_seconds=$1
+	wgt_exe=$2
+	shift 2
+	timeout "$wgt_seconds" /bin/sh -c '. /usr/bin/win95-wechat-wine-common; wine_guest_command "$@"' sh "$wgt_exe" "$@"
+}
+
+install_box64() {
+	status set 8 "正在安装 X11、字体与校验工具…"
+	log "installing host runtime packages"
+	if ! apk update >>"$LOG" 2>&1 || ! apk add --no-cache \
+		curl ca-certificates tar binutils xvfb dbus dbus-x11 xclip \
+		font-wqy-zenhei mesa mesa-egl mesa-gles mesa-gl mesa-dri-gallium >>"$LOG" 2>&1; then
+		fail "Alpine 图形与校验组件安装失败，详见 $LOG"
+	fi
+
+	if box64_host_healthy; then
+		log "pinned Box64 is already installed"
+	else
+		status set 14 "正在准备 Box64 $BOX64_TAG 源码…"
+		archive=$CACHE/box64-$BOX64_COMMIT.tar.gz
+		actual=$(sha256sum "$archive" 2>/dev/null | awk '{print $1}')
+		if [ "$actual" != "$BOX64_SHA256" ]; then
+			rm -f "$archive"
+			log "downloading $BOX64_URL"
+			if ! curl -fL --retry 3 --connect-timeout 20 --speed-time 120 --speed-limit 1024 \
+				-o "$archive" "$BOX64_URL" >>"$LOG" 2>&1; then
+				fail "Box64 固定源码下载失败，详见 $LOG"
+			fi
+		fi
+		actual=$(sha256sum "$archive" 2>/dev/null | awk '{print $1}')
+		[ "$actual" = "$BOX64_SHA256" ] || fail "Box64 源码 SHA256 校验失败"
+		gzip -t "$archive" >>"$LOG" 2>&1 || fail "Box64 源码归档不完整"
+
+		status set 18 "正在编译 ARM64/musl Box64 DynaRec…"
+		rm -rf "$BUILD_ROOT"
+		mkdir -p "$BUILD_ROOT" || fail "无法创建 Box64 构建目录"
+		if ! tar -xzf "$archive" -C "$BUILD_ROOT" >>"$LOG" 2>&1; then
+			fail "Box64 源码解压失败"
+		fi
+		src=$BUILD_ROOT/box64-$BOX64_COMMIT
+		[ -f "$src/CMakeLists.txt" ] || fail "Box64 源码目录不完整"
+		if ! apk add --virtual .win95-box64-build \
+			build-base cmake python3 linux-headers >>"$LOG" 2>&1; then
+			fail "Box64 临时编译依赖安装失败"
+		fi
+		BUILD_DEPS=1
+		if ! cmake -S "$src" -B "$BUILD_ROOT/build" \
+			-DARM_DYNAREC=ON -DNOGIT=1 -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+			-DCMAKE_INSTALL_PREFIX=/usr/local >>"$LOG" 2>&1; then
+			fail "Box64 CMake 配置失败，详见 $LOG"
+		fi
+		if ! make -C "$BUILD_ROOT/build" -j2 >>"$LOG" 2>&1; then
+			fail "Box64 编译失败，详见 $LOG"
+		fi
+		if ! make -C "$BUILD_ROOT/build" install >>"$LOG" 2>&1; then
+			fail "Box64 安装失败，详见 $LOG"
+		fi
+		{
+			printf 'tag=%s\n' "$BOX64_TAG"
+			printf 'commit=%s\n' "$BOX64_COMMIT"
+			printf 'sha256=%s\n' "$BOX64_SHA256"
+		} >"$BOX64_MARKER"
+		rm -rf "$BUILD_ROOT"
+		if ! apk del .win95-box64-build >>"$LOG" 2>&1; then
+			fail "Box64 临时编译依赖清理失败"
+		fi
+		BUILD_DEPS=0
+		box64_host_healthy || fail "Box64 清理编译依赖后自检失败"
+	fi
+}
+
+sync_box64_into_wine_root() {
+	cp -f /usr/local/bin/box64 "$WINE_ROOT/usr/local/bin/box64" || fail "无法复制 Box64 到 x86_64 子系统"
+	cp -Lf /lib/ld-musl-aarch64.so.1 "$WINE_ROOT/lib/ld-musl-aarch64.so.1" || fail "缺少 ARM64 musl loader"
+	cp -Lf /lib/libc.musl-aarch64.so.1 "$WINE_ROOT/lib/libc.musl-aarch64.so.1" || fail "缺少 ARM64 musl libc"
+	cp -f /etc/box64.box64rc "$WINE_ROOT/etc/box64.box64rc" 2>/dev/null || true
+	if [ -d /usr/lib/box64-x86_64-linux-gnu ]; then
+		mkdir -p "$WINE_ROOT/usr/lib/box64-x86_64-linux-gnu"
+		cp -a /usr/lib/box64-x86_64-linux-gnu/. "$WINE_ROOT/usr/lib/box64-x86_64-linux-gnu/" || fail "Box64 x64 运行库复制失败"
+	fi
+}
+
+install_x64_wine() {
+	if wine_root_healthy; then
+		log "x86_64 Wine root is already ready"
+		sync_box64_into_wine_root
+		box64_healthy || fail "已有 x86_64 子系统中的 Box64 同步失败"
+		return 0
+	fi
+	status set 38 "正在安装独立 x86_64 Wine 11 子系统…"
+	log "installing Alpine x86_64 Wine into $WINE_ROOT"
+	mkdir -p "$WINE_ROOT/etc/apk/keys" "$WINE_ROOT/usr/local/bin" \
+		"$WINE_ROOT/lib" "$WINE_ROOT/usr/lib" "$WINE_ROOT/root" \
+		"$WINE_ROOT/tmp" "$WINE_ROOT/run" "$WINE_ROOT/dev" \
+		"$WINE_ROOT/proc" "$WINE_ROOT/sys" "$WINE_ROOT/var/cache/win95" || fail "无法创建 x86_64 Wine 目录"
+	cp -f /etc/apk/repositories "$WINE_ROOT/etc/apk/repositories" || fail "无法复制 Alpine 软件源"
+	cp -f /etc/apk/keys/* "$WINE_ROOT/etc/apk/keys/" || fail "无法复制 Alpine 签名密钥"
+	# Foreign-architecture package triggers cannot execute on ARM64. The base
+	# root needs no triggers for Wine, fonts or Mesa; all are checked below.
+	if ! apk --arch x86_64 --root "$WINE_ROOT" --initdb --no-scripts --no-cache add \
+		alpine-baselayout busybox musl ca-certificates-bundle \
+		wine fontconfig font-noto-cjk font-wqy-zenhei \
+		mesa-gl mesa-egl mesa-dri-gallium >>"$LOG" 2>&1; then
+		fail "x86_64 Wine 11 软件包安装失败，详见 $LOG"
+	fi
+	printf 'root:x:0:0:root:/root:/bin/ash\n' >"$WINE_ROOT/etc/passwd"
+	printf 'root:x:0:\n' >"$WINE_ROOT/etc/group"
+	cp -f /etc/nsswitch.conf "$WINE_ROOT/etc/nsswitch.conf" 2>/dev/null || true
+	cp -f /etc/resolv.conf "$WINE_ROOT/etc/resolv.conf" 2>/dev/null || true
+	[ -x "$WINE_ROOT/usr/bin/wine64" ] || fail "x86_64 Wine 包缺少 wine64"
+	readelf -h "$WINE_ROOT/usr/bin/wine64" | grep -q 'Machine:.*X86-64' || fail "Wine 可执行文件不是 x86_64"
+
+	sync_box64_into_wine_root
+	chroot "$WINE_ROOT" /usr/local/bin/box64 --version >>"$LOG" 2>&1 || fail "Box64 无法在 x86_64 chroot 中运行"
+	printf 'arch=x86_64\nwine=11\n' >"$WINE_ROOT_MARKER"
+	wine_root_healthy || fail "x86_64 Wine/Mesa 安装后健康检查失败"
+}
+
+installer_valid() {
+	[ "$(wc -c <"$INSTALLER" 2>/dev/null)" = "$INSTALLER_SIZE" ] || return 1
+	[ "$(md5sum "$INSTALLER" 2>/dev/null | awk '{print $1}')" = "$INSTALLER_MD5" ] || return 1
+	pe_is_x64 "$INSTALLER"
+}
+
+download_installer() {
+	if installer_valid; then
+		log "cached official WeChat installer is valid"
+		return 0
+	fi
+	size=$(wc -c <"$INSTALLER" 2>/dev/null || echo 0)
+	if [ "$size" -ge "$INSTALLER_SIZE" ]; then
+		rm -f "$INSTALLER"
+	fi
+	status set 70 "正在下载官方微信 Windows 4.2.1 x64…"
+	log "downloading $INSTALLER_URL"
+	exitfile=$CACHE/win95-wechat-wine-fetch.exit
+	rm -f "$exitfile"
+	(curl -fL -C - --retry 3 --connect-timeout 20 --speed-time 120 --speed-limit 1024 \
+		-o "$INSTALLER" -w 'curl http=%{http_code} bytes=%{size_download}\n' \
+		"$INSTALLER_URL" >>"$LOG" 2>&1; echo $? >"$exitfile") &
+	wsw_pid=$!
+	while [ ! -f "$exitfile" ]; do
+		size=$(wc -c <"$INSTALLER" 2>/dev/null || echo 0)
+		pct=$((70 + size * 12 / INSTALLER_SIZE))
+		[ "$pct" -le 82 ] || pct=82
+		status set "$pct" "正在下载微信安装包（$((size / 1048576)) / $((INSTALLER_SIZE / 1048576)) MB）…"
+		sleep 2
+	done
+	wsw_rc=$(cat "$exitfile" 2>/dev/null || echo 1)
+	rm -f "$exitfile"
+	wait "$wsw_pid" 2>/dev/null || true
+	[ "$wsw_rc" = 0 ] || fail "官方微信安装包下载失败（curl 退出码 $wsw_rc），详见 $LOG"
+	installer_valid || fail "微信安装包大小、官方 COS MD5 或 PE x64 校验失败"
+}
+
+install_wechat() {
+	status set 56 "正在初始化 x64 Wine 前缀…"
+	if ! wine_prefix_healthy; then
+		rm -rf "$WINE_PREFIX"
+		mkdir -p "$WINE_PREFIX" || fail "无法创建 Wine 前缀"
+		wine_mount_all || fail "x86_64 Wine chroot 挂载失败"
+		if ! wine_guest_timeout 300 /usr/bin/wineboot --init >>"$LOG" 2>&1; then
+			fail "wineboot 初始化 x64 前缀失败，详见 $LOG"
+		fi
+		wine_guest_timeout 90 /usr/bin/wineserver -w >>"$LOG" 2>&1 || true
+		wine_prefix_healthy || fail "Wine 前缀缺少 x64 系统 DLL，详见 $LOG"
+		printf 'arch=win64\nwine=11\n' >"$WINE_PREFIX_MARKER"
+	fi
+	wine_mount_all || fail "x86_64 Wine chroot 挂载失败"
+	if [ -x "$WINE_ROOT/usr/bin/fc-cache" ]; then
+		chroot "$WINE_ROOT" /usr/local/bin/box64 /usr/bin/fc-cache -f >>"$LOG" 2>&1 || true
+	fi
+
+	if wechat_healthy; then
+		status set 94 "微信已安装，正在执行最终健康检查…"
+		return 0
+	fi
+	download_installer
+	status set 86 "请在 X11 代理窗口中完成官方微信安装器…"
+	notify "微信 Wine 版" "官方微信安装器已启动，请在 X11 代理窗口中完成安装。"
+	log "running official Windows installer through box64 wine"
+	if ! wine_guest_timeout 1200 /usr/bin/wine "$INSTALLER" >>"$LOG" 2>&1; then
+		fail "微信 Windows 安装器执行失败，详情见 $LOG"
+	fi
+	wine_guest_timeout 90 /usr/bin/wineserver -w >>"$LOG" 2>&1 || true
+
+	list=$CACHE/win95-wechat-wine-exes
+	result=$CACHE/win95-wechat-wine-result
+	find "$WINE_PREFIX/drive_c" -type f -iname WeChat.exe >"$list" 2>/dev/null || true
+	: >"$result"
+	while IFS= read -r wsw_exe; do
+		[ -n "$wsw_exe" ] || continue
+		if pe_is_x64 "$wsw_exe"; then
+			printf '%s\n' "$wsw_exe" >"$result"
+			break
+		fi
+	done <"$list"
+	wsw_exe=$(cat "$result" 2>/dev/null)
+	[ -n "$wsw_exe" ] || fail "安装器结束后未找到微信 x64 可执行文件，详情见 $LOG"
+	chmod 0755 "$wsw_exe"
+	printf '%s\n' "$wsw_exe" >"$WECHAT_EXE_FILE"
+	{
+		printf 'version=4.2.1\n'
+		printf 'arch=x64\n'
+		printf 'exe=%s\n' "$wsw_exe"
+	} >"$WECHAT_MARKER"
+	status set 94 "微信已安装，正在执行最终健康检查…"
+}
+
+install_box64
+install_x64_wine
+install_wechat
+
+box64_healthy || fail "Box64 最终健康检查失败"
+wine_root_healthy || fail "x86_64 Wine 最终健康检查失败"
+wine_prefix_healthy || fail "Wine 前缀最终健康检查失败"
+wechat_healthy || fail "微信可执行文件最终健康检查失败"
+if apk info -e .win95-box64-build >/dev/null 2>&1; then
+	fail "临时 Box64 编译依赖仍未清理"
+fi
+log "Box64/Wine/WeChat health checks passed"
+status done "Wine 版微信安装完成，正在启动…"
+notify "微信 Wine 版" "Box64、x86_64 Wine 与微信健康检查均已通过，正在启动。"
+exit 0

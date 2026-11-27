@@ -61,9 +61,24 @@ func (a *dialogApp) DefaultSize() (int, int) { return a.w, a.h }
 func (a *dialogApp) MinSize() (int, int)     { return a.w, a.h }
 func (a *dialogApp) Resizable() bool         { return false }
 
+// standardButtonLabel translates only shared button labels. Caller-defined
+// actions and prompts remain untouched.
+func (d *Desktop) standardButtonLabel(label string) string {
+	switch label {
+	case "确定", "取消", "是", "否", "打开", "保存", "关闭", "应用", "继续":
+		return d.tr(label)
+	default:
+		return label
+	}
+}
+
 func (d *Desktop) MessageBox(title, text string, icon DialogIcon, buttons []string, cb func(int)) *Window {
 	if len(buttons) == 0 {
 		buttons = []string{"确定"}
+	}
+	labels := make([]string, len(buttons))
+	for i, label := range buttons {
+		labels[i] = d.standardButtonLabel(label)
 	}
 	const w = 470
 	lines := wrapText(text, w-40-64)
@@ -71,7 +86,7 @@ func (d *Desktop) MessageBox(title, text string, icon DialogIcon, buttons []stri
 	if h < 185 {
 		h = 185
 	}
-	a := &dialogApp{d: d, title: title, lines: lines, icon: icon, buttons: buttons, cb: cb, w: w, h: h}
+	a := &dialogApp{d: d, title: title, lines: lines, icon: icon, buttons: labels, cb: cb, w: w, h: h}
 	if icon == IconError {
 		beep()
 	}

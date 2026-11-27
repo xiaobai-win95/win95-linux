@@ -1,0 +1,65 @@
+#!/bin/sh
+# Launch the installed Windows x64 WeChat through ARM64 Box64 -> x86_64 Wine.
+# The X11 proxy supplies DISPLAY=:1 and the session bus; both are preserved.
+
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+. /usr/bin/win95-wechat-wine-common
+
+LOG=/var/log/win95-wechat-wine-run.log
+NOTIFY=/usr/bin/win95-notify
+
+notify() {
+	[ -x "$NOTIFY" ] && "$NOTIFY" "$1" "$2" >/dev/null 2>&1
+}
+
+cleanup() {
+	wwr_rc=$?
+	trap - EXIT INT TERM
+	if [ -n "$WINE_MOUNTED" ]; then
+		timeout 20 /bin/sh -c '. /usr/bin/win95-wechat-wine-common; wine_guest_command /usr/bin/wineserver -k' \
+			>/dev/null 2>&1 || true
+	fi
+	wine_umount_all
+	wine_lock_release
+	exit "$wwr_rc"
+}
+
+[ "$(id -u)" = 0 ] || { echo "win95-wechat-wine-run: must run as root" >&2; exit 1; }
+[ -n "${DISPLAY:-}" ] || { echo "win95-wechat-wine-run: DISPLAY is required" >&2; exit 1; }
+mkdir -p /var/log /run 2>/dev/null || true
+: >"$LOG" 2>/dev/null || true
+exec >>"$LOG" 2>&1
+
+box64_healthy || { echo "Box64 health check failed; see $LOG" >&2; notify "微信 Wine 版" "Box64 自检失败，请重新运行微信安装。"; exit 1; }
+wine_root_healthy || { echo "x86_64 Wine health check failed" >&2; notify "微信 Wine 版" "x86_64 Wine 子系统不完整，请重新运行微信安装。"; exit 1; }
+wine_prefix_healthy || { echo "Wine prefix health check failed: $WINE_PREFIX" >&2; notify "微信 Wine 版" "Wine 前缀不完整，请重新运行微信安装。"; exit 1; }
+wechat_healthy || { echo "WeChat x64 executable health check failed" >&2; notify "微信 Wine 版" "微信可执行文件校验失败，请重新运行微信安装。"; exit 1; }
+
+trap cleanup EXIT INT TERM
+if ! wine_lock_acquire; then
+	wwr_pid=$(cat "$WINE_LOCKPID" 2>/dev/null || echo 0)
+	wwr_cmd=$(tr '\000' ' ' <"/proc/$wwr_pid/cmdline" 2>/dev/null || true)
+	case "$wwr_cmd" in
+	*win95-wechat-wine-run*)
+		echo "WeChat Wine route is already running"
+		exit 0
+		;;
+	*)
+		echo "another WeChat Wine task is running (pid $wwr_pid)" >&2
+		notify "微信 Wine 版" "另一个微信 Wine 安装或启动任务正在运行。"
+		exit 1
+		;;
+	esac
+fi
+
+wine_mount_all || { echo "Wine chroot mount failed" >&2; notify "微信 Wine 版" "x86_64 Wine 子系统挂载失败。"; exit 1; }
+wwr_exe=$(cat "$WECHAT_EXE_FILE")
+echo "Launching $wwr_exe with box64 wine on ${DISPLAY:-:1}"
+wine_guest "$wwr_exe" >>"$LOG" 2>&1
+wwr_rc=$?
+if [ "$wwr_rc" -ne 0 ]; then
+	echo "WeChat exited with status $wwr_rc; see $LOG" >&2
+	notify "微信 Wine 版" "微信启动失败（退出码 $wwr_rc），详情见 $LOG。"
+fi
+exit "$wwr_rc"

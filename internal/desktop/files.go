@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"win95linux/internal/media"
 	"win95linux/internal/ui"
 )
 
@@ -460,7 +461,7 @@ func (a *FileManagerApp) Paint(d *Desktop, w *Window, c *ui.Canvas, r ui.Rect) {
 	a.paintTabs(c, f, a.tabBarR)
 
 	addr := ui.Rect{r.X + 6, a.tabBarR.Bottom() + 3, r.W - 12, 24}
-	c.FillRect(addr, ui.ColWhite)
+	c.FillRect(addr, ui.ColField)
 	c.Sunken(addr)
 	ui.DrawIcon16(c, ui.IcoFolder, addr.X+4, addr.Y+4)
 	loc := a.path
@@ -470,7 +471,7 @@ func (a *FileManagerApp) Paint(d *Desktop, w *Window, c *ui.Canvas, r ui.Rect) {
 	f.TextClip(c, addr.X+24, addr.Y+4, addr.W-30, loc, ui.ColText)
 
 	a.listR = ui.Rect{r.X + 6, addr.Bottom() + 6, r.W - 12, r.H - (addr.Bottom() + 6 - r.Y) - 28}
-	c.FillRect(a.listR, ui.ColWhite)
+	c.FillRect(a.listR, ui.ColField)
 	c.Sunken(a.listR)
 	inner := a.listR.Inset(2)
 	headH := 20
@@ -561,7 +562,7 @@ func (a *FileManagerApp) paintTabs(c *ui.Canvas, f *ui.Font, bar ui.Rect) {
 		}
 		tr := ui.Rect{x, bar.Y, tw - 2, bar.H}
 		if i == a.tab {
-			c.FillRect(tr, ui.ColWhite)
+			c.FillRect(tr, ui.ColField)
 			c.Raised(tr)
 		} else {
 			c.FillRect(tr, ui.ColFace)
@@ -770,6 +771,8 @@ func (a *FileManagerApp) activate(idx int) {
 		a.d.openBrowser("file://" + e.path)
 	case ext == ".png" || ext == ".bmp" || ext == ".jpg" || ext == ".jpeg" || ext == ".gif":
 		a.d.openImageViewer(e.path)
+	case media.IsMediaFile(e.name):
+		a.d.openMediaFile(e.path)
 	case ext == ".sh":
 		a.d.runScript(e.path, "/bin/sh")
 	case ext == ".bash":
@@ -1176,6 +1179,9 @@ func fmTextType(name string) bool {
 func fmClassify(name string) (ui.IconKind, string) {
 	lower := strings.ToLower(name)
 	ext := filepath.Ext(lower)
+	if media.IsMediaFile(lower) {
+		return ui.IcoFile, "媒体文件"
+	}
 	switch ext {
 	case ".desktop":
 		return ui.IcoSetup, "应用程序快捷方式"
@@ -1207,9 +1213,6 @@ func fmClassify(name string) (ui.IconKind, string) {
 		".ppt", ".pptx", ".pptm", ".pps", ".ppsx", ".odt", ".ods", ".odp",
 		".odg", ".odf", ".odb", ".rtf", ".csv", ".tsv", ".vsd", ".vsdx":
 		return ui.IcoOffice, "办公文档"
-	case ".mp3", ".wav", ".flac", ".ogg", ".oga", ".m4a", ".aac", ".opus", ".wma",
-		".mp4", ".mkv", ".avi", ".mov", ".webm", ".wmv", ".flv", ".m4v", ".mpg", ".mpeg":
-		return ui.IcoFile, "媒体文件"
 	case ".ttf", ".otf", ".woff", ".woff2", ".ttc":
 		return ui.IcoFile, "字体文件"
 	case ".iso", ".img", ".raw", ".qcow2", ".vdi", ".vmdk", ".vhdx", ".dmg":

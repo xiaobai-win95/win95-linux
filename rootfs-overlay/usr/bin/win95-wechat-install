@@ -1,0 +1,249 @@
+#!/bin/sh
+# Aggregate the independent Wine and Arch WeChat installation routes.
+# Usage: win95-wechat-install wine|arch|both
+# Child installers publish to private status files; only this process publishes
+# the aggregate /run/win95-install.status, so a child "done" can never make a
+# partially successful "both" installation look complete.
+
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+LC_ALL=C
+export LC_ALL
+
+STATUS=${WIN95_INSTALL_STATUS:-/run/win95-install.status}
+LOGFILE=${WIN95_INSTALL_LOG:-/run/win95-install.log}
+STATUS_BIN=/usr/bin/win95-install-status
+NOTIFY=/usr/bin/win95-notify
+ROUTE=${1:-}
+LOCKDIR=/run/win95-wechat-install.lock
+PIDFILE=/run/win95-wechat-install.pid
+LOCK_OWNED=0
+RUN_ID=$(date +%s)-$$
+ROUTE_ERROR=
+FAILURES=
+WINE_OK=0
+ARCH_OK=0
+WINE_LAUNCHED=0
+ARCH_LAUNCHED=0
+
+case "$ROUTE" in
+wine | arch | both) ;;
+*) echo "usage: win95-wechat-install wine|arch|both" >&2; exit 2 ;;
+esac
+[ "$#" -eq 1 ] || { echo "usage: win95-wechat-install wine|arch|both" >&2; exit 2; }
+[ "$(id -u)" = 0 ] || { echo "win95-wechat-install: must run as root" >&2; exit 1; }
+for wci_bin in "$STATUS_BIN" /usr/bin/win95-wechat-wine-setup /usr/bin/win95-wechat-wine-run /usr/bin/win95-wechat-setup /usr/bin/win95-wechat-run; do
+	[ -x "$wci_bin" ] || { echo "win95-wechat-install: missing $wci_bin" >&2; exit 1; }
+done
+
+status() {
+	[ -x "$STATUS_BIN" ] && "$STATUS_BIN" "$@" >/dev/null 2>&1
+}
+
+notify() {
+	[ -x "$NOTIFY" ] && "$NOTIFY" "$1" "$2" >/dev/null 2>&1
+}
+
+fail() {
+	wci_message=$1
+	status fail "$wci_message"
+	notify "微信安装" "$wci_message"
+	echo "win95-wechat-install: $wci_message" >&2
+	exit 1
+}
+
+cleanup() {
+	wci_rc=$?
+	trap - EXIT INT TERM
+	rm -f /run/win95-wechat-$RUN_ID-*.exit 2>/dev/null || true
+	if [ "$LOCK_OWNED" = 1 ]; then
+		rm -f "$PIDFILE"
+		rmdir "$LOCKDIR" 2>/dev/null || true
+	fi
+	exit "$wci_rc"
+}
+
+trap cleanup EXIT INT TERM
+if ! mkdir "$LOCKDIR" 2>/dev/null; then
+	if [ -f "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE" 2>/dev/null)" 2>/dev/null; then
+		echo "win95-wechat-install: another WeChat install is running" >&2
+		notify "微信安装" "另一个微信安装任务正在运行。"
+		exit 1
+	fi
+	rmdir "$LOCKDIR" 2>/dev/null || true
+	mkdir "$LOCKDIR" 2>/dev/null || fail "无法创建微信安装锁"
+fi
+LOCK_OWNED=1
+echo $$ >"$PIDFILE"
+WIN95_INSTALL_JOB=wechat-$ROUTE
+WIN95_INSTALL_RUN_ID=$RUN_ID
+WIN95_INSTALL_PID=$$
+WIN95_INSTALL_STARTED=$(date '+%F %T')
+export WIN95_INSTALL_JOB WIN95_INSTALL_RUN_ID WIN95_INSTALL_PID WIN95_INSTALL_STARTED
+
+status begin "微信安装" "正在检查路线与磁盘空间…"
+avail=$(df -Pk /opt 2>/dev/null | awk 'NR==2 {print $4}')
+case "$ROUTE" in
+wine) required=4500000 ;;
+arch) required=5000000 ;;
+both) required=9000000 ;;
+esac
+if [ -z "$avail" ] || [ "$avail" -lt "$required" ]; then
+	fail "磁盘空间不足：所选路线至少需要 $((required / 1048576))GB 可用空间"
+fi
+
+# run_route KEY LABEL START END COMMAND... keeps child status/log files private
+# and maps their progress into the one aggregate status file.
+run_route() {
+	wri_key=$1
+	wri_label=$2
+	wri_start=$3
+	wri_end=$4
+	shift 4
+	wri_status=/run/win95-wechat-$wri_key.status
+	wri_log=/run/win95-wechat-$wri_key.log
+	wri_exit=/run/win95-wechat-$RUN_ID-$wri_key.exit
+	rm -f "$wri_status" "$wri_log" "$wri_exit"
+	: >"$wri_log"
+	status log "$wri_label：开始独立安装路线"
+	(
+		WIN95_INSTALL_STATUS="$wri_status" \
+		WIN95_INSTALL_LOG="$wri_log" \
+		WIN95_INSTALL_JOB="wechat-$wri_key" \
+		WIN95_INSTALL_RUN_ID="$RUN_ID" \
+		WIN95_INSTALL_TITLE="微信 $wri_label 安装" \
+		WIN95_WECHAT_WINE_LOG="$wri_log" \
+		"$@" >>"$wri_log" 2>&1
+		echo $? >"$wri_exit"
+	) &
+	wri_pid=$!
+	wri_last_msg=
+	while [ ! -f "$wri_exit" ]; do
+		if ! kill -0 "$wri_pid" 2>/dev/null; then
+			break
+		fi
+		wri_msg=$(sed -n 's/^msg=//p' "$wri_status" 2>/dev/null | head -n 1)
+		wri_pct=$(sed -n 's/^pct=//p' "$wri_status" 2>/dev/null | head -n 1)
+		case "$wri_pct" in '' | *[!0-9]*) wri_pct=0 ;; esac
+		[ "$wri_pct" -le 100 ] || wri_pct=100
+		wri_mapped=$((wri_start + wri_pct * (wri_end - wri_start) / 100))
+		[ -n "$wri_msg" ] || wri_msg="$wri_label：正在安装…"
+		status set "$wri_mapped" "$wri_label：$wri_msg"
+		if [ "$wri_msg" != "$wri_last_msg" ]; then
+			status log "$wri_label：$wri_msg"
+			wri_last_msg=$wri_msg
+		fi
+		sleep 1
+	done
+	wait "$wri_pid" 2>/dev/null
+	wri_rc=$?
+	if [ ! -f "$wri_exit" ]; then
+		echo "$wri_rc" >"$wri_exit"
+	fi
+	wri_rc=$(cat "$wri_exit" 2>/dev/null || echo "$wri_rc")
+	tail -n 8 "$wri_log" 2>/dev/null | while IFS= read -r wri_line; do
+		[ -n "$wri_line" ] && status log "$wri_label：$wri_line"
+	done
+	if [ "$wri_rc" = 0 ]; then
+		status log "$wri_label：安装与健康检查通过"
+		ROUTE_ERROR=
+		return 0
+	fi
+	wri_msg=$(sed -n 's/^msg=//p' "$wri_status" 2>/dev/null | head -n 1)
+	[ -n "$wri_msg" ] || wri_msg="安装进程失败"
+	ROUTE_ERROR="$wri_label：$wri_msg（退出码 $wri_rc；日志 $wri_log）"
+	status log "$ROUTE_ERROR"
+	return 1
+}
+
+# launch_route waits long enough for Wine/Electron to initialize. A still-live
+# child is a real launch; a nonzero exit is reported with its route log.
+launch_route() {
+	wli_key=$1
+	wli_label=$2
+	wli_log=$3
+	shift 3
+	wli_exit=/run/win95-wechat-$RUN_ID-launch-$wli_key.exit
+	rm -f "$wli_exit"
+	: >"$wli_log"
+	status set 96 "正在启动$wli_label微信…"
+	("$@" >>"$wli_log" 2>&1; echo $? >"$wli_exit") &
+	wli_pid=$!
+	wli_try=0
+	while [ "$wli_try" -lt 20 ] && [ ! -f "$wli_exit" ]; do
+		sleep 1
+		wli_try=$((wli_try + 1))
+	done
+	if [ ! -f "$wli_exit" ]; then
+		if kill -0 "$wli_pid" 2>/dev/null; then
+			status log "$wli_label：启动进程持续运行"
+			return 0
+		fi
+		echo 1 >"$wli_exit"
+	fi
+	wait "$wli_pid" 2>/dev/null || true
+	wli_rc=$(cat "$wli_exit" 2>/dev/null || echo 1)
+	if [ "$wli_rc" = 0 ]; then
+		status log "$wli_label：启动完成（已在运行或正常退出）"
+		return 0
+	fi
+	wli_detail=$(tail -n 1 "$wli_log" 2>/dev/null)
+	[ -n "$wli_detail" ] || wli_detail="启动进程退出"
+	ROUTE_ERROR="$wli_label：$wli_detail（退出码 $wli_rc；日志 $wli_log）"
+	status log "$ROUTE_ERROR"
+	tail -n 6 "$wli_log" 2>/dev/null | while IFS= read -r wli_line; do
+		[ -n "$wli_line" ] && status log "$wli_label：$wli_line"
+	done
+	return 1
+}
+
+if [ "$ROUTE" = wine ] || [ "$ROUTE" = both ]; then
+	if [ "$ROUTE" = both ]; then wci_start=5; wci_end=52; else wci_start=5; wci_end=94; fi
+	if run_route wine "Wine 版" "$wci_start" "$wci_end" /usr/bin/win95-wechat-wine-setup; then
+		WINE_OK=1
+	else
+		FAILURES="$FAILURES$ROUTE_ERROR；"
+	fi
+fi
+if [ "$ROUTE" = arch ] || [ "$ROUTE" = both ]; then
+	if [ "$ROUTE" = both ]; then wci_start=56; wci_end=94; else wci_start=5; wci_end=94; fi
+	if run_route arch "Arch 原生版" "$wci_start" "$wci_end" /usr/bin/win95-wechat-setup; then
+		ARCH_OK=1
+	else
+		FAILURES="$FAILURES$ROUTE_ERROR；"
+	fi
+fi
+
+if [ "$WINE_OK" = 1 ]; then
+	if launch_route wine "Wine 版" /var/log/win95-wechat-wine-run.log /usr/bin/win95-wechat-wine-run; then
+		WINE_LAUNCHED=1
+	else
+		FAILURES="$FAILURES$ROUTE_ERROR；"
+	fi
+fi
+if [ "$ARCH_OK" = 1 ]; then
+	if launch_route arch "Arch 原生版" /var/log/win95-wechat-arch-run.log \
+		/bin/sh -c 'exec /usr/bin/win95-wechat-run'; then
+		ARCH_LAUNCHED=1
+	else
+		FAILURES="$FAILURES$ROUTE_ERROR；"
+	fi
+fi
+
+if [ -n "$FAILURES" ]; then
+	FAILURES=${FAILURES%；}
+	[ -n "$FAILURES" ] || FAILURES="至少一条微信路线失败"
+	status fail "$FAILURES"
+	notify "微信安装" "部分路线失败：$FAILURES"
+	echo "win95-wechat-install: $FAILURES" >&2
+	exit 1
+fi
+
+case "$ROUTE" in
+wine) wci_done="Wine 版微信已安装并启动" ;;
+arch) wci_done="Arch 原生版微信已安装并启动" ;;
+both) wci_done="Wine 版与 Arch 原生版微信均已安装并启动" ;;
+esac
+status done "$wci_done"
+notify "微信安装" "$wci_done"
+exit 0

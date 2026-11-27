@@ -1,6 +1,8 @@
 export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 export HOME=/root
-export LANG=C.UTF-8
+export LANG="${LANG:-C.UTF-8}"
+export LC_TIME="${LC_TIME:-$LANG}"
+export LANGUAGE="${LANGUAGE:-$LANG}"
 export PAGER=less
 export PS1='[win95 \w]\$ '
 umask 022

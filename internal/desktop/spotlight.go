@@ -433,7 +433,7 @@ func (s *SpotlightApp) Paint(c *ui.Canvas) {
 	ui.Button(c, s.closeR, "×", false, true)
 
 	s.fieldR = ui.Rect{r.X + 12, r.Y + 36, r.W - 24, 26}
-	c.FillRect(s.fieldR, ui.ColWhite)
+	c.FillRect(s.fieldR, ui.ColField)
 	c.Sunken(s.fieldR)
 	f.TextClip(c, s.fieldR.X+6, s.fieldR.Y+5, s.fieldR.W-12, string(s.query), ui.ColText)
 	if s.active {
@@ -446,7 +446,7 @@ func (s *SpotlightApp) Paint(c *ui.Canvas) {
 
 	listTop := r.Y + 70
 	s.listR = ui.Rect{r.X + 12, listTop, r.W - 24, r.Bottom() - listTop - 28}
-	c.FillRect(s.listR, ui.ColWhite)
+	c.FillRect(s.listR, ui.ColField)
 	c.Sunken(s.listR)
 	inner := s.listR.Inset(2)
 	rows := inner.H / 24

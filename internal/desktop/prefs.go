@@ -13,20 +13,25 @@ import (
 var prefsPath = "/root/.config/win95/desktop.json"
 
 type desktopPrefs struct {
-	Background   int      `json:"background"`
-	SaverStyle   int      `json:"saver_style"`
-	SaverWait    int      `json:"saver_wait_minutes"`
-	RunHistory   []string `json:"run_history,omitempty"`
-	EULAAccepted bool     `json:"eula_accepted,omitempty"`
-	Lang         string   `json:"language,omitempty"`
-	Theme        int      `json:"theme,omitempty"`
-	DateFmt      int      `json:"date_format,omitempty"`
-	Clock12      bool     `json:"clock_12h,omitempty"`
-	WeekMonday   bool     `json:"week_monday,omitempty"`
-	ClockZone    string   `json:"clock_zone,omitempty"`
+	Background      int      `json:"background"`
+	SaverStyle      int      `json:"saver_style"`
+	SaverWait       int      `json:"saver_wait_minutes"`
+	RunHistory      []string `json:"run_history,omitempty"`
+	EULAAccepted    bool     `json:"eula_accepted,omitempty"`
+	Lang            string   `json:"language,omitempty"`
+	Theme           int      `json:"theme,omitempty"`
+	DateFmt         int      `json:"date_format,omitempty"`
+	Clock12         bool     `json:"clock_12h,omitempty"`
+	WeekMonday      bool     `json:"week_monday,omitempty"`
+	ClockZone       string   `json:"clock_zone,omitempty"`
+	DisplayWidth    int      `json:"display_width,omitempty"`
+	DisplayHeight   int      `json:"display_height,omitempty"`
+	DisplayRefresh  int      `json:"display_refresh,omitempty"`
+	DisplayRotation int      `json:"display_rotation,omitempty"`
 }
 
 func (d *Desktop) loadPrefs() {
+	osSetLocale(d.lang)
 	b, err := os.ReadFile(prefsPath)
 	if err != nil {
 		return
@@ -62,6 +67,7 @@ func (d *Desktop) loadPrefs() {
 	d.eulaAccepted = p.EULAAccepted
 	if p.Lang != "" {
 		d.lang = desktopLanguages[languageIndex(p.Lang)].Code
+		osSetLocale(d.lang)
 	}
 	if p.Theme >= 0 && p.Theme < len(ui.Palettes) {
 		d.theme = p.Theme
@@ -77,22 +83,29 @@ func (d *Desktop) loadPrefs() {
 			d.clockZone = p.ClockZone
 		}
 	}
-	osSetLocale(d.lang)
+	if p.DisplayWidth >= 640 && p.DisplayHeight >= 480 && p.DisplayWidth <= 7680 && p.DisplayHeight <= 4320 {
+		d.displayRequested = DisplayMode{Width: p.DisplayWidth, Height: p.DisplayHeight, Refresh: p.DisplayRefresh, Rotation: p.DisplayRotation}.Normalized()
+		d.displayRequestedSet = true
+	}
 }
 
 func (d *Desktop) savePrefs() {
 	p := desktopPrefs{
-		Background:   d.background,
-		SaverStyle:   d.saverStyle,
-		SaverWait:    int(d.saverWait / time.Minute),
-		RunHistory:   append([]string{}, d.runHistory...),
-		EULAAccepted: d.eulaAccepted,
-		Lang:         d.lang,
-		Theme:        d.theme,
-		DateFmt:      d.dateFmt,
-		Clock12:      d.clock12,
-		WeekMonday:   d.weekMonday,
-		ClockZone:    d.clockZone,
+		Background:      d.background,
+		SaverStyle:      d.saverStyle,
+		SaverWait:       int(d.saverWait / time.Minute),
+		RunHistory:      append([]string{}, d.runHistory...),
+		EULAAccepted:    d.eulaAccepted,
+		Lang:            d.lang,
+		Theme:           d.theme,
+		DateFmt:         d.dateFmt,
+		Clock12:         d.clock12,
+		WeekMonday:      d.weekMonday,
+		ClockZone:       d.clockZone,
+		DisplayWidth:    d.displayMode.Width,
+		DisplayHeight:   d.displayMode.Height,
+		DisplayRefresh:  d.displayMode.Refresh,
+		DisplayRotation: d.displayMode.Rotation,
 	}
 	b, err := json.MarshalIndent(p, "", "  ")
 	if err != nil {

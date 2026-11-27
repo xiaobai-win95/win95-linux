@@ -12,10 +12,18 @@ export PATH
 
 TITLE="Office 365 全件套"
 STATUS=/usr/bin/win95-install-status
-LOG=/var/log/win95-office-setup.log
+LOG=${WIN95_INSTALL_LOG:-/var/log/win95-office-setup.log}
 PIDFILE=/run/win95-office-setup.pid
 LOCKDIR=/run/win95-office-setup.lock
+LOCKDIR_OWNED=0
 PROFILE=/root/.config/fcitx5/profile
+WIN95_INSTALL_STATUS=${WIN95_INSTALL_STATUS:-/run/win95-office-install.status}
+WIN95_INSTALL_JOB=office
+WIN95_INSTALL_RUN_ID=${WIN95_OFFICE_RUN_ID:-}
+WIN95_INSTALL_STARTED=${WIN95_OFFICE_STARTED:-}
+WIN95_INSTALL_PACKAGES="$*"
+export WIN95_INSTALL_STATUS WIN95_INSTALL_LOG WIN95_INSTALL_JOB WIN95_INSTALL_RUN_ID
+export WIN95_INSTALL_STARTED WIN95_INSTALL_PACKAGES
 
 [ "$(id -u)" = "0" ] || {
 	echo "win95-office-setup: must run as root" >&2
@@ -35,20 +43,25 @@ for pkg in "$@"; do
 done
 
 mkdir -p /var/log /run 2>/dev/null || true
-: >"$LOG" 2>/dev/null || true
-if ! mkdir "$LOCKDIR" 2>/dev/null; then
-	if [ -f "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE" 2>/dev/null)" 2>/dev/null; then
-		echo "win95-office-setup: another install is running" >&2
-		exit 1
+if [ -z "${WIN95_OFFICE_LOCK_FD:-}" ]; then
+	if ! mkdir "$LOCKDIR" 2>/dev/null; then
+		if [ -f "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE" 2>/dev/null)" 2>/dev/null; then
+			echo "win95-office-setup: another install is running" >&2
+			exit 1
+		fi
+		rmdir "$LOCKDIR" 2>/dev/null || true
+		mkdir "$LOCKDIR" 2>/dev/null || {
+			echo "win95-office-setup: cannot create lock" >&2
+			exit 1
+		}
 	fi
-	rmdir "$LOCKDIR" 2>/dev/null || true
-	mkdir "$LOCKDIR" 2>/dev/null || {
-		echo "win95-office-setup: cannot create lock" >&2
-		exit 1
-	}
+	LOCKDIR_OWNED=1
 fi
 echo $$ >"$PIDFILE"
-trap 'rm -f "$PIDFILE"; rmdir "$LOCKDIR" 2>/dev/null || true' EXIT INT TERM
+WIN95_INSTALL_PID=$$
+export WIN95_INSTALL_PID
+: >"$LOG" 2>/dev/null || true
+trap 'rm -f "$PIDFILE"; [ "$LOCKDIR_OWNED" = 1 ] && rmdir "$LOCKDIR" 2>/dev/null || true' EXIT INT TERM
 
 log() {
 	echo "$(date '+%F %T') $*" >>"$LOG" 2>/dev/null
@@ -70,6 +83,23 @@ log "apk update"
 if ! apk update >>"$LOG" 2>&1; then
 	fail "软件包索引更新失败，请检查网络与 Alpine 软件源"
 fi
+
+missing_pkgs=""
+for pkg in "$@"; do
+	if apk info -e "$pkg" >/dev/null 2>&1; then
+		log "already installed: $pkg"
+	else
+		missing_pkgs="$missing_pkgs $pkg"
+	fi
+done
+if [ -z "$missing_pkgs" ]; then
+	log "all requested packages are already installed"
+	status done "Office 组件已是最新，无需重复安装"
+	exit 0
+fi
+# Package names were validated above and cannot contain whitespace.
+# shellcheck disable=SC2086
+set -- $missing_pkgs
 
 total=$#
 processed=0

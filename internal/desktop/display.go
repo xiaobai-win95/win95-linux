@@ -26,14 +26,20 @@ type DisplayApp struct {
 	origWait    int
 	origBgColor bool
 	committed   bool
-	comboOpen   int // 0 none, 1 saver, 2 wait
+	comboOpen   int // 0 none, 1 saver, 2 wait, 3 resolution, 4 refresh, 5 rotation
+	comboScroll VScroll
 	bgScroll    VScroll
 	press       string
 
 	okR, cancelR, applyR, previewR ui.Rect
 	bgListR                        ui.Rect
 	styleBoxR, waitBoxR            ui.Rect
-	tabs                           [2]ui.Rect
+	resolutionR, refreshR, rotateR ui.Rect
+	modes                          []DisplayMode
+	mode                           DisplayMode
+	modeIndex, refreshIndex        int
+	rotationIndex                  int
+	tabs                           [3]ui.Rect
 }
 
 func (d *Desktop) openDisplayProperties() {
@@ -46,14 +52,17 @@ func (d *Desktop) openDisplayProperties() {
 		origStyle:   d.saverStyle,
 		origWait:    int(d.saverWait / time.Minute),
 		origBgColor: d.bgColorSet,
+		mode:        d.displayMode,
 	}
+	a.modes = d.availableDisplayModes()
+	a.syncDisplayMode()
 	a.win = d.OpenModal(a)
 }
 
-func (a *DisplayApp) Title() string           { return "显示 属性" }
+func (a *DisplayApp) Title() string           { return a.d.tr("显示 属性") }
 func (a *DisplayApp) Icon() ui.IconKind       { return ui.IcoComputer }
-func (a *DisplayApp) DefaultSize() (int, int) { return 560, 438 }
-func (a *DisplayApp) MinSize() (int, int)     { return 560, 438 }
+func (a *DisplayApp) DefaultSize() (int, int) { return 600, 478 }
+func (a *DisplayApp) MinSize() (int, int)     { return 480, 440 }
 func (a *DisplayApp) Resizable() bool         { return false }
 
 func (a *DisplayApp) waitList() []int {
@@ -78,7 +87,7 @@ func (a *DisplayApp) Paint(d *Desktop, w *Window, c *ui.Canvas, r ui.Rect) {
 
 	tabY := r.Y + 8
 	tabW := 118
-	names := []string{"背景(B)", "屏幕保护程序(S)"}
+	names := []string{d.tr("背景(B)"), d.tr("屏幕保护程序(S)"), d.tr("监视器(M)")}
 	for i, label := range names {
 		tr := ui.Rect{r.X + 10 + i*(tabW+2), tabY, tabW, 24}
 		a.tabs[i] = tr
@@ -106,8 +115,10 @@ func (a *DisplayApp) Paint(d *Desktop, w *Window, c *ui.Canvas, r ui.Rect) {
 
 	if a.tab == 0 {
 		a.paintBackgroundTab(c, f, inner)
-	} else {
+	} else if a.tab == 1 {
 		a.paintSaverTab(c, f, inner)
+	} else {
+		a.paintMonitorTab(c, f, inner)
 	}
 
 	btnW, gap := 84, 8
@@ -115,9 +126,9 @@ func (a *DisplayApp) Paint(d *Desktop, w *Window, c *ui.Canvas, r ui.Rect) {
 	a.applyR = ui.Rect{r.Right() - 10 - btnW, by, btnW, 26}
 	a.cancelR = ui.Rect{a.applyR.X - btnW - gap, by, btnW, 26}
 	a.okR = ui.Rect{a.cancelR.X - btnW - gap, by, btnW, 26}
-	ui.Button(c, a.okR, "确定", a.press == "ok", true)
-	ui.Button(c, a.cancelR, "取消", a.press == "cancel", true)
-	ui.Button(c, a.applyR, "应用", a.press == "apply", true)
+	ui.Button(c, a.okR, d.tr("确定"), a.press == "ok", true)
+	ui.Button(c, a.cancelR, d.tr("取消"), a.press == "cancel", true)
+	ui.Button(c, a.applyR, d.tr("应用"), a.press == "apply", true)
 
 	if a.comboOpen != 0 {
 		a.drawComboList(c, r)
@@ -125,9 +136,9 @@ func (a *DisplayApp) Paint(d *Desktop, w *Window, c *ui.Canvas, r ui.Rect) {
 }
 
 func (a *DisplayApp) paintBackgroundTab(c *ui.Canvas, f *ui.Font, inner ui.Rect) {
-	f.Text(c, inner.X, inner.Y, "背景(B):", ui.ColText)
+	f.Text(c, inner.X, inner.Y, a.d.tr("背景(B):"), ui.ColText)
 	a.bgListR = ui.Rect{inner.X, inner.Y + 22, 190, inner.H - 30}
-	c.FillRect(a.bgListR, ui.ColWhite)
+	c.FillRect(a.bgListR, ui.ColField)
 	c.Sunken(a.bgListR)
 	box := a.bgListR.Inset(2)
 	scrollW := 16
@@ -148,7 +159,7 @@ func (a *DisplayApp) paintBackgroundTab(c *ui.Canvas, f *ui.Font, inner ui.Rect)
 		if i == a.bg {
 			col = ui.ColWhite
 		}
-		f.TextClip(c, rr.X+6, rr.Y+3, rr.W-10, backgroundStyles[i], col)
+		f.TextClip(c, rr.X+6, rr.Y+3, rr.W-10, a.d.tr(backgroundStyles[i]), col)
 		y += 22
 	}
 	a.bgScroll.Draw(c, ui.Rect{box.Right() - scrollW - 1, box.Y + 1, scrollW, box.H - 2})
@@ -171,43 +182,154 @@ func (a *DisplayApp) paintBackgroundTab(c *ui.Canvas, f *ui.Font, inner ui.Rect)
 	baseW := mw / 3
 	c.FillRect(ui.Rect{bezel.X + (mw-baseW)/2, bezel.Bottom() + 10, baseW, 6}, ui.ColFace)
 	c.Raised(ui.Rect{bezel.X + (mw-baseW)/2, bezel.Bottom() + 10, baseW, 6})
-	f.Text(c, bezel.X+4, bezel.Bottom()+24, "预览 · "+backgroundStyles[a.bg], ui.ColText)
-	f.TextClip(c, inner.X, inner.Bottom()-18, inner.W, "背景设置会在确认后立即应用到桌面。", ui.ColShadow)
+	f.Text(c, bezel.X+4, bezel.Bottom()+24, a.d.trf("预览 · %s", a.d.tr(backgroundStyles[a.bg])), ui.ColText)
+	f.TextClip(c, inner.X, inner.Bottom()-18, inner.W, a.d.tr("背景设置会在确认后立即应用到桌面。"), ui.ColShadow)
 }
 
 func (a *DisplayApp) paintSaverTab(c *ui.Canvas, f *ui.Font, inner ui.Rect) {
 	group := ui.Rect{inner.X, inner.Y + 10, inner.W, 176}
-	ui.GroupBox(c, group, "屏幕保护程序(S)")
-	f.Text(c, group.X+18, group.Y+22, "屏幕保护程序(S):", ui.ColText)
+	ui.GroupBox(c, group, a.d.tr("屏幕保护程序(S)"))
+	f.Text(c, group.X+18, group.Y+22, a.d.tr("屏幕保护程序(S):"), ui.ColText)
 	a.styleBoxR = ui.Rect{group.X + 146, group.Y + 18, 210, 24}
-	styleName := "无"
+	styleName := a.d.tr("无")
 	if a.style >= 0 && a.style < len(saverNames) {
-		styleName = saverNames[a.style]
+		styleName = a.d.tr(saverNames[a.style])
 	}
 	a.drawCombo(c, a.styleBoxR, styleName, a.comboOpen == 1)
 
-	f.Text(c, group.X+18, group.Y+60, "等待(W):", ui.ColText)
+	f.Text(c, group.X+18, group.Y+60, a.d.tr("等待(W):"), ui.ColText)
 	a.waitBoxR = ui.Rect{group.X + 146, group.Y + 56, 70, 24}
 	a.drawCombo(c, a.waitBoxR, fmt.Sprintf("%d", a.wait), a.comboOpen == 2)
-	f.Text(c, a.waitBoxR.Right()+8, a.waitBoxR.Y+4, "分钟", ui.ColText)
+	f.Text(c, a.waitBoxR.Right()+8, a.waitBoxR.Y+4, a.d.tr("分钟"), ui.ColText)
 	a.previewR = ui.Rect{group.X + 306, group.Y + 55, 84, 26}
-	ui.Button(c, a.previewR, "预览(V)", a.press == "preview", a.style != 0)
+	ui.Button(c, a.previewR, a.d.tr("预览(V)"), a.press == "preview", a.style != 0)
 
-	desc := "屏幕保护程序已关闭。"
+	desc := a.d.tr("屏幕保护程序已关闭。")
 	if a.style > 0 {
-		name := saverNames[a.style]
-		desc = fmt.Sprintf("在计算机闲置 %d 分钟后启动“%s”。", a.wait, name)
+		name := a.d.tr(saverNames[a.style])
+		desc = a.d.trf("在计算机闲置 %d 分钟后启动“%s”。", a.wait, name)
 	}
 	f.TextClip(c, group.X+18, group.Y+104, group.W-36, desc, ui.ColText)
-	f.Text(c, group.X+18, group.Y+130, "移动鼠标或按任意键即可返回桌面。", ui.ColShadow)
+	f.Text(c, group.X+18, group.Y+130, a.d.tr("移动鼠标或按任意键即可返回桌面。"), ui.ColShadow)
 
-	note := "提示：预览会全屏显示屏保，任意输入即可停止。"
+	note := a.d.tr("提示：预览会全屏显示屏保，任意输入即可停止。")
 	f.TextClip(c, inner.X, inner.Bottom()-18, inner.W, note, ui.ColShadow)
+}
+
+func (a *DisplayApp) refreshChoices() []int {
+	opts := []int{50, 60, 75}
+	for _, v := range opts {
+		if v == a.mode.Refresh {
+			return opts
+		}
+	}
+	opts = append(opts, a.mode.Refresh)
+	sort.Ints(opts)
+	return opts
+}
+
+func (a *DisplayApp) syncDisplayMode() {
+	if len(a.modes) == 0 {
+		a.modes = []DisplayMode{a.d.displayMode}
+	}
+	found := false
+	for i, m := range a.modes {
+		if m.Width == a.d.displayMode.Width && m.Height == a.d.displayMode.Height {
+			a.mode = m
+			a.mode.Refresh = a.d.displayMode.Refresh
+			a.mode.Rotation = a.d.displayMode.Rotation
+			a.modeIndex = i
+			found = true
+			break
+		}
+	}
+	if !found {
+		a.modes = append([]DisplayMode{a.d.displayMode}, a.modes...)
+		a.mode = a.d.displayMode
+		a.modeIndex = 0
+	}
+	opts := a.refreshChoices()
+	a.refreshIndex = 0
+	for i, v := range opts {
+		if v == a.mode.Refresh {
+			a.refreshIndex = i
+			break
+		}
+	}
+	a.rotationIndex = a.mode.Rotation / 90
+}
+
+func (a *DisplayApp) selectedDisplayMode() DisplayMode {
+	mode := a.mode
+	if a.modeIndex >= 0 && a.modeIndex < len(a.modes) {
+		mode.Width = a.modes[a.modeIndex].Width
+		mode.Height = a.modes[a.modeIndex].Height
+	}
+	opts := a.refreshChoices()
+	if a.refreshIndex >= 0 && a.refreshIndex < len(opts) {
+		mode.Refresh = opts[a.refreshIndex]
+	}
+	mode.Rotation = a.rotationIndex * 90
+	return mode.Normalized()
+}
+
+func (a *DisplayApp) paintMonitorTab(c *ui.Canvas, f *ui.Font, inner ui.Rect) {
+	wide := inner.W >= 560
+	groupH := 252
+	if !wide {
+		groupH = 292
+	}
+	group := ui.Rect{inner.X, inner.Y + 10, inner.W, groupH}
+	ui.GroupBox(c, group, a.d.tr("监视器设置"))
+	controlW := minInt(190, group.W-164)
+	f.Text(c, group.X+18, group.Y+22, a.d.tr("屏幕区域(A):"), ui.ColText)
+	a.resolutionR = ui.Rect{group.X + 146, group.Y + 18, controlW, 24}
+	resolution := a.d.tr("未知")
+	if a.modeIndex >= 0 && a.modeIndex < len(a.modes) {
+		m := a.modes[a.modeIndex]
+		resolution = a.d.trf("%d × %d 像素", m.Width, m.Height)
+	}
+	a.drawCombo(c, a.resolutionR, resolution, a.comboOpen == 3)
+
+	f.Text(c, group.X+18, group.Y+60, a.d.tr("刷新频率(R):"), ui.ColText)
+	a.refreshR = ui.Rect{group.X + 146, group.Y + 56, 100, 24}
+	opts := a.refreshChoices()
+	refresh := 60
+	if a.refreshIndex >= 0 && a.refreshIndex < len(opts) {
+		refresh = opts[a.refreshIndex]
+	}
+	a.drawCombo(c, a.refreshR, fmt.Sprintf("%d Hz", refresh), a.comboOpen == 4)
+
+	f.Text(c, group.X+18, group.Y+98, a.d.tr("转向(O):"), ui.ColText)
+	a.rotateR = ui.Rect{group.X + 146, group.Y + 94, controlW, 24}
+	a.drawCombo(c, a.rotateR, a.d.tr(displayRotationLabel(a.rotationIndex*90)), a.comboOpen == 5)
+
+	infoX, infoY := group.X+18, group.Y+144
+	note1Y, note2Y := group.Y+172, group.Y+198
+	if wide {
+		preview := ui.Rect{group.X + 366, group.Y + 20, 156, 126}
+		drawMonitorPreview(c, preview, a.selectedDisplayMode())
+	} else {
+		preview := ui.Rect{group.X + 18, group.Y + 128, 112, 92}
+		drawMonitorPreview(c, preview, a.selectedDisplayMode())
+		infoX = group.X + 146
+		note1Y, note2Y = group.Y+232, group.Y+258
+	}
+	current := a.d.trf("当前模式: %d×%d · %d Hz · %d°", a.d.displayMode.Width, a.d.displayMode.Height, a.d.displayMode.Refresh, a.d.displayMode.Rotation)
+	f.TextClip(c, infoX, infoY, group.Right()-18-infoX, current, ui.ColText)
+	f.TextClip(c, group.X+18, note1Y, group.W-36, a.d.tr("分辨率和刷新率由显卡/虚拟机驱动决定；不支持时会自动恢复。"), ui.ColShadow)
+	f.TextClip(c, group.X+18, note2Y, group.W-36, a.d.tr("转向由 Win95 桌面渲染并同步鼠标坐标，不改变 XFCE 桌面方向。"), ui.ColShadow)
+
+	supported := a.d.trf("驱动返回 %d 个分辨率", len(a.modes))
+	if a.d.Host.SetDisplayMode == nil {
+		supported = a.d.tr("当前主机没有动态显示接口")
+	}
+	f.TextClip(c, inner.X, inner.Bottom()-18, inner.W, a.d.trf("%s。设置成功后自动保存。", supported), ui.ColShadow)
 }
 
 func (a *DisplayApp) drawCombo(c *ui.Canvas, r ui.Rect, text string, open bool) {
 	f := ui.DefaultFont()
-	c.FillRect(r, ui.ColWhite)
+	c.FillRect(r, ui.ColField)
 	c.Sunken(r)
 	f.TextClip(c, r.X+5, r.Y+4, r.W-28, text, ui.ColText)
 	arrow := ui.Rect{r.Right() - 19, r.Y + 1, 18, r.H - 2}
@@ -217,43 +339,130 @@ func (a *DisplayApp) drawCombo(c *ui.Canvas, r ui.Rect, text string, open bool) 
 
 func (a *DisplayApp) comboListRect(r ui.Rect, n int) ui.Rect {
 	anchor := a.styleBoxR
-	if a.comboOpen == 2 {
+	switch a.comboOpen {
+	case 2:
 		anchor = a.waitBoxR
+	case 3:
+		anchor = a.resolutionR
+	case 4:
+		anchor = a.refreshR
+	case 5:
+		anchor = a.rotateR
 	}
-	h := n*20 + 4
+	maxH := maxInt(64, r.H-80)
+	h := minInt(n*20+4, maxH)
 	y := anchor.Bottom()
 	if y+h > r.Bottom()-40 {
 		y = anchor.Y - h
 	}
-	if y < r.Y+2 {
-		y = r.Y + 2
+	if y < r.Y+32 {
+		y = r.Y + 32
 	}
 	return ui.Rect{anchor.X, y, anchor.W, h}
 }
 
+func (a *DisplayApp) comboScrollRect() ui.Rect {
+	box := a.comboListRect(a.win.ClientRect(), len(a.comboItems())).Inset(2)
+	return ui.Rect{box.Right() - 17, box.Y, 16, box.H}
+}
+
+func (a *DisplayApp) selectedComboIndex() int {
+	switch a.comboOpen {
+	case 1:
+		return a.style
+	case 2:
+		for i, v := range a.waitList() {
+			if v == a.wait {
+				return i
+			}
+		}
+	case 3:
+		return a.modeIndex
+	case 4:
+		return a.refreshIndex
+	case 5:
+		return a.rotationIndex
+	}
+	return 0
+}
+
+func (a *DisplayApp) openCombo(id int) {
+	a.comboOpen = id
+	a.comboScroll.Total = len(a.comboItems())
+	a.comboScroll.Visible = 8
+	a.comboScroll.Clamp()
+	a.ensureComboVisible()
+}
+
+func (a *DisplayApp) ensureComboVisible() {
+	if a.comboScroll.Visible < 1 {
+		return
+	}
+	selected := a.selectedComboIndex()
+	if selected < a.comboScroll.Pos {
+		a.comboScroll.Pos = selected
+	}
+	if selected >= a.comboScroll.Pos+a.comboScroll.Visible {
+		a.comboScroll.Pos = selected - a.comboScroll.Visible + 1
+	}
+	a.comboScroll.Clamp()
+}
+
+func (a *DisplayApp) comboItems() []string {
+	switch a.comboOpen {
+	case 1:
+		items := make([]string, len(saverNames))
+		for i, name := range saverNames {
+			items[i] = a.d.tr(name)
+		}
+		return items
+	case 2:
+		items := make([]string, 0, len(a.waitList()))
+		for _, v := range a.waitList() {
+			items = append(items, a.d.trf("%d 分钟", v))
+		}
+		return items
+	case 3:
+		items := make([]string, 0, len(a.modes))
+		for _, m := range a.modes {
+			items = append(items, a.d.trf("%d × %d 像素", m.Width, m.Height))
+		}
+		return items
+	case 4:
+		items := make([]string, 0, len(a.refreshChoices()))
+		for _, v := range a.refreshChoices() {
+			items = append(items, fmt.Sprintf("%d Hz", v))
+		}
+		return items
+	case 5:
+		return []string{
+			a.d.tr(displayRotationLabel(0)),
+			a.d.tr(displayRotationLabel(90)),
+			a.d.tr(displayRotationLabel(180)),
+			a.d.tr(displayRotationLabel(270)),
+		}
+	default:
+		return nil
+	}
+}
+
 func (a *DisplayApp) drawComboList(c *ui.Canvas, r ui.Rect) {
 	f := ui.DefaultFont()
-	var items []string
-	if a.comboOpen == 1 {
-		items = saverNames
-	} else {
-		for _, v := range a.waitList() {
-			items = append(items, fmt.Sprintf("%d 分钟", v))
-		}
-	}
+	items := a.comboItems()
 	lr := a.comboListRect(r, len(items))
-	c.FillRect(lr, ui.ColWhite)
+	c.FillRect(lr, ui.ColField)
 	c.Raised(lr)
-	y := lr.Y + 2
-	for i, label := range items {
-		selected := false
-		if a.comboOpen == 1 {
-			selected = i == a.style
-		} else {
-			opts := a.waitList()
-			selected = i < len(opts) && opts[i] == a.wait
-		}
-		row := ui.Rect{lr.X + 2, y, lr.W - 4, 20}
+	box := lr.Inset(2)
+	a.comboScroll.Total = len(items)
+	a.comboScroll.Visible = maxInt(1, (box.H-1)/20)
+	a.comboScroll.Clamp()
+	a.ensureComboVisible()
+	scroll := a.comboScrollRect()
+	a.comboScroll.Draw(c, scroll)
+	y := box.Y + 1
+	for i := a.comboScroll.Pos; i < len(items) && y+20 <= box.Bottom(); i++ {
+		selected := i == a.selectedComboIndex()
+		row := ui.Rect{box.X + 1, y, box.W - 19, 20}
 		if selected {
 			c.FillRect(row, ui.ColNavy)
 		}
@@ -261,24 +470,19 @@ func (a *DisplayApp) drawComboList(c *ui.Canvas, r ui.Rect) {
 		if selected {
 			col = ui.ColWhite
 		}
-		f.TextClip(c, row.X+5, row.Y+2, row.W-8, label, col)
+		f.TextClip(c, row.X+5, row.Y+2, row.W-8, items[i], col)
 		y += 20
 	}
 }
 
 func (a *DisplayApp) comboIndexAt(x, y int) int {
-	var n int
-	if a.comboOpen == 1 {
-		n = len(saverNames)
-	} else {
-		n = len(a.waitList())
-	}
-	lr := a.comboListRect(a.win.ClientRect(), n)
+	items := a.comboItems()
+	lr := a.comboListRect(a.win.ClientRect(), len(items))
 	if !lr.Contains(x, y) {
 		return -1
 	}
-	idx := (y - lr.Y - 2) / 20
-	if idx < 0 || idx >= n {
+	idx := a.comboScroll.Pos + (y-lr.Y-3)/20
+	if idx < a.comboScroll.Pos || idx >= len(items) || idx >= a.comboScroll.Pos+a.comboScroll.Visible {
 		return -1
 	}
 	return idx
@@ -292,7 +496,14 @@ func (a *DisplayApp) bgScrollRect() ui.Rect {
 func (a *DisplayApp) Mouse(d *Desktop, w *Window, client ui.Rect, ev MouseEvent) {
 	scroll := a.bgScrollRect()
 	if ev.Kind == MouseWheel {
-		if a.comboOpen == 0 && a.bgListR.Contains(ev.X, ev.Y) {
+		if a.comboOpen != 0 {
+			lr := a.comboListRect(client, len(a.comboItems()))
+			if lr.Contains(ev.X, ev.Y) {
+				if changed, _ := a.comboScroll.Mouse(ev, a.comboScrollRect()); changed {
+					d.Invalidate()
+				}
+			}
+		} else if a.bgListR.Contains(ev.X, ev.Y) {
 			if changed, _ := a.bgScroll.Mouse(ev, scroll); changed {
 				d.Invalidate()
 			}
@@ -300,12 +511,33 @@ func (a *DisplayApp) Mouse(d *Desktop, w *Window, client ui.Rect, ev MouseEvent)
 		return
 	}
 	if a.comboOpen != 0 {
+		if ev.Kind == MouseMove || ev.Kind == MouseUp {
+			changed, consumed := a.comboScroll.Mouse(ev, a.comboScrollRect())
+			if changed {
+				d.Invalidate()
+			}
+			if consumed {
+				return
+			}
+		}
 		if ev.Kind == MouseDown && ev.Button == 1 {
+			if a.comboScrollRect().Contains(ev.X, ev.Y) {
+				a.comboScroll.Mouse(ev, a.comboScrollRect())
+				d.Invalidate()
+				return
+			}
 			if idx := a.comboIndexAt(ev.X, ev.Y); idx >= 0 {
-				if a.comboOpen == 1 {
+				switch a.comboOpen {
+				case 1:
 					a.style = idx
-				} else {
+				case 2:
 					a.wait = a.waitList()[idx]
+				case 3:
+					a.modeIndex = idx
+				case 4:
+					a.refreshIndex = idx
+				case 5:
+					a.rotationIndex = idx
 				}
 			}
 			a.comboOpen = 0
@@ -339,6 +571,11 @@ func (a *DisplayApp) Mouse(d *Desktop, w *Window, client ui.Rect, ev MouseEvent)
 			d.Invalidate()
 		case a.tabs[1].Contains(ev.X, ev.Y):
 			a.tab = 1
+			a.comboOpen = 0
+			d.Invalidate()
+		case a.tabs[2].Contains(ev.X, ev.Y):
+			a.tab = 2
+			a.comboOpen = 0
 			d.Invalidate()
 		case a.bgListR.Contains(ev.X, ev.Y):
 			box := a.bgListR.Inset(2)
@@ -348,11 +585,20 @@ func (a *DisplayApp) Mouse(d *Desktop, w *Window, client ui.Rect, ev MouseEvent)
 				a.bg = idx
 				d.Invalidate()
 			}
-		case a.styleBoxR.Contains(ev.X, ev.Y):
-			a.comboOpen = 1
+		case a.styleBoxR.Contains(ev.X, ev.Y) && a.tab == 1:
+			a.openCombo(1)
 			d.Invalidate()
-		case a.waitBoxR.Contains(ev.X, ev.Y):
-			a.comboOpen = 2
+		case a.waitBoxR.Contains(ev.X, ev.Y) && a.tab == 1:
+			a.openCombo(2)
+			d.Invalidate()
+		case a.resolutionR.Contains(ev.X, ev.Y) && a.tab == 2:
+			a.openCombo(3)
+			d.Invalidate()
+		case a.refreshR.Contains(ev.X, ev.Y) && a.tab == 2:
+			a.openCombo(4)
+			d.Invalidate()
+		case a.rotateR.Contains(ev.X, ev.Y) && a.tab == 2:
+			a.openCombo(5)
 			d.Invalidate()
 		case a.previewR.Contains(ev.X, ev.Y):
 			a.press = "preview"
@@ -403,6 +649,12 @@ func (a *DisplayApp) apply() {
 	a.d.saverWait = time.Duration(a.wait) * time.Minute
 	a.d.savePrefs()
 	a.d.Invalidate()
+	if a.d.Host.SetDisplayMode != nil {
+		mode := a.selectedDisplayMode()
+		if mode != a.d.displayMode {
+			_ = a.d.applyDisplayMode(mode, true)
+		}
+	}
 }
 
 func (a *DisplayApp) restore() {
@@ -415,7 +667,7 @@ func (a *DisplayApp) restore() {
 
 func (a *DisplayApp) preview() {
 	if a.style == 0 {
-		a.d.MessageBox("预览", "请先选择一种屏幕保护程序。", IconInfo, []string{"确定"}, nil)
+		a.d.MessageBox(a.d.tr("预览"), a.d.tr("请先选择一种屏幕保护程序。"), IconInfo, []string{a.d.tr("确定")}, nil)
 		return
 	}
 	a.d.background = a.bg
@@ -443,9 +695,10 @@ func (a *DisplayApp) Key(d *Desktop, w *Window, ev KeyEvent) bool {
 			if ev.Name == "Up" {
 				delta = -1
 			}
-			if a.comboOpen == 1 {
+			switch a.comboOpen {
+			case 1:
 				a.style = (a.style + len(saverNames) + delta) % len(saverNames)
-			} else {
+			case 2:
 				opts := a.waitList()
 				idx := 0
 				for i, v := range opts {
@@ -462,7 +715,15 @@ func (a *DisplayApp) Key(d *Desktop, w *Window, ev KeyEvent) bool {
 					idx = len(opts) - 1
 				}
 				a.wait = opts[idx]
+			case 3:
+				a.modeIndex = maxInt(0, minInt(a.modeIndex+delta, len(a.modes)-1))
+			case 4:
+				opts := a.refreshChoices()
+				a.refreshIndex = maxInt(0, minInt(a.refreshIndex+delta, len(opts)-1))
+			case 5:
+				a.rotationIndex = (a.rotationIndex + 4 + delta) % 4
 			}
+			a.ensureComboVisible()
 			d.Invalidate()
 			return true
 		}
@@ -480,7 +741,8 @@ func (a *DisplayApp) Key(d *Desktop, w *Window, ev KeyEvent) bool {
 		a.d.CloseWindowForced(w)
 		return true
 	case "Tab", "Left", "Right":
-		a.tab = 1 - a.tab
+		a.tab = (a.tab + 1) % len(a.tabs)
+		a.comboOpen = 0
 		d.Invalidate()
 		return true
 	case "Up", "Down":
@@ -505,6 +767,13 @@ func (a *DisplayApp) Key(d *Desktop, w *Window, ev KeyEvent) bool {
 			d.Invalidate()
 			return true
 		}
+		delta := 1
+		if ev.Name == "Up" {
+			delta = -1
+		}
+		a.modeIndex = maxInt(0, minInt(a.modeIndex+delta, len(a.modes)-1))
+		d.Invalidate()
+		return true
 	}
 	return false
 }

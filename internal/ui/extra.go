@@ -98,5 +98,66 @@ func ProgressBar(c *Canvas, r Rect, value int) {
 	}
 }
 
+// ScrollbarThumbRect returns the classic dotted thumb geometry.
+func ScrollbarThumbRect(r Rect, total, visible, pos int) Rect {
+	track := Rect{X: r.X + 2, Y: r.Y + 18, W: r.W - 4, H: r.H - 36}
+	if track.H < 8 {
+		return Rect{}
+	}
+	if total < visible {
+		total = visible
+	}
+	if pos < 0 {
+		pos = 0
+	}
+	if pos > total-visible {
+		pos = total - visible
+	}
+	thumbH := track.H * visible / total
+	if thumbH < 18 {
+		thumbH = 18
+	}
+	if thumbH > track.H {
+		thumbH = track.H
+	}
+	thumbY := track.Y
+	if total > visible {
+		thumbY += (track.H - thumbH) * pos / (total - visible)
+	}
+	return Rect{X: track.X, Y: thumbY, W: track.W, H: thumbH}
+}
+
+// ScrollBar draws a Win95 vertical scrollbar and returns its thumb rectangle.
+func ScrollBar(c *Canvas, r Rect, total, visible, pos int) Rect {
+	c.FillRect(r, ColFace)
+	c.Sunken(r)
+	top := Rect{X: r.X + 1, Y: r.Y + 1, W: r.W - 2, H: 16}
+	bottom := Rect{X: r.X + 1, Y: r.Bottom() - 17, W: r.W - 2, H: 16}
+	c.FillRect(top, ColFace)
+	c.Raised(top)
+	c.FillRect(bottom, ColFace)
+	c.Raised(bottom)
+	Arrow(c, r.X+r.W/2, r.Y+8, "up", ColDark)
+	Arrow(c, r.X+r.W/2, r.Bottom()-8, "down", ColDark)
+	track := Rect{X: r.X + 2, Y: r.Y + 18, W: r.W - 4, H: r.H - 36}
+	if track.H > 0 {
+		c.FillRect(track, ColField)
+	}
+	thumb := ScrollbarThumbRect(r, total, visible, pos)
+	if thumb.H > 0 {
+		c.FillRect(thumb, ColFace)
+		c.Raised(thumb)
+		for y := thumb.Y + 3; y < thumb.Bottom()-3; y += 3 {
+			for x := thumb.X + 3; x < thumb.Right()-3; x += 3 {
+				c.Set(x, y, ColShadow)
+				if x+1 < thumb.Right()-2 {
+					c.Set(x+1, y, ColWhite)
+				}
+			}
+		}
+	}
+	return thumb
+}
+
 // HandCursorHotspot is the hand cursor hotspot offset.
 const HandCursorHotspot = 6

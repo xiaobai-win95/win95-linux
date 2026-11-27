@@ -202,6 +202,20 @@ func Run(opt Options) error {
 	if len(devs) == 0 {
 		logf("warning: no input devices found")
 	}
+	havePointer := false
+	for _, dev := range devs {
+		havePointer = havePointer || dev.pointer
+	}
+	ps2FD := -1
+	if !havePointer {
+		ps2FD = openPS2Mouse()
+		if ps2FD >= 0 {
+			logf("input fallback /dev/input/mice opened")
+		}
+	}
+	if ps2FD >= 0 {
+		defer syscall.Close(ps2FD)
+	}
 
 	// A VT in KD_GRAPHICS with VT_AUTO silently drops console switches, which
 	// leaves chvt blocked in VT_WAITACTIVE. VT_PROCESS makes the kernel send
@@ -226,6 +240,8 @@ func Run(opt Options) error {
 	}
 
 	canvas := ui.NewCanvas(fb.w, fb.h)
+	var state *inputState
+	var d *desktop.Desktop
 
 	wake := make(chan struct{}, 1)
 	quit := make(chan struct{}, 1)
@@ -250,6 +266,34 @@ func Run(opt Options) error {
 			default:
 			}
 		},
+		SetDisplayMode: func(mode desktop.DisplayMode) (desktop.DisplayMode, error) {
+			if fb == nil {
+				return desktop.DisplayMode{}, fmt.Errorf("framebuffer is not active")
+			}
+			effective, err := fb.setDisplayMode(mode)
+			if err != nil {
+				return effective, err
+			}
+			w, h := effective.LogicalSize()
+			canvas = ui.NewCanvas(w, h)
+			if state != nil {
+				state.setGeometry(fb.w, fb.h, effective.Rotation, d)
+			}
+			logf("display mode applied: %dx%d %dHz rotation=%d", effective.Width, effective.Height, effective.Refresh, effective.Rotation)
+			return effective, nil
+		},
+		CurrentDisplayMode: func() desktop.DisplayMode {
+			if fb == nil {
+				return desktop.DisplayMode{Width: canvas.W, Height: canvas.H, Refresh: 60}
+			}
+			return fb.displayMode(fb.rotation)
+		},
+		AvailableDisplays: func() []desktop.DisplayMode {
+			if fb == nil {
+				return nil
+			}
+			return availableDisplayModes(fb)
+		},
 		Screenshot: func() (string, error) {
 			return saveScreenshot(canvas)
 		},
@@ -257,7 +301,7 @@ func Run(opt Options) error {
 			return consoleActive.Load()
 		},
 	}
-	d := desktop.New(fb.w, fb.h, opt.Mode, host)
+	d = desktop.New(fb.w, fb.h, opt.Mode, host)
 	desktop.BootBeep()
 	d.MaybeShowWelcome()
 
@@ -276,8 +320,11 @@ func Run(opt Options) error {
 	for _, dev := range devs {
 		go dev.readLoop(events)
 	}
+	if ps2FD >= 0 {
+		go readPS2Mouse(ps2FD, events)
+	}
 
-	state := newInputState(fb.w, fb.h)
+	state = newInputState(fb.w, fb.h)
 	tick := time.NewTicker(time.Second)
 	defer tick.Stop()
 	// Short frame ticker drives the screensaver animation. The desktop only
@@ -373,8 +420,10 @@ func Run(opt Options) error {
 					continue
 				}
 				fb = nfb
+				fb.rotation = d.DisplayMode().Rotation
 				vt.setGraphics(true)
 				state.resetModifiers()
+				state.setGeometry(fb.w, fb.h, fb.rotation, d)
 				drainInput(events)
 				if canvas.W == fb.w && canvas.H == fb.h {
 					fb.blit(canvas)
@@ -397,8 +446,10 @@ func Run(opt Options) error {
 			if foreground && fb == nil {
 				if nfb, err := openFramebuffer(fbPath); err == nil {
 					fb = nfb
+					fb.rotation = d.DisplayMode().Rotation
 					vt.setGraphics(true)
 					state.resetModifiers()
+					state.setGeometry(fb.w, fb.h, fb.rotation, d)
 					drainInput(events)
 					d.Invalidate()
 					logf("framebuffer reopened after retry: %dx%d", fb.w, fb.h)

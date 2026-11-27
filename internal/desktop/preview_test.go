@@ -349,6 +349,31 @@ func TestPreviewFrames(t *testing.T) {
 	savePreview(t, dc, "desk-preview-display-combo.png")
 	dispApp.comboOpen = 0
 
+	dispApp.tab = 2
+	dispApp.modes = []DisplayMode{
+		{Width: 640, Height: 480, Refresh: 60},
+		{Width: 800, Height: 600, Refresh: 60},
+		{Width: 1024, Height: 768, Refresh: 60},
+		{Width: 1280, Height: 720, Refresh: 60},
+		{Width: 1920, Height: 1080, Refresh: 60},
+	}
+	dispApp.syncDisplayMode()
+	dispApp.rotationIndex = 1
+	dispD.Draw(dc)
+	savePreview(t, dc, "desk-preview-display-monitor.png")
+	dispApp.openCombo(3)
+	dispD.Draw(dc)
+	savePreview(t, dc, "desk-preview-display-monitor-combo.png")
+
+	portraitD := New(600, 800, ModeDesktop, Host{Info: "竖屏预览 · 600×800"})
+	portraitD.openDisplayProperties()
+	portraitApp := portraitD.windows[len(portraitD.windows)-1].App.(*DisplayApp)
+	portraitApp.tab = 2
+	portraitApp.rotationIndex = 1
+	pc := ui.NewCanvas(600, 800)
+	portraitD.Draw(pc)
+	savePreview(t, pc, "desk-preview-display-monitor-portrait.png")
+
 	runD := New(1024, 768, ModeDesktop, Host{Info: info})
 	runD.runHistory = []string{"notepad /root/文档/工作计划.txt", "calc", "find"}
 	runD.openRunDialog()
@@ -534,6 +559,15 @@ func TestPreviewFrames(t *testing.T) {
 			a.dest = "alpine-virt-3.24.3-aarch64.iso"
 			a.status = "正在下载 alpine-virt-3.24.3-aarch64.iso …"
 		})
+	renderApp(t, "desk-preview-screen-recorder.png",
+		func(d *Desktop) App { return NewScreenRecorderApp(d) }, nil)
+	renderApp(t, "desk-preview-screen-recorder-error.png",
+		func(d *Desktop) App {
+			a := NewScreenRecorderApp(d)
+			a.state = screenRecorderFailed
+			a.errMsg = "/dev/fb0 is unavailable"
+			return a
+		}, nil)
 	renderApp(t, "desk-preview-nuke-auth.png",
 		func(d *Desktop) App { return &NukeAuthApp{d: d} },
 		func(d *Desktop, app App) {

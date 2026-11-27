@@ -188,7 +188,7 @@ func (a *ShareApp) Paint(d *Desktop, w *Window, c *ui.Canvas, r ui.Rect) {
 	}
 
 	urlBox := ui.Rect{r.X + 18, r.Y + 62, r.W - 36, 24}
-	c.FillRect(urlBox, ui.ColWhite)
+	c.FillRect(urlBox, ui.ColField)
 	c.Sunken(urlBox)
 	f.TextClip(c, urlBox.X+6, urlBox.Y+4, urlBox.W-12, a.link, ui.ColNavy)
 

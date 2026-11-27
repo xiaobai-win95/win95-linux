@@ -319,7 +319,7 @@ func (a *BrowserApp) paintBrowserSetup(c *ui.Canvas, f *ui.Font, client ui.Rect)
 	x := client.X + 16
 	y := client.Y + 14
 	head := ui.Rect{x, y, client.W - 32, 64}
-	c.FillRect(head, ui.ColWhite)
+	c.FillRect(head, ui.ColField)
 	c.ThinSunken(head)
 	f.TextBold(c, x+14, y+12, "正在为网络浏览器安装运行时依赖…", ui.ColNavy)
 	f.Text(c, x+14, y+36, "首次启动需要准备 JavaScript 引擎与页面兼容层，仅需一次。", ui.ColText)

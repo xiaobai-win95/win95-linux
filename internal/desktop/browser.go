@@ -1545,7 +1545,7 @@ func (a *BrowserApp) Paint(d *Desktop, w *Window, c *ui.Canvas, client ui.Rect) 
 	inner := a.innerR
 	c.FillRect(a.contentR, ui.ColField)
 	c.ThinSunken(a.contentR)
-	c.FillRect(inner, ui.ColWhite)
+	c.FillRect(inner, ui.ColField)
 
 	a.mu.Lock()
 	doc := a.doc
@@ -1836,10 +1836,11 @@ func (a *BrowserApp) paintControl(c *ui.Canvas, f *ui.Font, ctrl *bControl, x, y
 		}
 		f.TextClip(c, tx, ty, r.W-6, label, col)
 	case "input", "textarea":
-		bg := ui.ColWhite
+		bg := ui.ColField
 		if ctrl.hasBg {
 			bg = ctrl.colBg
 		}
+		fg = ui.EnsureContrast(fg, bg, 4.5)
 		c.FillRect(r, bg)
 		c.Sunken(r)
 		raw := controlValueOf(ctrl.node)
@@ -1858,10 +1859,7 @@ func (a *BrowserApp) paintControl(c *ui.Canvas, f *ui.Font, ctrl *bControl, x, y
 				f.TextClip(c, tx, ty+i*18, r.W-10, lines[i], fg)
 			}
 		} else if val == "" && ctrl.placeholder != "" {
-			col := ui.ColShadow
-			if ctrl.disabled {
-				col = ui.ColLight
-			}
+			col := ui.EnsureContrast(ui.ColTextDis, bg, 3.0)
 			f.TextClip(c, tx, ty, r.W-10, ctrl.placeholder, col)
 		} else {
 			selected := a.focusNode == ctrl.node && a.focusSelAll && ctrl.tag == "input"
@@ -1888,7 +1886,7 @@ func (a *BrowserApp) paintControl(c *ui.Canvas, f *ui.Font, ctrl *bControl, x, y
 		}
 	case "checkbox", "radio":
 		ctrl.checked = ctrl.node != nil && hasAttr(ctrl.node, "checked")
-		c.FillRect(r, ui.ColWhite)
+		c.FillRect(r, ui.ColField)
 		c.Sunken(r)
 		if ctrl.checked {
 			if ctrl.tag == "radio" {

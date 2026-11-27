@@ -117,7 +117,7 @@ func (d *Desktop) sysTrayRect() ui.Rect {
 }
 
 func drawGauge(c *ui.Canvas, r ui.Rect, pct int, col uint32) {
-	c.FillRect(r, ui.ColWhite)
+	c.FillRect(r, ui.ColField)
 	c.Frame(r, ui.ColShadow)
 	innerW := r.W - 2
 	if pct < 0 {

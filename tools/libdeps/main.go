@@ -73,7 +73,7 @@ func run(out string, roots, bins []string) error {
 // symlink down to the real shared object.
 func locate(roots []string, lib string) (string, error) {
 	for _, root := range roots {
-		for _, dir := range []string{"usr/lib", "lib"} {
+		for _, dir := range []string{"usr/lib", "usr/lib/pulseaudio", "lib"} {
 			cand := filepath.Join(root, dir, lib)
 			real, err := filepath.EvalSymlinks(cand)
 			if err == nil {

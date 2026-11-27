@@ -190,7 +190,7 @@ func (a *HostDriveDialog) MinSize() (int, int)     { return 560, 330 }
 func (a *HostDriveDialog) Resizable() bool         { return false }
 
 func (a *HostDriveDialog) paintField(c *ui.Canvas, f *ui.Font, r ui.Rect, value []rune, caret int, focused bool) {
-	c.FillRect(r, ui.ColWhite)
+	c.FillRect(r, ui.ColField)
 	c.Sunken(r)
 	if len(value) > 0 {
 		f.TextClip(c, r.X+5, r.Y+4, r.W-10, string(value), ui.ColText)
@@ -224,7 +224,7 @@ func (a *HostDriveDialog) Paint(d *Desktop, w *Window, c *ui.Canvas, r ui.Rect) 
 	c.FillRect(ui.Rect{r.X + 16, listTop, r.W - 32, 17}, ui.ColFace)
 	f.Text(c, r.X+16, listTop, "检测到的共享文件夹（单击填入）：", ui.ColText)
 	list := ui.Rect{r.X + 16, listTop + 18, r.W - 32, listBottom - listTop - 18}
-	c.FillRect(list, ui.ColWhite)
+	c.FillRect(list, ui.ColField)
 	c.Sunken(list)
 	a.shareRects = a.shareRects[:0]
 	if len(a.shares) == 0 {

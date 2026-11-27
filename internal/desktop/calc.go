@@ -59,7 +59,7 @@ func (a *CalcApp) Paint(d *Desktop, w *Window, c *ui.Canvas, r ui.Rect) {
 	c.FillRect(r, ui.ColFace)
 	f := ui.DefaultFont()
 	disp := ui.Rect{r.X + 8, r.Y + 8, r.W - 16, 32}
-	c.FillRect(disp, ui.ColWhite)
+	c.FillRect(disp, ui.ColField)
 	c.Sunken(disp)
 	col := ui.ColText
 	if a.err {

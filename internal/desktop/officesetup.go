@@ -1,9 +1,11 @@
 package desktop
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -13,6 +15,9 @@ import (
 
 const (
 	officeSetupPIDPath = "/run/win95-office-setup.pid"
+	officeStatusPath   = "/run/win95-office-install.status"
+	officeLogPath      = "/run/win95-office-install.log"
+	officeLockPath     = "/run/win95-office-setup.flock"
 	officeRowH         = 46
 )
 
@@ -36,6 +41,7 @@ type OfficeSetupApp struct {
 
 	installing     bool
 	installStarted time.Time
+	installRunID   string
 	installMsg     string
 	pendingModule  string
 	pendingPath    string
@@ -70,6 +76,7 @@ func NewOfficeSetupApp(d *Desktop, pendingComp, pendingModule, pendingPath strin
 	if pendingPath != "" && a.msg == "" {
 		a.msg = "打开该文档需要先安装对应的 Office 组件。"
 	}
+	a.attachOfficeInstall()
 	return a
 }
 
@@ -90,7 +97,7 @@ func (a *OfficeSetupApp) Menus(d *Desktop, w *Window) []Menu {
 			{Label: "全选(A)", Enabled: !a.installing, Action: func() { a.selectAll() }},
 			{Separator: true},
 			{Label: "安装所选(I)", Enabled: !a.installing, Action: func() { a.installSelected() }},
-			{Label: "查看安装进度(P)", Enabled: a.installing, Action: func() { d.openInstallStatus("Office 365 全件套") }},
+			{Label: "查看安装进度(P)", Enabled: a.installing, Action: func() { d.openInstallStatusAt("Office 365 全件套", officeStatusPath, officeLogPath) }},
 		}},
 		{Label: "帮助(H)", Items: []MenuItem{
 			{Label: "关于 Office 365 全件套", Enabled: true, Action: func() {
@@ -152,22 +159,80 @@ func (a *OfficeSetupApp) toggle(id string) {
 	a.d.Invalidate()
 }
 
-func installStatusRunning() bool {
-	data, err := os.ReadFile(installStatusPath)
+type officeInstallState struct {
+	Title    string
+	Msg      string
+	State    string
+	RunID    string
+	Packages string
+	PID      int
+	Started  time.Time
+}
+
+func readOfficeInstallState() (officeInstallState, bool) {
+	data, err := os.ReadFile(officeStatusPath)
 	if err != nil {
-		return false
+		return officeInstallState{}, false
 	}
-	_, _, _, state := parseInstallStatus(string(data))
-	if state != "running" {
-		return false
+	return parseOfficeInstallState(string(data))
+}
+
+func parseOfficeInstallState(data string) (officeInstallState, bool) {
+	var st officeInstallState
+	for _, line := range strings.Split(data, "\n") {
+		key, value, ok := strings.Cut(strings.TrimSpace(line), "=")
+		if !ok {
+			continue
+		}
+		switch key {
+		case "title":
+			st.Title = value
+		case "msg":
+			st.Msg = value
+		case "state":
+			st.State = value
+		case "run_id":
+			st.RunID = value
+		case "packages":
+			st.Packages = value
+		case "pid":
+			st.PID, _ = strconv.Atoi(value)
+		case "started":
+			if n, err := strconv.ParseInt(value, 10, 64); err == nil && n > 0 {
+				st.Started = time.Unix(n, 0)
+			}
+		}
 	}
-	if st, err := os.Stat(installStatusPath); err == nil {
-		return time.Since(st.ModTime()) < 20*time.Minute
+	return st, st.State != ""
+}
+
+func installStatusRunning() bool {
+	if data, err := os.ReadFile(installStatusPath); err == nil {
+		var state string
+		var pid int
+		for _, line := range strings.Split(string(data), "\n") {
+			key, value, ok := strings.Cut(strings.TrimSpace(line), "=")
+			if !ok {
+				continue
+			}
+			switch key {
+			case "state":
+				state = value
+			case "pid":
+				pid, _ = strconv.Atoi(value)
+			}
+		}
+		if state == "running" && pid > 0 && processAlive(pid) {
+			return true
+		}
 	}
-	return true
+	return officeInstallRunning()
 }
 
 func officePIDAlive() bool {
+	if st, ok := readOfficeInstallState(); ok && st.PID > 0 {
+		return processAlive(st.PID)
+	}
 	data, err := os.ReadFile(officeSetupPIDPath)
 	if err != nil {
 		return false
@@ -177,6 +242,46 @@ func officePIDAlive() bool {
 		return false
 	}
 	return processAlive(pid)
+}
+
+func officeInstallRunning() bool {
+	st, ok := readOfficeInstallState()
+	if !ok || st.State != "running" {
+		return false
+	}
+	if st.PID > 0 {
+		return processAlive(st.PID)
+	}
+	return !st.Started.IsZero() && time.Since(st.Started) < 20*time.Minute
+}
+
+func (a *OfficeSetupApp) attachOfficeInstall() {
+	st, ok := readOfficeInstallState()
+	if !ok || st.State != "running" || !officeInstallRunning() {
+		return
+	}
+	a.installing = true
+	a.installRunID = st.RunID
+	a.installStarted = st.Started
+	if a.installStarted.IsZero() {
+		a.installStarted = time.Now()
+	}
+	a.installMsg = st.Msg
+	if a.installMsg == "" {
+		a.installMsg = "正在安装…"
+	}
+}
+
+func lockOfficeInstall() (*os.File, error) {
+	f, err := os.OpenFile(officeLockPath, os.O_CREATE|os.O_RDWR, 0o644)
+	if err != nil {
+		return nil, err
+	}
+	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+		f.Close()
+		return nil, err
+	}
+	return f, nil
 }
 
 func (a *OfficeSetupApp) installSelected() {
@@ -205,9 +310,26 @@ func (a *OfficeSetupApp) installSelected() {
 		len(compNames), strings.Join(compNames, "\n· "), mb)
 	a.d.MessageBox("确认安装 Office 组件", msg, IconQuestion, []string{"开始安装", "取消"}, func(i int) {
 		if i == 0 {
-			a.startInstaller(pkgs)
+			a.startConfirmedInstall()
 		}
 	})
+}
+
+func (a *OfficeSetupApp) startConfirmedInstall() {
+	if a.installing || a.d == nil {
+		return
+	}
+	a.refreshInstalled()
+	if installStatusRunning() {
+		a.d.MessageBox("Office 365 全件套", "另一个安装任务正在运行，请等待完成后再试。", IconWarning, []string{"确定"}, nil)
+		return
+	}
+	pkgs := officeMissingPackages(a.sel, a.installed)
+	if len(pkgs) == 0 {
+		a.d.MessageBox("Office 365 全件套", "所选组件已经全部安装，不需要重复下载。", IconInfo, []string{"确定"}, nil)
+		return
+	}
+	a.startInstaller(pkgs)
 }
 
 func (a *OfficeSetupApp) startInstaller(pkgs []string) {
@@ -218,23 +340,42 @@ func (a *OfficeSetupApp) startInstaller(pkgs []string) {
 		a.d.MessageBox("Office 365 全件套", "镜像缺少 win95-office-setup 安装脚本，无法继续。", IconError, []string{"确定"}, nil)
 		return
 	}
-	_ = os.Remove(installStatusPath)
+	lock, err := lockOfficeInstall()
+	if err != nil {
+		msg := "无法锁定 Office 安装任务：\n" + err.Error()
+		if errors.Is(err, syscall.EWOULDBLOCK) {
+			msg = "另一个 Office 安装任务正在运行，请等待完成后再试。"
+		}
+		a.d.MessageBox("Office 365 全件套", msg, IconWarning, []string{"确定"}, nil)
+		return
+	}
+	runID := fmt.Sprintf("%d-%d", time.Now().UnixNano(), os.Getpid())
+	started := time.Now()
 	cmd := exec.Command("/usr/bin/win95-office-setup", pkgs...)
 	cmd.Dir = "/"
 	cmd.Env = []string{
 		"PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
 		"HOME=/root",
+		"WIN95_OFFICE_LOCK_FD=3",
+		"WIN95_OFFICE_RUN_ID=" + runID,
+		"WIN95_OFFICE_STARTED=" + strconv.FormatInt(started.Unix(), 10),
+		"WIN95_INSTALL_STATUS=" + officeStatusPath,
+		"WIN95_INSTALL_LOG=" + officeLogPath,
 	}
+	cmd.ExtraFiles = []*os.File{lock}
 	if err := cmd.Start(); err != nil {
+		lock.Close()
 		a.d.MessageBox("Office 365 全件套", "无法启动安装任务：\n"+err.Error(), IconError, []string{"确定"}, nil)
 		return
 	}
+	lock.Close()
 	_ = cmd.Process.Release()
 	a.installing = true
-	a.installStarted = time.Now()
+	a.installStarted = started
+	a.installRunID = runID
 	a.installMsg = "正在准备安装…"
 	a.msg = ""
-	a.d.openInstallStatus("Office 365 全件套")
+	a.d.openInstallStatusAt("Office 365 全件套", officeStatusPath, officeLogPath)
 	a.d.Invalidate()
 }
 
@@ -242,17 +383,13 @@ func (a *OfficeSetupApp) pollInstall() {
 	if !a.installing {
 		return
 	}
-	data, err := os.ReadFile(installStatusPath)
-	if err == nil {
-		_, _, msg, state := parseInstallStatus(string(data))
-		if msg != "" {
-			a.installMsg = msg
-		}
-		if state == "done" || state == "failed" {
-			if st, statErr := os.Stat(installStatusPath); statErr == nil && st.ModTime().Before(a.installStarted.Add(-2*time.Second)) {
-				// Stale status from an earlier install; ignore it.
-			} else {
-				a.finishInstall(state == "done", msg)
+	if st, ok := readOfficeInstallState(); ok {
+		if a.installRunID == "" || st.RunID == "" || st.RunID == a.installRunID {
+			if st.Msg != "" {
+				a.installMsg = st.Msg
+			}
+			if st.State == "done" || st.State == "failed" {
+				a.finishInstall(st.State == "done", st.Msg)
 				return
 			}
 		}
@@ -264,14 +401,11 @@ func (a *OfficeSetupApp) pollInstall() {
 
 func (a *OfficeSetupApp) finishInstall(ok bool, msg string) {
 	a.installing = false
+	a.installRunID = ""
 	a.installMsg = ""
-	changed := a.refreshInstalled()
-	if changed {
-		// Keep installed components ticked; leave optional picks as-is.
-		a.sel = officeSelectionDefaults(a.installed)
-		if m := officeModuleByID(a.pendingModule); m != nil {
-			a.sel[m.Comp] = true
-		}
+	a.refreshInstalled()
+	if m := officeModuleByID(a.pendingModule); m != nil {
+		a.sel[m.Comp] = true
 	}
 	if !ok {
 		if msg == "" {
@@ -298,6 +432,9 @@ func (a *OfficeSetupApp) finishInstall(ok bool, msg string) {
 
 func (a *OfficeSetupApp) Tick(d *Desktop, w *Window, now time.Time) {
 	a.win = w
+	if !a.installing {
+		a.attachOfficeInstall()
+	}
 	if now.Sub(a.lastRefresh) > 2*time.Second {
 		a.lastRefresh = now
 		if a.refreshInstalled() {
@@ -373,7 +510,7 @@ func (a *OfficeSetupApp) Paint(d *Desktop, w *Window, c *ui.Canvas, r ui.Rect) {
 
 	a.scroll.Total = len(officeComponents)
 	a.scroll.Clamp()
-	c.FillRect(a.listR, ui.ColWhite)
+	c.FillRect(a.listR, ui.ColField)
 	c.Sunken(a.listR)
 
 	for i := 0; i < a.scroll.Visible; i++ {
@@ -508,7 +645,7 @@ func (a *OfficeSetupApp) Mouse(d *Desktop, w *Window, client ui.Rect, ev MouseEv
 			}
 		case "progress":
 			if a.btnProg.Contains(ev.X, ev.Y) {
-				d.openInstallStatus("Office 365 全件套")
+				d.openInstallStatusAt("Office 365 全件套", officeStatusPath, officeLogPath)
 			}
 		case "close":
 			if a.btnClose.Contains(ev.X, ev.Y) {
@@ -549,6 +686,7 @@ func (d *Desktop) openOfficeSetup(comp, module, path string) *OfficeSetupApp {
 	for _, w := range d.windows {
 		if app, ok := w.App.(*OfficeSetupApp); ok {
 			d.bringToFront(w)
+			app.attachOfficeInstall()
 			if !app.installing && comp != "" {
 				app.sel[comp] = true
 				app.reveal = comp

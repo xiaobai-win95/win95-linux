@@ -357,7 +357,7 @@ func (a *PkgManApp) Paint(d *Desktop, w *Window, c *ui.Canvas, r ui.Rect) {
 
 	f.Text(c, r.X+8, r.Y+9, "搜索:", ui.ColText)
 	a.inputR = ui.Rect{r.X + 46, r.Y + 6, r.W - 46 - 150, 22}
-	c.FillRect(a.inputR, ui.ColWhite)
+	c.FillRect(a.inputR, ui.ColField)
 	c.Sunken(a.inputR)
 	text := string(a.query)
 	if text == "" {
@@ -381,7 +381,7 @@ func (a *PkgManApp) Paint(d *Desktop, w *Window, c *ui.Canvas, r ui.Rect) {
 
 	// Package list.
 	a.listR = ui.Rect{r.X + 8, r.Y + 36, r.W - 16, r.H - 36 - 110}
-	c.FillRect(a.listR, ui.ColWhite)
+	c.FillRect(a.listR, ui.ColField)
 	c.Sunken(a.listR)
 	inner := a.listR.Inset(2)
 	scrollW := 16
@@ -445,7 +445,7 @@ func (a *PkgManApp) Paint(d *Desktop, w *Window, c *ui.Canvas, r ui.Rect) {
 	f.TextClip(c, r.X+8, detailY, r.W-16, detail, ui.ColText)
 
 	a.logR = ui.Rect{r.X + 8, detailY + 20, r.W - 16, pkgLogLines*16 + 8}
-	c.FillRect(a.logR, ui.ColWhite)
+	c.FillRect(a.logR, ui.ColField)
 	c.Sunken(a.logR)
 	lines := a.log
 	if len(lines) > pkgLogLines {

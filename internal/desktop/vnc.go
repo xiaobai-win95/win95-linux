@@ -269,7 +269,7 @@ func (a *VNCApp) Paint(d *Desktop, w *Window, c *ui.Canvas, r ui.Rect) {
 	f.Text(c, r.X+62, r.Y+38, "服务器状态："+state, col)
 
 	box := ui.Rect{r.X + 18, r.Y + 66, r.W - 36, 76}
-	c.FillRect(box, ui.ColWhite)
+	c.FillRect(box, ui.ColField)
 	c.Sunken(box)
 	addr := "未启动"
 	if running {

@@ -14,7 +14,13 @@ import (
 func TestAIDangerDetection(t *testing.T) {
 	danger := []string{
 		"rm -rf /",
+		"rm -r /",
 		"rm -fr /root/文档",
+		"find /root -delete",
+		"find /root -exec rm {} +",
+		"echo $(touch /tmp/injected)",
+		`echo "$(touch /tmp/injected)"`,
+		"sh -c 'rm -rf /'",
 		"mkfs.ext4 /dev/sda1",
 		"dd if=/dev/zero of=/dev/sda",
 		"shutdown -h now",
@@ -27,10 +33,23 @@ func TestAIDangerDetection(t *testing.T) {
 			t.Errorf("dangerousCommand(%q) = false, want true", cmd)
 		}
 	}
-	safe := []string{"df -h", "ls -la /root", "ping -c 4 8.8.8.8", "apk add htop", "rm /tmp/a.txt"}
+	safe := []string{"df -h", "ls -la /root", "find /root -maxdepth 1 -type f -print", "ping -c 4 8.8.8.8", "apk add htop", "rm /tmp/a.txt"}
 	for _, cmd := range safe {
 		if dangerousCommand(cmd) {
 			t.Errorf("dangerousCommand(%q) = true, want false", cmd)
+		}
+	}
+}
+
+func TestAICommandConfirmationAllowlist(t *testing.T) {
+	for _, command := range []string{"df -h", "ls -la /root", "find /root -maxdepth 1 -type f -print", "printf '%s' hello"} {
+		if requiresCommandConfirmation(command) {
+			t.Errorf("safe command requires confirmation: %s", command)
+		}
+	}
+	for _, command := range []string{"rm /tmp/a.txt", "apk add htop", "ping -c 4 8.8.8.8", "df -h; rm -r /", "echo $(touch /tmp/x)"} {
+		if !requiresCommandConfirmation(command) {
+			t.Errorf("non-allowlisted command skipped confirmation: %s", command)
 		}
 	}
 }
@@ -46,7 +65,9 @@ func TestAILocalCommandRules(t *testing.T) {
 		{"查看当前目录", "pwd"},
 		{"安装 htop", "apk add --no-cache htop"},
 		{"删除 /root/文档/旧文件.txt", "rm -rf /root/文档/旧文件.txt"},
-		{"查找 report 文件", "find / -iname '*report*' 2>/dev/null | head -100"},
+		{"查找 report 文件", "find / -iname '*report*' -print"},
+		{"查看进程", "ps aux"},
+		{"查看 CPU 负载", "uptime"},
 	}
 	for _, c := range cases {
 		cmd, expl := localCommand(c.prompt)
@@ -77,6 +98,72 @@ func TestAIConfigRoundTrip(t *testing.T) {
 	got := loadAIConfig()
 	if got != cfg {
 		t.Fatalf("loaded config = %+v, want %+v", got, cfg)
+	}
+}
+
+func TestAIConfigRepairsLegacyPermissions(t *testing.T) {
+	old := aiConfigPath
+	aiConfigPath = filepath.Join(t.TempDir(), "ai.json")
+	defer func() { aiConfigPath = old }()
+	cfg := aiConfig{Provider: "qwen", BaseURL: "https://example.com/v1", Model: "qwen-plus", APIKey: "secret"}
+	data, err := json.Marshal(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(aiConfigPath, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := loadAIConfig(); got != cfg {
+		t.Fatalf("loaded config = %+v, want %+v", got, cfg)
+	}
+	info, err := os.Stat(aiConfigPath)
+	if err != nil || info.Mode().Perm() != 0o600 {
+		t.Fatalf("legacy config was not repaired: %v, %v", info, err)
+	}
+}
+
+func TestAIConfigSaveReplacesSymlinkWithoutFollowingIt(t *testing.T) {
+	old := aiConfigPath
+	dir := t.TempDir()
+	aiConfigPath = filepath.Join(dir, "ai.json")
+	defer func() { aiConfigPath = old }()
+	outside := filepath.Join(t.TempDir(), "outside.json")
+	if err := os.WriteFile(outside, []byte("outside-secret"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, aiConfigPath); err != nil {
+		t.Fatal(err)
+	}
+	cfg := aiConfig{Provider: "deepseek", BaseURL: "https://example.com/v1", Model: "deepseek-chat", APIKey: "new-secret"}
+	if err := saveAIConfig(cfg); err != nil {
+		t.Fatal(err)
+	}
+	if data, err := os.ReadFile(outside); err != nil || string(data) != "outside-secret" {
+		t.Fatalf("save followed the config symlink: %q, %v", data, err)
+	}
+	info, err := os.Lstat(aiConfigPath)
+	if err != nil || !info.Mode().IsRegular() || info.Mode().Perm() != 0o600 {
+		t.Fatalf("config was not atomically replaced with a private file: %v, %v", info, err)
+	}
+	if got := loadAIConfig(); got != cfg {
+		t.Fatalf("loaded replacement = %+v, want %+v", got, cfg)
+	}
+}
+
+func TestAIConfigLoadRejectsSymlink(t *testing.T) {
+	old := aiConfigPath
+	dir := t.TempDir()
+	aiConfigPath = filepath.Join(dir, "ai.json")
+	defer func() { aiConfigPath = old }()
+	outside := filepath.Join(t.TempDir(), "outside.json")
+	if err := os.WriteFile(outside, []byte(`{"provider":"qwen","apiKey":"outside-secret"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, aiConfigPath); err != nil {
+		t.Fatal(err)
+	}
+	if got := loadAIConfig(); got.APIKey != "" || got.Provider != "local" {
+		t.Fatalf("loaded through a symlink: %+v", got)
 	}
 }
 
@@ -112,6 +199,24 @@ func TestAIExecuteLocalCommand(t *testing.T) {
 	out := execShell(context.Background(), "printf 'hello-ai'")
 	if !strings.Contains(out, "hello-ai") {
 		t.Fatalf("shell output = %q", out)
+	}
+}
+
+func TestAIExecShellDoesNotEvaluateCommandSubstitution(t *testing.T) {
+	marker := filepath.Join(t.TempDir(), "injected")
+	out := execShell(context.Background(), `printf '%s' '$(touch `+marker+`)'`)
+	if !strings.Contains(out, "$(touch ") {
+		t.Fatalf("single-quoted text was changed: %q", out)
+	}
+	if _, err := os.Stat(marker); !os.IsNotExist(err) {
+		t.Fatalf("single-quoted command substitution ran: %v", err)
+	}
+	out = execShell(context.Background(), `printf '%s' "$(touch `+marker+`)"`)
+	if !strings.Contains(out, "拒绝命令替换") {
+		t.Fatalf("double-quoted substitution was not rejected: %q", out)
+	}
+	if _, err := os.Stat(marker); !os.IsNotExist(err) {
+		t.Fatalf("double-quoted command substitution ran: %v", err)
 	}
 }
 

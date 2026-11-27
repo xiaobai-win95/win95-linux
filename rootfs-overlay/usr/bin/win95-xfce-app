@@ -6,6 +6,17 @@
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 export PATH
 
+load_locale() {
+	if [ -r /run/win95-locale.env ]; then
+		. /run/win95-locale.env
+	fi
+	: "${LANG:=C.UTF-8}"
+	: "${LC_TIME:=$LANG}"
+	: "${LANGUAGE:=$LANG}"
+	export LANG LC_TIME LANGUAGE
+}
+load_locale
+
 VT=2
 LOG=/var/log/win95-xfce-app.log
 PIDFILE=/run/win95-xfce-app.pid
@@ -76,7 +87,7 @@ fi
 cat >"$WRAPPER" <<EOF
 #!/bin/sh
 export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-export HOME=/root DISPLAY=:0 LANG=zh_CN.UTF-8 LANGUAGE=zh_CN:zh LIBGL_ALWAYS_SOFTWARE=1 GALLIUM_DRIVER=llvmpipe
+export HOME=/root DISPLAY=:0 LANG LC_TIME LANGUAGE LIBGL_ALWAYS_SOFTWARE=1 GALLIUM_DRIVER=llvmpipe
 if command -v xfwm4 >/dev/null 2>&1; then
 	xfwm4 --daemon >/dev/null 2>&1
 fi
@@ -91,7 +102,7 @@ chmod 0755 "$WRAPPER"
 command -v chvt >/dev/null 2>&1 && chvt "$VT"
 sleep 0.8
 
-export LANG=zh_CN.UTF-8 LANGUAGE=zh_CN:zh LIBGL_ALWAYS_SOFTWARE=1 GALLIUM_DRIVER=llvmpipe
+export LANG LC_TIME LANGUAGE LIBGL_ALWAYS_SOFTWARE=1 GALLIUM_DRIVER=llvmpipe
 export XDG_VTNR="$VT" XDG_RUNTIME_DIR=/run/user/0 XDG_SESSION_TYPE=x11
 log "starting $APP on vt$VT"
 echo "=== $(date '+%F %T') start $APP on vt$VT ===" >>"$LOG"

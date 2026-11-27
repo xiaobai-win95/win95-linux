@@ -815,7 +815,7 @@ func (a *SolitaireApp) Key(d *Desktop, w *Window, ev KeyEvent) bool {
 func (a *SolitaireApp) Close() {}
 
 func drawSolCard(c *ui.Canvas, r ui.Rect, cc solCard) {
-	c.FillRect(r, ui.ColWhite)
+	c.FillRect(r, ui.ColField)
 	c.Frame(r, 0x404040)
 	c.HLine(r.X+1, r.Y+1, r.W-2, ui.ColWhite)
 	f := ui.DefaultFont()
@@ -847,7 +847,7 @@ func drawSolCard(c *ui.Canvas, r ui.Rect, cc solCard) {
 }
 
 func drawSolBack(c *ui.Canvas, r ui.Rect) {
-	c.FillRect(r, ui.ColWhite)
+	c.FillRect(r, ui.ColField)
 	c.Frame(r, 0x404040)
 	inner := ui.Rect{r.X + 2, r.Y + 2, r.W - 4, r.H - 4}
 	c.FillRect(inner, 0x000080)

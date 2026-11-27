@@ -53,7 +53,8 @@ func (a *InputBoxApp) Paint(d *Desktop, w *Window, c *ui.Canvas, r ui.Rect) {
 	f.TextClip(c, r.X+16, r.Y+14, r.W-32, a.prompt, ui.ColText)
 
 	a.fieldR = ui.Rect{r.X + 16, r.Y + 40, r.W - 32, 27}
-	c.FillRect(a.fieldR, ui.ColWhite)
+	d.imeFocus(w, a.fieldR, a.insertText)
+	c.FillRect(a.fieldR, ui.ColField)
 	c.Sunken(a.fieldR)
 	f.TextClip(c, a.fieldR.X+5, a.fieldR.Y+5, a.fieldR.W-10, string(a.value), ui.ColText)
 	before := string(a.value[:a.caret])
@@ -64,8 +65,8 @@ func (a *InputBoxApp) Paint(d *Desktop, w *Window, c *ui.Canvas, r ui.Rect) {
 
 	a.okR = ui.Rect{r.Right() - 196, r.Bottom() - 42, 84, 26}
 	a.cancelR = ui.Rect{r.Right() - 104, r.Bottom() - 42, 84, 26}
-	ui.Button(c, a.okR, "确定", a.press == "ok", true)
-	ui.Button(c, a.cancelR, "取消", a.press == "cancel", true)
+	ui.Button(c, a.okR, d.tr("确定"), a.press == "ok", true)
+	ui.Button(c, a.cancelR, d.tr("取消"), a.press == "cancel", true)
 	if a.err != "" {
 		f.TextClip(c, r.X+16, r.Y+74, r.W-32, a.err, ui.ColRed)
 	}
@@ -113,13 +114,13 @@ func (a *InputBoxApp) accept() {
 	}
 	switch {
 	case name == "":
-		a.err = "名称不能为空。"
+		a.err = a.d.tr("名称不能为空。")
 	case name == "." || name == "..":
-		a.err = "这个名称无效。"
+		a.err = a.d.tr("这个名称无效。")
 	case strings.ContainsAny(name, "/\\\x00"):
-		a.err = "名称中不能包含斜杠。"
+		a.err = a.d.tr("名称中不能包含斜杠。")
 	case len([]rune(name)) > 200:
-		a.err = "名称太长了。"
+		a.err = a.d.tr("名称太长了。")
 	default:
 		a.finish(true)
 		return
@@ -183,6 +184,17 @@ func (a *InputBoxApp) Key(d *Desktop, w *Window, ev KeyEvent) bool {
 		return true
 	}
 	return false
+}
+
+func (a *InputBoxApp) insertText(text string) {
+	for _, r := range []rune(text) {
+		a.value = append(a.value, 0)
+		copy(a.value[a.caret+1:], a.value[a.caret:])
+		a.value[a.caret] = r
+		a.caret++
+	}
+	a.err = ""
+	a.d.Invalidate()
 }
 
 func (a *InputBoxApp) Close() {}

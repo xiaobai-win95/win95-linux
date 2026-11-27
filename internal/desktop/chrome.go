@@ -56,6 +56,7 @@ func (d *Desktop) drawScene(c *ui.Canvas, withCursor bool) {
 		d.drawContext(c)
 	}
 	d.drawNotifications(c)
+	d.drawIME(c)
 	if d.spotlight != nil && d.spotlight.active {
 		d.spotlight.Paint(c)
 	}
@@ -64,6 +65,8 @@ func (d *Desktop) drawScene(c *ui.Canvas, withCursor bool) {
 	if withCursor {
 		if d.hand {
 			ui.CursorHand(c, d.MouseX, d.MouseY)
+		} else if d.resizeCursor != "" {
+			ui.CursorResize(c, d.MouseX, d.MouseY, d.resizeCursor)
 		} else {
 			ui.Cursor(c, d.MouseX, d.MouseY)
 		}
@@ -171,6 +174,7 @@ func (d *Desktop) drawTaskbar(c *ui.Canvas) {
 	}
 
 	d.drawSysTray(c)
+	d.drawIMETray(c)
 	c.FillRect(clock, ui.ColFace)
 	c.Sunken(clock)
 	f.Text(c, clock.X+(clock.W-f.Width(d.clock))/2, clock.Y+4, d.clock, ui.ColText)
@@ -291,14 +295,22 @@ func (d *Desktop) menuEntries() []startEntry {
 	return entries
 }
 
-func (d *Desktop) startMenuHeight() int {
-	h := 8
-	for _, e := range d.menuEntries() {
+func startEntriesHeight(entries []startEntry, itemH, sep int) int {
+	h := 0
+	for _, e := range entries {
 		if e.sep {
-			h += 9
+			h += sep
 		} else {
-			h += 27
+			h += itemH + 1
 		}
+	}
+	return h
+}
+
+func (d *Desktop) startMenuHeight() int {
+	h := startEntriesHeight(d.menuEntries(), 26, 9) + 8
+	if maxH := d.taskbarTop() - 4; h > maxH {
+		h = maxH
 	}
 	return h
 }
@@ -308,17 +320,37 @@ func (d *Desktop) startMenuRect() ui.Rect {
 	return ui.Rect{4, d.taskbarTop() - h - 2, startMenuW, h}
 }
 
+func (d *Desktop) startMenuViewport() ui.Rect {
+	r := d.startMenuRect()
+	v := ui.Rect{r.X + 30, r.Y + 4, r.W - 34, r.H - 8}
+	if startEntriesHeight(d.menuEntries(), 26, 9) > v.H {
+		v.W -= 18
+	}
+	return v
+}
+
+func (d *Desktop) startScrollMax() int {
+	return maxInt(0, startEntriesHeight(d.menuEntries(), 26, 9)-d.startMenuViewport().H)
+}
+
+func (d *Desktop) scrollStart(delta int) {
+	d.startScroll = maxInt(0, minInt(d.startScroll+delta, d.startScrollMax()))
+	d.startSubDrag = false
+	d.Invalidate()
+}
+
 func (d *Desktop) startItemRects() []ui.Rect {
 	r := d.startMenuRect()
+	v := d.startMenuViewport()
 	var out []ui.Rect
-	y := r.Y + 6
+	y := r.Y + 6 - d.startScroll
 	for _, e := range d.menuEntries() {
 		if e.sep {
 			y += 9
 			out = append(out, ui.Rect{})
 			continue
 		}
-		out = append(out, ui.Rect{r.X + 30, y, r.W - 34, 26})
+		out = append(out, ui.Rect{v.X, y, v.W, 26})
 		y += 27
 	}
 	return out
@@ -342,48 +374,58 @@ func (d *Desktop) drawStartMenu(c *ui.Canvas) {
 	f.Text(c, banner.X+7, banner.Bottom()-30, "Linux", 0xC0E0FF)
 
 	entries := d.menuEntries()
+	d.startScroll = maxInt(0, minInt(d.startScroll, d.startScrollMax()))
 	rects := d.startItemRects()
-	y := r.Y + 6
+	viewport := d.startMenuViewport()
+	y := r.Y + 6 - d.startScroll
 	for i, e := range entries {
 		if e.sep {
-			c.HLine(r.X+34, y+4, r.W-40, ui.ColShadow)
-			c.HLine(r.X+34, y+5, r.W-40, ui.ColWhite)
+			if y+9 > viewport.Y && y < viewport.Bottom() {
+				c.HLine(viewport.X+4, y+4, viewport.W-8, ui.ColShadow)
+				c.HLine(viewport.X+4, y+5, viewport.W-8, ui.ColWhite)
+			}
 			y += 9
 			continue
 		}
 		ir := rects[i]
-		hover := d.startSel == e.id
-		if hover && e.enabled {
+		if ir.Bottom() > viewport.Y && ir.Y < viewport.Bottom() {
+			hover := d.startSel == e.id
+			if hover && e.enabled {
+				if e.danger {
+					c.FillRect(ir, 0x800000)
+				} else {
+					c.FillRect(ir, ui.ColNavy)
+				}
+			}
+			ui.DrawIcon16(c, e.icon, ir.X+4, ir.Y+5)
+			col := ui.ColText
 			if e.danger {
-				c.FillRect(ir, 0x800000)
-			} else {
-				c.FillRect(ir, ui.ColNavy)
+				col = 0xA00000
 			}
-		}
-		ui.DrawIcon16(c, e.icon, ir.X+4, ir.Y+5)
-		col := ui.ColText
-		if e.danger {
-			col = 0xA00000
-		}
-		if !e.enabled {
-			col = ui.ColTextDis
-		}
-		if hover && e.enabled {
-			col = ui.ColWhite
-		}
-		avail := ir.W - 26
-		if len(e.children) > 0 {
-			avail -= 16
-		}
-		f.TextClip(c, ir.X+26, ir.Y+5, avail, e.label, col)
-		if len(e.children) > 0 {
-			ac := ui.ColText
-			if hover {
-				ac = ui.ColWhite
+			if !e.enabled {
+				col = ui.ColTextDis
 			}
-			ui.Arrow(c, ir.Right()-12, ir.Y+11, "right", ac)
+			if hover && e.enabled {
+				col = ui.ColWhite
+			}
+			avail := ir.W - 26
+			if len(e.children) > 0 {
+				avail -= 16
+			}
+			f.TextClip(c, ir.X+26, ir.Y+5, avail, e.label, col)
+			if len(e.children) > 0 {
+				ac := ui.ColText
+				if hover {
+					ac = ui.ColWhite
+				}
+				ui.Arrow(c, ir.Right()-12, ir.Y+11, "right", ac)
+			}
 		}
 		y += 27
+	}
+	if d.startScrollMax() > 0 {
+		bar := ui.Rect{r.Right() - 18, r.Y + 3, 16, r.H - 6}
+		ui.ScrollBar(c, bar, startEntriesHeight(entries, 26, 9), viewport.H, d.startScroll)
 	}
 
 	if d.startSub != "" {
@@ -394,52 +436,56 @@ func (d *Desktop) drawStartMenu(c *ui.Canvas) {
 			sr := d.startSubRect(rects[i], e)
 			c.FillRect(sr, ui.ColFace)
 			c.Raised(sr)
-			yy := sr.Y + 4
+			view := d.startSubViewport(sr, e)
+			d.startSubScroll = maxInt(0, minInt(d.startSubScroll, d.startSubScrollMax(sr, e)))
+			yy := sr.Y + 4 - d.startSubScroll
 			for _, sub := range e.children {
 				if sub.sep {
-					c.HLine(sr.X+8, yy+4, sr.W-16, ui.ColShadow)
-					c.HLine(sr.X+8, yy+5, sr.W-16, ui.ColWhite)
+					if yy+9 > view.Y && yy < view.Bottom() {
+						c.HLine(view.X+4, yy+4, view.W-8, ui.ColShadow)
+						c.HLine(view.X+4, yy+5, view.W-8, ui.ColWhite)
+					}
 					yy += 9
 					continue
 				}
-				rr := ui.Rect{sr.X + 4, yy, sr.W - 8, 25}
-				hov := d.startHover == sub.id
-				if hov && sub.enabled {
-					c.FillRect(rr, ui.ColNavy)
+				rr := ui.Rect{view.X, yy, view.W, 25}
+				if rr.Bottom() > view.Y && rr.Y < view.Bottom() {
+					hov := d.startHover == sub.id
+					if hov && sub.enabled {
+						c.FillRect(rr, ui.ColNavy)
+					}
+					if sub.icon != ui.IconNone {
+						ui.DrawIcon16(c, sub.icon, rr.X+5, rr.Y+5)
+					}
+					col := ui.ColText
+					if !sub.enabled {
+						col = ui.ColTextDis
+					}
+					if hov && sub.enabled {
+						col = ui.ColWhite
+					}
+					f.TextClip(c, rr.X+28, rr.Y+5, rr.W-34, sub.label, col)
 				}
-				if sub.icon != ui.IconNone {
-					ui.DrawIcon16(c, sub.icon, rr.X+5, rr.Y+5)
-				}
-				col := ui.ColText
-				if !sub.enabled {
-					col = ui.ColTextDis
-				}
-				if hov && sub.enabled {
-					col = ui.ColWhite
-				}
-				f.Text(c, rr.X+28, rr.Y+5, sub.label, col)
 				yy += 26
+			}
+			if d.startSubScrollMax(sr, e) > 0 {
+				bar := ui.Rect{sr.Right() - 18, sr.Y + 3, 16, sr.H - 6}
+				ui.ScrollBar(c, bar, startEntriesHeight(e.children, 25, 9), view.H, d.startSubScroll)
 			}
 		}
 	}
 }
 
 func (d *Desktop) startSubRect(anchor ui.Rect, e startEntry) ui.Rect {
-	h := 8
-	for _, s := range e.children {
-		if s.sep {
-			h += 9
-		} else {
-			h += 26
-		}
+	h := startEntriesHeight(e.children, 25, 9) + 8
+	if maxH := d.taskbarTop() - 4; h > maxH {
+		h = maxH
 	}
 	x := d.startMenuRect().Right() - 4
 	w := 226
 	if x+w > d.W-4 {
 		x = d.startMenuRect().X + 4 - w
 	}
-	// The 程序 submenu is now taller than the space below its anchor row;
-	// shift it up so the last entries stay above the taskbar.
 	y := anchor.Y - 2
 	if y+h > d.taskbarTop()-2 {
 		y = d.taskbarTop() - 2 - h
@@ -448,6 +494,80 @@ func (d *Desktop) startSubRect(anchor ui.Rect, e startEntry) ui.Rect {
 		y = 2
 	}
 	return ui.Rect{x, y, w, h}
+}
+
+func (d *Desktop) startSubViewport(sr ui.Rect, e startEntry) ui.Rect {
+	v := ui.Rect{sr.X + 4, sr.Y + 4, sr.W - 8, sr.H - 8}
+	if startEntriesHeight(e.children, 25, 9) > v.H {
+		v.W -= 18
+	}
+	return v
+}
+
+func (d *Desktop) startSubScrollMax(sr ui.Rect, e startEntry) int {
+	return maxInt(0, startEntriesHeight(e.children, 25, 9)-d.startSubViewport(sr, e).H)
+}
+
+func (d *Desktop) scrollStartSub(delta int) {
+	for i, e := range d.menuEntries() {
+		if e.id != d.startSub || len(e.children) == 0 {
+			continue
+		}
+		sr := d.startSubRect(d.startItemRects()[i], e)
+		d.startSubScroll = maxInt(0, minInt(d.startSubScroll+delta, d.startSubScrollMax(sr, e)))
+		d.startSubDrag = false
+		d.Invalidate()
+		return
+	}
+}
+
+func (d *Desktop) setStartSub(id string) {
+	if d.startSub != id {
+		d.startSubScroll = 0
+	}
+	d.startSub = id
+}
+
+func (d *Desktop) startSubScrollbar() (bar, thumb ui.Rect, entry startEntry, ok bool) {
+	entries := d.menuEntries()
+	rects := d.startItemRects()
+	for i, e := range entries {
+		if e.id != d.startSub || len(e.children) == 0 {
+			continue
+		}
+		sr := d.startSubRect(rects[i], e)
+		if d.startSubScrollMax(sr, e) == 0 {
+			return ui.Rect{}, ui.Rect{}, startEntry{}, false
+		}
+		bar = ui.Rect{sr.Right() - 18, sr.Y + 3, 16, sr.H - 6}
+		thumb = ui.ScrollbarThumbRect(bar, startEntriesHeight(e.children, 25, 9), d.startSubViewport(sr, e).H, d.startSubScroll)
+		return bar, thumb, e, true
+	}
+	return ui.Rect{}, ui.Rect{}, startEntry{}, false
+}
+
+func (d *Desktop) dragStartSubTo(y int) {
+	bar, thumb, entry, ok := d.startSubScrollbar()
+	if !ok {
+		return
+	}
+	rects := d.startItemRects()
+	for i, e := range d.menuEntries() {
+		if e.id != d.startSub {
+			continue
+		}
+		sr := d.startSubRect(rects[i], e)
+		maxPos := d.startSubScrollMax(sr, entry)
+		trackH := bar.H - 36
+		if trackH <= thumb.H {
+			d.startSubScroll = 0
+		} else {
+			d.startSubScroll = (y - bar.Y - 18 - d.startSubDragOffset) * maxPos / (trackH - thumb.H)
+			d.startSubScroll = maxInt(0, minInt(d.startSubScroll, maxPos))
+		}
+		d.Invalidate()
+		return
+	}
 }
 
 func (d *Desktop) startSubAt(x, y int) (string, string) {
@@ -461,13 +581,14 @@ func (d *Desktop) startSubAt(x, y int) (string, string) {
 		if !sr.Contains(x, y) {
 			continue
 		}
-		yy := sr.Y + 4
+		view := d.startSubViewport(sr, e)
+		yy := sr.Y + 4 - d.startSubScroll
 		for _, sub := range e.children {
 			if sub.sep {
 				yy += 9
 				continue
 			}
-			if (ui.Rect{sr.X + 4, yy, sr.W - 8, 25}).Contains(x, y) {
+			if (ui.Rect{view.X, yy, view.W, 25}).Contains(x, y) {
 				return e.id, sub.id
 			}
 			yy += 26
@@ -477,6 +598,9 @@ func (d *Desktop) startSubAt(x, y int) (string, string) {
 }
 
 func (d *Desktop) startItemAt(x, y int) string {
+	if !d.startMenuViewport().Contains(x, y) {
+		return ""
+	}
 	rects := d.startItemRects()
 	for i, e := range d.menuEntries() {
 		if e.sep {
@@ -595,6 +719,7 @@ func (d *Desktop) programEntries() []startEntry {
 		{id: "online", label: "在线服务", icon: ui.IcoOnline, enabled: true, action: func() { d.openOnlineServices() }},
 		{id: "netscape", label: "Netscape Navigator 4.8", icon: ui.IcoNetscape, enabled: true, action: func() { d.openNetscape() }},
 		{id: "ai", label: "AI 助手（命令 / 赛博义体）", icon: ui.IcoAI, enabled: true, action: func() { d.openAI(0) }},
+		{id: "agent", label: "Agent Studio（智能体工作台）", icon: ui.IcoAI, enabled: true, action: func() { d.openAgentStudio() }},
 		{id: "wine", label: "Wine 兼容层（Windows 程序）", icon: ui.IcoWine, enabled: true, action: func() { d.openWine() }},
 		{sep: true},
 		{id: "notepad", label: d.tr("记事本"), icon: ui.IcoNotepad, enabled: true, action: func() { d.openNotepad("") }},
@@ -604,13 +729,20 @@ func (d *Desktop) programEntries() []startEntry {
 		{id: "pshell", label: "Windows PowerShell", icon: ui.IcoShell, enabled: true, action: func() { d.openPowerShell() }},
 		{id: "ise", label: "Windows PowerShell ISE", icon: ui.IcoISE, enabled: true, action: func() { d.openISE() }},
 		{id: "files", label: d.tr("文件管理器"), icon: ui.IcoFolder, enabled: true, action: func() { d.openFiles("/root") }},
+		{id: "archive", label: "万能压缩（ZIP / 7z / RAR / TAR）", icon: ui.IcoPackage, enabled: true, action: func() { d.openArchiveManager("") }},
 		{id: "browser", label: d.tr("网络浏览器"), icon: ui.IcoBrowser, enabled: true, action: func() { d.openBrowser("") }},
 		{id: "netcenter", label: "网络属性", icon: ui.IcoNetwork, enabled: true, action: func() { d.openNetworkCenter(0) }},
 		{id: "netmon", label: "连接监视器与防火墙", icon: ui.IcoShield, enabled: true, action: func() { d.openNetworkCenter(1) }},
 		{id: "lanshare", label: "局域网快传（手机互传）", icon: ui.IcoShare, enabled: true, action: func() { d.openLANShare() }},
 		{id: "vnc", label: "系统级 VNC 服务器", icon: ui.IcoVNC, enabled: true, action: func() { d.openVNCServer() }},
 		{id: "macro", label: "按键精灵（宏录制）", icon: ui.IcoMacro, enabled: true, action: func() { d.openMacro() }},
+		{id: "screenrecorder", label: d.tr("屏幕录像机"), icon: ui.IcoMacro, enabled: true, action: func() { d.openScreenRecorder() }},
+		{id: "mediaplayer", label: d.tr("媒体播放器"), icon: ui.IcoFile, enabled: true, action: func() { d.openMediaPlayer() }},
 		{id: "taskmgr", label: d.tr("任务管理器"), icon: ui.IcoComputer, enabled: true, action: func() { d.openTaskManager() }},
+		{id: "geekmonitor", label: "硬件资源与传感器", icon: ui.IcoMonitor, enabled: true, action: func() { d.openGeekMonitor() }},
+		{id: "packetsniff", label: "局域网抓包与防火墙", icon: ui.IcoShield, enabled: true, action: func() { d.openPacketSniffer() }},
+		{id: "diskmanager", label: "DiskGenius 风格磁盘管理", icon: ui.IcoComputer, enabled: true, action: func() { d.openDiskManager() }},
+		{id: "snapshots", label: "系统快照与回滚", icon: ui.IcoPackage, enabled: true, action: func() { d.openSnapshotManager() }},
 		{id: "regedit", label: d.tr("注册表编辑器"), icon: ui.IcoSetup, enabled: true, action: func() { d.openRegistryEditor() }},
 		{id: "x11proxy", label: "X11 嵌套代理", icon: ui.IcoComputer, enabled: true, action: func() { d.openX11Proxy("") }},
 		{id: "xfce-desktop", label: "切换到 XFCE 桌面", icon: ui.IcoSetup, enabled: true, action: func() { d.switchToXFCE() }},

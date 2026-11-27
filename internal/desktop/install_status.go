@@ -24,11 +24,13 @@ type InstallStatusApp struct {
 	win      *Window
 	fallback string
 
-	title string
-	pct   int
-	msg   string
-	state string
-	log   []string
+	title      string
+	pct        int
+	msg        string
+	state      string
+	log        []string
+	statusPath string
+	logPath    string
 
 	lastState string
 	closeR    ui.Rect
@@ -36,12 +38,18 @@ type InstallStatusApp struct {
 }
 
 func NewInstallStatusApp(d *Desktop, title string) *InstallStatusApp {
+	return newInstallStatusAppAt(d, title, installStatusPath, installLogPath)
+}
+
+func newInstallStatusAppAt(d *Desktop, title, statusPath, logPath string) *InstallStatusApp {
 	a := &InstallStatusApp{
-		d:        d,
-		fallback: title,
-		msg:      "正在启动安装任务…",
-		state:    "running",
-		pct:      0,
+		d:          d,
+		fallback:   title,
+		msg:        "正在启动安装任务…",
+		state:      "running",
+		pct:        0,
+		statusPath: statusPath,
+		logPath:    logPath,
 	}
 	a.refresh()
 	return a
@@ -72,14 +80,14 @@ func (a *InstallStatusApp) Tick(d *Desktop, w *Window, now time.Time) {
 
 func (a *InstallStatusApp) refresh() bool {
 	changed := false
-	if data, err := os.ReadFile(installStatusPath); err == nil {
+	if data, err := os.ReadFile(a.statusPath); err == nil {
 		title, pct, msg, state := parseInstallStatus(string(data))
 		if title != a.title || pct != a.pct || msg != a.msg || state != a.state {
 			a.title, a.pct, a.msg, a.state = title, pct, msg, state
 			changed = true
 		}
 	}
-	if lines := tailTextLines(installLogPath, installLogLines); !equalStrings(lines, a.log) {
+	if lines := tailTextLines(a.logPath, installLogLines); !equalStrings(lines, a.log) {
 		a.log = lines
 		changed = true
 	}
@@ -203,7 +211,7 @@ func (a *InstallStatusApp) Paint(d *Desktop, w *Window, c *ui.Canvas, r ui.Rect)
 
 	logR := ui.Rect{r.X + 16, r.Y + 120, r.W - 32, r.H - 120 - 50}
 	if logR.H > 16 {
-		c.FillRect(logR, ui.ColWhite)
+		c.FillRect(logR, ui.ColField)
 		c.Sunken(logR)
 		lineH := 16
 		maxLines := (logR.H - 8) / lineH
@@ -264,15 +272,19 @@ func (a *InstallStatusApp) Key(d *Desktop, w *Window, ev KeyEvent) bool {
 // openInstallStatus reuses an existing progress window instead of stacking
 // several copies for a second install.
 func (d *Desktop) openInstallStatus(title string) *InstallStatusApp {
+	return d.openInstallStatusAt(title, installStatusPath, installLogPath)
+}
+
+func (d *Desktop) openInstallStatusAt(title, statusPath, logPath string) *InstallStatusApp {
 	for _, w := range d.windows {
-		if app, ok := w.App.(*InstallStatusApp); ok {
+		if app, ok := w.App.(*InstallStatusApp); ok && app.statusPath == statusPath {
 			d.bringToFront(w)
 			app.refresh()
 			d.Invalidate()
 			return app
 		}
 	}
-	app := NewInstallStatusApp(d, title)
+	app := newInstallStatusAppAt(d, title, statusPath, logPath)
 	w := d.Open(app)
 	app.win = w
 	return app

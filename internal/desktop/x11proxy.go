@@ -8,8 +8,10 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
+	"win95linux/internal/media"
 	"win95linux/internal/ui"
 )
 
@@ -32,6 +34,13 @@ type X11ProxyApp struct {
 	errMsg  string
 	pending []string
 
+	mediaPending  string
+	mediaCmd      *exec.Cmd
+	mediaDone     chan error
+	mediaPath     string
+	mediaErr      string
+	mediaStopping bool
+
 	starting     bool
 	installAsk   bool
 	installMsg   string
@@ -46,12 +55,12 @@ type X11ProxyApp struct {
 	stopOnce  sync.Once
 	captureOn bool
 
-	screenR                           ui.Rect
-	btnTerm, btnFirefox, btnReconnect ui.Rect
-	press                             string
-	lastX, lastY                      int
-	havePointer, down                 bool
-	lastMove                          time.Time
+	screenR                                         ui.Rect
+	btnTerm, btnFirefox, btnReconnect, btnStopMedia ui.Rect
+	press                                           string
+	lastX, lastY                                    int
+	havePointer, down                               bool
+	lastMove                                        time.Time
 }
 
 func NewX11ProxyApp(d *Desktop, pending []string) *X11ProxyApp {
@@ -103,6 +112,12 @@ func (a *X11ProxyApp) attach(sess *x11Session) {
 	a.errMsg = ""
 	a.installMsg = ""
 	a.startCapture()
+	if a.mediaPending != "" {
+		path := a.mediaPending
+		a.mediaPending = ""
+		a.playMedia(path)
+		return
+	}
 	if len(a.pending) > 0 {
 		argv := a.pending
 		a.pending = nil
@@ -130,6 +145,7 @@ func (a *X11ProxyApp) askInstall() {
 			if i != 0 {
 				a.installAsk = false
 				a.pending = nil
+				a.mediaPending = ""
 				if a.sess != nil {
 					a.state = x11StateReady
 					a.errMsg = ""
@@ -284,9 +300,13 @@ func (a *X11ProxyApp) stopCapture() {
 
 func (a *X11ProxyApp) Close() {
 	a.stopCapture()
+	a.stopMedia("")
 }
 
-func (a *X11ProxyApp) Resized(d *Desktop, w *Window, client ui.Rect) {}
+func (a *X11ProxyApp) Resized(d *Desktop, w *Window, client ui.Rect) {
+	a.screenR = ui.Rect{}
+	d.Invalidate()
+}
 
 func (a *X11ProxyApp) Paint(d *Desktop, w *Window, c *ui.Canvas, r ui.Rect) {
 	a.win = w
@@ -297,9 +317,11 @@ func (a *X11ProxyApp) Paint(d *Desktop, w *Window, c *ui.Canvas, r ui.Rect) {
 	a.btnTerm = ui.Rect{r.X + 4, ty, 88, 24}
 	a.btnFirefox = ui.Rect{a.btnTerm.Right() + 4, ty, 88, 24}
 	a.btnReconnect = ui.Rect{a.btnFirefox.Right() + 10, ty, 82, 24}
+	a.btnStopMedia = ui.Rect{a.btnReconnect.Right() + 6, ty, 88, 24}
 	ui.Button(c, a.btnTerm, "新建终端", a.press == "term", a.sess != nil)
 	ui.Button(c, a.btnFirefox, "Firefox", a.press == "firefox", a.sess != nil)
 	ui.Button(c, a.btnReconnect, "重新连接", a.press == "retry", a.state != x11StateStarting)
+	ui.Button(c, a.btnStopMedia, d.tr("停止播放"), a.press == "media-stop", a.mediaCmd != nil)
 	switch a.state {
 	case x11StateReady:
 		f.TextRight(c, r.Right()-8, ty+4, "Xvfb :1 · 1024×768 · 点击画面即可操作", ui.ColShadow)
@@ -430,7 +452,14 @@ func (a *X11ProxyApp) statusBar(c *ui.Canvas, f *ui.Font, r ui.Rect, statusH int
 	case x11StateFailed:
 		text = "错误：" + oneLine(a.errMsg)
 	case x11StateReady:
-		if a.pending == nil {
+		switch {
+		case a.mediaStopping:
+			text = a.d.tr("正在停止播放…")
+		case a.mediaCmd != nil:
+			text = fmt.Sprintf(a.d.tr("正在播放：%s"), filepath.Base(a.mediaPath))
+		case a.mediaErr != "":
+			text = a.d.tr("播放已停止：") + oneLine(a.mediaErr)
+		default:
 			text = "Xvfb :1 · 鼠标和键盘已转发到虚拟桌面"
 		}
 	}
@@ -501,6 +530,8 @@ func (a *X11ProxyApp) Mouse(d *Desktop, w *Window, client ui.Rect, ev MouseEvent
 			a.press = "firefox"
 		case a.btnReconnect.Contains(ev.X, ev.Y):
 			a.press = "retry"
+		case a.btnStopMedia.Contains(ev.X, ev.Y):
+			a.press = "media-stop"
 		default:
 			if a.state == x11StateReady && a.sess != nil {
 				if sx, sy, ok := a.toX11(ev.X, ev.Y); ok {
@@ -540,6 +571,10 @@ func (a *X11ProxyApp) Mouse(d *Desktop, w *Window, client ui.Rect, ev MouseEvent
 			if a.btnReconnect.Contains(ev.X, ev.Y) {
 				a.reconnect()
 			}
+		case "media-stop":
+			if a.btnStopMedia.Contains(ev.X, ev.Y) {
+				a.stopMedia("")
+			}
 		}
 	}
 }
@@ -568,11 +603,121 @@ func (a *X11ProxyApp) reconnect() {
 	a.state = x11StateStarting
 	a.errMsg = ""
 	a.installAsk = false
+	a.mediaPending = ""
+	a.stopMedia("")
 	if a.sess != nil {
 		a.stopCapture()
 		a.sess = nil
 	}
 	a.begin()
+}
+
+func (a *X11ProxyApp) playMedia(path string) {
+	if err := media.ValidateMediaFile(path); err != nil {
+		a.d.MessageBox(a.d.tr("媒体播放器"), err.Error(), IconError, []string{a.d.tr("确定")}, nil)
+		return
+	}
+	a.pending = nil
+	a.mediaErr = ""
+	if a.state != x11StateReady || a.sess == nil {
+		a.mediaPending = path
+		return
+	}
+	a.stopMedia(path)
+}
+
+func (a *X11ProxyApp) launchMedia(path string) {
+	if a.state != x11StateReady || a.sess == nil {
+		a.mediaPending = path
+		return
+	}
+	cmd, err := a.sess.LaunchProcess("ffplay", media.FFplayArgs(path)...)
+	if err != nil {
+		var missing *x11AppMissingError
+		if errors.As(err, &missing) {
+			a.mediaPending = path
+			a.installAsk = false
+			a.askInstall()
+			return
+		}
+		a.mediaErr = err.Error()
+		a.d.MessageBox(a.d.tr("媒体播放器"), a.d.tr("无法启动播放器：")+err.Error(), IconError, []string{a.d.tr("确定")}, nil)
+		a.d.Invalidate()
+		return
+	}
+	a.mediaCmd = cmd
+	a.mediaPath = path
+	a.mediaDone = make(chan error, 1)
+	done := a.mediaDone
+	go func() {
+		err := cmd.Wait()
+		done <- err
+		a.d.Post(func() {
+			if a.mediaCmd != cmd {
+				return
+			}
+			if !a.mediaStopping {
+				a.mediaCmd = nil
+				a.mediaDone = nil
+				a.mediaPath = ""
+				if err != nil {
+					a.mediaErr = err.Error()
+				}
+			}
+			a.d.Invalidate()
+		})
+	}()
+	a.d.Invalidate()
+}
+
+func (a *X11ProxyApp) stopMedia(next string) {
+	if next == "" {
+		a.mediaPending = ""
+	}
+	if a.mediaStopping {
+		if next != "" {
+			a.mediaPending = next
+		}
+		return
+	}
+	cmd := a.mediaCmd
+	if cmd == nil {
+		if next != "" {
+			a.launchMedia(next)
+		}
+		return
+	}
+	a.mediaStopping = true
+	a.mediaPending = next
+	a.mediaErr = ""
+	done := a.mediaDone
+	_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGTERM)
+	go func() {
+		select {
+		case <-done:
+		case <-time.After(2 * time.Second):
+			_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+			select {
+			case <-done:
+			case <-time.After(time.Second):
+			}
+		}
+		a.d.Post(func() {
+			if a.mediaCmd == cmd {
+				a.mediaCmd = nil
+				a.mediaDone = nil
+				a.mediaPath = ""
+			}
+			a.mediaStopping = false
+			next := a.mediaPending
+			a.mediaPending = ""
+			if next != "" && a.state == x11StateReady && a.sess != nil {
+				a.launchMedia(next)
+			}
+			a.d.Invalidate()
+		})
+	}()
+	a.d.Invalidate()
 }
 
 func (a *X11ProxyApp) launch(app string) {
@@ -657,6 +802,26 @@ func (d *Desktop) openX11ProxyArgs(app string, args []string) {
 	d.x11ProxyWindow(app, args)
 }
 
+func (d *Desktop) openMediaFile(path string) {
+	if err := media.ValidateMediaFile(path); err != nil {
+		d.MessageBox(d.tr("媒体播放器"), err.Error(), IconError, []string{d.tr("确定")}, nil)
+		return
+	}
+	d.x11ProxyWindow("", nil).playMedia(path)
+}
+
+func (d *Desktop) openMediaPlayer() {
+	dir := media.DefaultOutputDir
+	if st, err := os.Stat(dir); err != nil || !st.IsDir() {
+		dir = "/root/下载"
+	}
+	d.FileDialog(FileOpen, dir, "", func(path string, ok bool) {
+		if ok && path != "" {
+			d.openMediaFile(path)
+		}
+	})
+}
+
 func (d *Desktop) x11ProxyWindow(app string, args []string) *X11ProxyApp {
 	for _, w := range d.windows {
 		if proxy, ok := w.App.(*X11ProxyApp); ok {
@@ -686,6 +851,7 @@ func (a *X11ProxyApp) ContextMenu(d *Desktop, w *Window, x, y int) []ctxItem {
 	return []ctxItem{
 		{label: "新建终端(T)", icon: ui.IcoTerminal, enabled: a.state == x11StateReady, action: func() { a.launch("xfce4-terminal") }},
 		{label: "Firefox(B)", icon: ui.IcoBrowser, enabled: a.state == x11StateReady, action: func() { a.launch("firefox") }},
+		{label: a.d.tr("停止播放"), enabled: a.mediaCmd != nil, action: func() { a.stopMedia("") }},
 		{sep: true},
 		{label: "重新连接(R)", enabled: a.state != x11StateStarting, action: func() { a.reconnect() }},
 	}

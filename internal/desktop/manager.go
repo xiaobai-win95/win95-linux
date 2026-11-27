@@ -16,6 +16,10 @@ type Desktop struct {
 	Mode Mode
 	Host Host
 
+	displayMode         DisplayMode
+	displayRequested    DisplayMode
+	displayRequestedSet bool
+
 	windows []*Window
 	active  *Window
 	modal   *Window
@@ -25,11 +29,16 @@ type Desktop struct {
 	mouseDown      bool
 	capture        *Window
 	hand           bool
+	resizeCursor   string
 
-	startOpen  bool
-	startHover string
-	startSub   string
-	startSel   string
+	startOpen          bool
+	startHover         string
+	startSub           string
+	startSel           string
+	startScroll        int
+	startSubScroll     int
+	startSubDrag       bool
+	startSubDragOffset int
 
 	ws           int
 	wsToast      string
@@ -95,7 +104,8 @@ type Desktop struct {
 	netChecking bool
 	fileDrag    *fileDrag
 
-	sk *softKeyboard
+	sk  *softKeyboard
+	ime pinyinState
 
 	nuke     bool
 	nukeAt   time.Time
@@ -120,31 +130,43 @@ func New(width, height int, mode Mode, host Host) *Desktop {
 		loc = time.Local
 	}
 	d := &Desktop{
-		W:             width,
-		H:             height,
-		Mode:          mode,
-		Host:          host,
-		MouseX:        width / 2,
-		MouseY:        height / 2,
-		selected:      -1,
-		lastIcon:      -1,
-		dragIcon:      -1,
-		autoArrange:   true,
-		iconPositions: map[string]iconPoint{},
-		clockLoc:      loc,
-		clockZone:     "Asia/Shanghai",
-		lang:          "zh-CN",
-		lastInput:     time.Now(),
-		saverStyle:    saverMystify,
-		saverWait:     saverIdleDefault,
+		W:                width,
+		H:                height,
+		Mode:             mode,
+		Host:             host,
+		displayMode:      DisplayMode{Width: width, Height: height, Refresh: 60},
+		displayRequested: DisplayMode{Width: width, Height: height, Refresh: 60},
+		MouseX:           width / 2,
+		MouseY:           height / 2,
+		selected:         -1,
+		lastIcon:         -1,
+		dragIcon:         -1,
+		autoArrange:      true,
+		iconPositions:    map[string]iconPoint{},
+		clockLoc:         loc,
+		clockZone:        "Asia/Shanghai",
+		lang:             "zh-CN",
+		lastInput:        time.Now(),
+		saverStyle:       saverMystify,
+		saverWait:        saverIdleDefault,
 	}
 	d.clock = time.Now().In(loc).Format("15:04")
 	d.loadPrefs()
 	d.loadWin95INI()
+	if d.Host.CurrentDisplayMode != nil {
+		d.displayMode = d.Host.CurrentDisplayMode().Normalized()
+	}
+	if !d.displayRequestedSet {
+		d.displayRequested = d.displayMode
+	}
 	ui.ApplyPalette(ui.Palettes[d.theme])
 	d.clock = d.formatClock(time.Now())
 	d.sampleSystem()
 	d.setupShell()
+	if d.displayRequestedSet && d.displayRequested != d.displayMode && d.Host.SetDisplayMode != nil {
+		requested := d.displayRequested
+		d.Post(func() { d.applyDisplayMode(requested, false) })
+	}
 	d.Invalidate()
 	return d
 }

@@ -216,9 +216,9 @@ func (a *RegistryApp) Paint(d *Desktop, w *Window, c *ui.Canvas, r ui.Rect) {
 	treeW := 210
 	a.treeR = ui.Rect{r.X + 4, bodyY, treeW, bodyH}
 	a.valuesR = ui.Rect{a.treeR.Right() + 5, bodyY, r.W - treeW - 13, bodyH}
-	c.FillRect(a.treeR, ui.ColWhite)
+	c.FillRect(a.treeR, ui.ColField)
 	c.Sunken(a.treeR)
-	c.FillRect(a.valuesR, ui.ColWhite)
+	c.FillRect(a.valuesR, ui.ColField)
 	c.Sunken(a.valuesR)
 
 	a.paintTree(c, f)
@@ -257,7 +257,7 @@ func (a *RegistryApp) paintTree(c *ui.Canvas, f *ui.Font) {
 		x := inner.X + 4 + a.depths[i]*16
 		if len(n.children) > 0 {
 			tb := ui.Rect{x, y + 5, 9, 9}
-			c.FillRect(tb, ui.ColWhite)
+			c.FillRect(tb, ui.ColField)
 			c.Frame(tb, ui.ColShadow)
 			c.HLine(tb.X+2, tb.Y+4, tb.W-4, ui.ColText)
 			if !n.expanded {

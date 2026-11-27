@@ -9,9 +9,9 @@
 # The file lives in /run so it survives foreground/background hand-offs but
 # never becomes stale across a reboot.
 
-STATUS=/run/win95-install.status
-LOGFILE=/run/win95-install.log
-mkdir -p /run 2>/dev/null
+STATUS=${WIN95_INSTALL_STATUS:-/run/win95-install.status}
+LOGFILE=${WIN95_INSTALL_LOG:-/run/win95-install.log}
+mkdir -p "$(dirname "$STATUS")" "$(dirname "$LOGFILE")" 2>/dev/null
 
 current_title() {
 	sed -n 's/^title=//p' "$STATUS" 2>/dev/null | head -n 1
@@ -28,6 +28,11 @@ write_status() {
 		printf 'pct=%s\n' "$_pct"
 		printf 'msg=%s\n' "$_msg"
 		printf 'state=%s\n' "$_state"
+		printf 'job=%s\n' "${WIN95_INSTALL_JOB:-}"
+		printf 'run_id=%s\n' "${WIN95_INSTALL_RUN_ID:-}"
+		printf 'pid=%s\n' "${WIN95_INSTALL_PID:-}"
+		printf 'started=%s\n' "${WIN95_INSTALL_STARTED:-}"
+		printf 'packages=%s\n' "${WIN95_INSTALL_PACKAGES:-}"
 	} >"$_tmp" 2>/dev/null || return 1
 	mv -f "$_tmp" "$STATUS" 2>/dev/null || rm -f "$_tmp"
 	# Keep a short phase history for the log pane, avoiding duplicates from

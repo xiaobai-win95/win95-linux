@@ -113,17 +113,19 @@ func (d *Desktop) drawNotifications(c *ui.Canvas) {
 	r := ui.Rect{x, y, width, h}
 	d.noticeRect = r
 	c.FillRect(ui.Rect{r.X + 2, r.Y + 2, r.W, r.H}, ui.ColShadow)
-	c.FillRect(r, 0xFFFFE1)
+	bg := ui.ColYellow
+	fg := ui.TextOn(bg)
+	c.FillRect(r, bg)
 	c.Frame(r, ui.ColDark)
-	f.TextBold(c, r.X+10, r.Y+8, n.title, ui.ColText)
-	f.Text(c, r.Right()-20, r.Y+6, "×", ui.ColText)
+	f.TextBold(c, r.X+10, r.Y+8, n.title, fg)
+	f.Text(c, r.Right()-20, r.Y+6, "×", fg)
 	yy := r.Y + 30
 	for _, line := range lines {
-		f.TextClip(c, r.X+10, yy, r.W-20, line, ui.ColText)
+		f.TextClip(c, r.X+10, yy, r.W-20, line, fg)
 		yy += 20
 	}
 	// A small tail points at the tray area.
-	c.FillRect(ui.Rect{r.Right() - 34, r.Bottom(), 10, 2}, 0xFFFFE1)
-	c.FillRect(ui.Rect{r.Right() - 33, r.Bottom() + 2, 8, 2}, 0xFFFFE1)
-	c.FillRect(ui.Rect{r.Right() - 31, r.Bottom() + 4, 4, 2}, 0xFFFFE1)
+	c.FillRect(ui.Rect{r.Right() - 34, r.Bottom(), 10, 2}, bg)
+	c.FillRect(ui.Rect{r.Right() - 33, r.Bottom() + 2, 8, 2}, bg)
+	c.FillRect(ui.Rect{r.Right() - 31, r.Bottom() + 4, 4, 2}, bg)
 }

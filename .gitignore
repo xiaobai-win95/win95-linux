@@ -12,7 +12,8 @@ out/*
 !out/UTM配置说明.md
 
 # 上游下载缓存（约 227 MB，GitHub 单文件上限 100 MB）
-assets/cache/
+assets/cache/*
+!assets/cache/media-apks.sha256
 
 # 与 internal/ui/fontdata.bin 内容相同的生成副本
 assets/font/

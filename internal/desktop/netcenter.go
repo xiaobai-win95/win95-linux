@@ -692,7 +692,7 @@ func (a *NetworkCenterApp) startDNS(d *Desktop) {
 
 func (a *NetworkCenterApp) statusTabPaint(d *Desktop, c *ui.Canvas, f *ui.Font, r ui.Rect) {
 	info := ui.Rect{r.X + 12, r.Y + 38, r.W - 24, 128}
-	c.FillRect(info, ui.ColWhite)
+	c.FillRect(info, ui.ColField)
 	c.Sunken(info)
 	lines := []string{
 		"主机名：" + a.hostname + "        网络状态：" + netStateText(d.netState),
@@ -725,7 +725,7 @@ func (a *NetworkCenterApp) statusTabPaint(d *Desktop, c *ui.Canvas, f *ui.Font, 
 	rowY := info.Bottom() + 10
 	f.Text(c, r.X+12, rowY+4, "目标：", ui.ColText)
 	a.fieldR = ui.Rect{r.X + 58, rowY, r.W - 58 - 210, 24}
-	c.FillRect(a.fieldR, ui.ColWhite)
+	c.FillRect(a.fieldR, ui.ColField)
 	c.Sunken(a.fieldR)
 	if len(a.target) == 0 {
 		f.Text(c, a.fieldR.X+5, a.fieldR.Y+4, "主机名或 IP", ui.ColShadow)
@@ -755,7 +755,7 @@ func (a *NetworkCenterApp) statusTabPaint(d *Desktop, c *ui.Canvas, f *ui.Font, 
 		return
 	}
 	a.resR = res
-	c.FillRect(res, ui.ColWhite)
+	c.FillRect(res, ui.ColField)
 	c.Sunken(res)
 	inner := res.Inset(2)
 	f.Text(c, inner.X+3, inner.Y+2, "测试结果", ui.ColShadow)
@@ -791,7 +791,7 @@ func (a *NetworkCenterApp) connsTabPaint(d *Desktop, c *ui.Canvas, f *ui.Font, r
 		return
 	}
 	a.connR = list
-	c.FillRect(list, ui.ColWhite)
+	c.FillRect(list, ui.ColField)
 	c.Sunken(list)
 	inner := list.Inset(2)
 	scrollW := 16

@@ -34,6 +34,11 @@ func (d *Desktop) Mouse(ev MouseEvent) {
 	d.MouseX, d.MouseY = gx, gy
 	d.hand = false
 
+	if d.imeMouse(ev) {
+		d.Invalidate()
+		return
+	}
+
 	if ev.Kind == MouseDown && ev.Button == 1 && len(d.notices) > 0 && d.noticeRect.Contains(gx, gy) {
 		d.dismissNotice()
 		return
@@ -58,6 +63,17 @@ func (d *Desktop) Mouse(ev MouseEvent) {
 			return
 		}
 		if d.startOpen {
+			if d.startSub != "" {
+				for i, e := range d.menuEntries() {
+					if e.id == d.startSub && len(e.children) > 0 && d.startSubRect(d.startItemRects()[i], e).Contains(gx, gy) {
+						d.scrollStartSub(-ev.Wheel * 54)
+						return
+					}
+				}
+			}
+			if d.startMenuRect().Contains(gx, gy) {
+				d.scrollStart(-ev.Wheel * 54)
+			}
 			return
 		}
 		if w := d.windowAt(gx, gy); w != nil {
@@ -220,25 +236,26 @@ func (d *Desktop) mouseMove(ev MouseEvent) {
 		if w.resizing {
 			dx := ev.X - w.resizeX
 			dy := ev.Y - w.resizeY
-			nw := w.restore.W + dx
-			nh := w.restore.H + dy
-			if nw < w.MinW {
-				nw = w.MinW
-			}
-			if nh < w.MinH {
-				nh = w.MinH
-			}
-			if w.X+nw > d.W {
-				nw = d.W - w.X
-			}
-			if w.Y+nh > d.taskbarTop() {
-				nh = d.taskbarTop() - w.Y
-			}
-			w.W, w.H = nw, nh
+			r := resizeWindowBounds(w.restore, w.resizeDir, dx, dy, w.MinW, w.MinH, d.W, d.taskbarTop())
+			w.X, w.Y, w.W, w.H = r.X, r.Y, r.W, r.H
 			w.App.Resized(d, w, w.ClientRect())
 			d.Invalidate()
 			return
 		}
+	}
+
+	oldCursor := d.resizeCursor
+	d.resizeCursor = ""
+	if !d.mouseDown {
+		if w := d.windowAt(ev.X, ev.Y); w != nil {
+			d.resizeCursor = w.resizeEdgeAt(ev.X, ev.Y).cursor()
+		}
+	}
+	if d.resizeCursor != oldCursor {
+		d.Invalidate()
+	}
+	if d.resizeCursor != "" {
+		return
 	}
 
 	if w := d.active; w != nil && w.menuOpen >= 0 && !w.Minimized {
@@ -276,6 +293,8 @@ func (d *Desktop) mouseUp(ev MouseEvent) {
 		}
 		if w.resizing {
 			w.resizing = false
+			w.resizeDir = resizeNone
+			d.resizeCursor = ""
 			w.App.Resized(d, w, w.ClientRect())
 		}
 		if w.pressedBtn != "" {
@@ -399,16 +418,14 @@ func (d *Desktop) mouseWindow(w *Window, ev MouseEvent, modal bool) {
 				return
 			}
 		}
-		if w.Resizable && !w.Maximized {
-			grip := ui.Rect{w.X + w.W - 18, w.Y + w.H - 18, 18, 18}
-			if grip.Contains(gx, gy) {
-				w.resizing = true
-				w.tiled = false
-				w.resizeX, w.resizeY = gx, gy
-				w.restore = ui.Rect{w.X, w.Y, w.W, w.H}
-				d.capture = w
-				return
-			}
+		if dir := w.resizeEdgeAt(gx, gy); dir != resizeNone {
+			w.resizing = true
+			w.resizeDir = dir
+			w.tiled = false
+			w.resizeX, w.resizeY = gx, gy
+			w.restore = ui.Rect{w.X, w.Y, w.W, w.H}
+			d.capture = w
+			return
 		}
 		if w.TitleRect().Contains(gx, gy) {
 			if time.Since(w.titleClick) < 450*time.Millisecond {
@@ -446,6 +463,9 @@ func (d *Desktop) mouseTaskbar(x, y int) {
 		d.startSub = ""
 		d.startSel = ""
 		d.startHover = ""
+		d.startScroll = 0
+		d.startSubScroll = 0
+		d.startSubDrag = false
 		d.closeMenusExcept(nil)
 		d.Invalidate()
 		return
@@ -463,6 +483,10 @@ func (d *Desktop) mouseTaskbar(x, y int) {
 	}
 	if d.lanTrayRect().Contains(x, y) {
 		d.openLANShare()
+		return
+	}
+	if d.imeTrayRect().Contains(x, y) {
+		d.toggleIME()
 		return
 	}
 	if d.sysTrayRect().Contains(x, y) {
@@ -515,6 +539,33 @@ func (d *Desktop) toggleMax(w *Window) {
 
 func (d *Desktop) mouseStart(ev MouseEvent) {
 	gx, gy := ev.X, ev.Y
+	if ev.Kind == MouseMove && d.startSubDrag {
+		d.dragStartSubTo(gy)
+		return
+	}
+	if ev.Kind == MouseUp {
+		d.startSubDrag = false
+		d.mouseDown = false
+		return
+	}
+	if ev.Kind == MouseDown {
+		if bar, thumb, _, ok := d.startSubScrollbar(); ok && bar.Contains(gx, gy) {
+			switch {
+			case gy < bar.Y+18:
+				d.scrollStartSub(-26)
+			case gy >= bar.Bottom()-18:
+				d.scrollStartSub(26)
+			case thumb.Contains(gx, gy):
+				d.startSubDrag = true
+				d.startSubDragOffset = gy - thumb.Y
+			default:
+				d.startSubDrag = true
+				d.startSubDragOffset = thumb.H / 2
+				d.dragStartSubTo(gy)
+			}
+			return
+		}
+	}
 	if ev.Kind == MouseMove {
 		if sub, id := d.startSubAt(gx, gy); sub != "" {
 			d.startHover = id
@@ -524,7 +575,7 @@ func (d *Desktop) mouseStart(ev MouseEvent) {
 			d.startSel = id
 			e := d.findStart(id)
 			if e != nil && len(e.children) > 0 {
-				d.startSub = id
+				d.setStartSub(id)
 			}
 			return
 		}
@@ -572,7 +623,7 @@ func (d *Desktop) mouseStart(ev MouseEvent) {
 				return
 			}
 			if len(e.children) > 0 {
-				d.startSub = id
+				d.setStartSub(id)
 				d.startSel = id
 				return
 			}
@@ -765,6 +816,10 @@ func (d *Desktop) Key(ev KeyEvent) {
 		return
 	}
 	d.lastInput = time.Now()
+	if d.imeHandle(ev) {
+		d.Invalidate()
+		return
+	}
 	d.macroRecordKey(ev)
 	if d.spotlight != nil && d.spotlight.active {
 		if ev.Ctrl && !ev.Alt && (ev.Name == "Space" || ev.Rune == ' ') {

@@ -92,9 +92,9 @@ func ApplyPalette(p Palette) {
 	ColNavy = p.Navy
 	ColNavyLight = p.NavyLight
 	ColTitleInac = p.TitleInac
-	ColText = p.Text
-	ColTextDis = p.TextDis
 	ColField = p.Field
+	ColText = EnsureContrastPair(p.Text, p.Face, p.Field)
+	ColTextDis = EnsureContrastPair(p.TextDis, p.Face, p.Field)
 	ColYellow = p.Yellow
 	ColGreen = p.Green
 	ColRed = p.Red

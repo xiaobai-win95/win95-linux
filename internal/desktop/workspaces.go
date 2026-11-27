@@ -136,7 +136,7 @@ func (d *Desktop) drawWorkspaceToast(c *ui.Canvas) {
 		if i == d.ws {
 			c.FillRect(br, ui.ColNavy)
 		} else {
-			c.FillRect(br, ui.ColWhite)
+			c.FillRect(br, ui.ColField)
 			c.Frame(br, ui.ColShadow)
 		}
 	}

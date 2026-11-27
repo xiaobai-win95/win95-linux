@@ -13,11 +13,75 @@ const (
 	ModeInstaller
 )
 
+type DisplayMode struct {
+	Width    int
+	Height   int
+	Refresh  int
+	Rotation int
+}
+
+func (m DisplayMode) Normalized() DisplayMode {
+	if m.Width < 640 {
+		m.Width = 640
+	}
+	if m.Height < 480 {
+		m.Height = 480
+	}
+	if m.Refresh < 24 || m.Refresh > 240 {
+		m.Refresh = 60
+	}
+	m.Rotation %= 360
+	if m.Rotation < 0 {
+		m.Rotation += 360
+	}
+	if m.Rotation%90 != 0 {
+		m.Rotation = 0
+	}
+	return m
+}
+
+func (m DisplayMode) LogicalSize() (int, int) {
+	m = m.Normalized()
+	if m.Rotation == 90 || m.Rotation == 270 {
+		return m.Height, m.Width
+	}
+	return m.Width, m.Height
+}
+
+func (m DisplayMode) LogicalPoint(x, y, physicalW, physicalH int) (int, int) {
+	switch m.Normalized().Rotation {
+	case 90:
+		return physicalH - 1 - y, x
+	case 180:
+		return physicalW - 1 - x, physicalH - 1 - y
+	case 270:
+		return y, physicalW - 1 - x
+	default:
+		return x, y
+	}
+}
+
+func (m DisplayMode) PhysicalPoint(x, y, physicalW, physicalH int) (int, int) {
+	switch m.Normalized().Rotation {
+	case 90:
+		return y, physicalH - 1 - x
+	case 180:
+		return physicalW - 1 - x, physicalH - 1 - y
+	case 270:
+		return physicalW - 1 - y, x
+	default:
+		return x, y
+	}
+}
+
 // Host connects the UI to machine-level actions such as power management.
 type Host struct {
-	Reboot   func()
-	PowerOff func()
-	Logout   func()
+	Reboot             func()
+	PowerOff           func()
+	Logout             func()
+	SetDisplayMode     func(DisplayMode) (DisplayMode, error)
+	CurrentDisplayMode func() DisplayMode
+	AvailableDisplays  func() []DisplayMode
 	// Suspend blocks until the machine wakes from sleep. The desktop has
 	// already painted its sleep screen when this is called.
 	Suspend func() error
@@ -140,6 +204,7 @@ type Window struct {
 	dragDX     int
 	dragDY     int
 	resizing   bool
+	resizeDir  resizeDirection
 	resizeX    int
 	resizeY    int
 	titleClick time.Time
@@ -182,3 +247,94 @@ func (w *Window) ClientRect() ui.Rect {
 }
 
 func (w *Window) Outer() ui.Rect { return ui.Rect{X: w.X, Y: w.Y, W: w.W, H: w.H} }
+
+type resizeDirection uint8
+
+const (
+	resizeNone resizeDirection = iota
+	resizeLeft
+	resizeRight
+	resizeTop
+	resizeBottom
+	resizeTopLeft
+	resizeTopRight
+	resizeBottomLeft
+	resizeBottomRight
+)
+
+func (w *Window) resizeEdgeAt(x, y int) resizeDirection {
+	if !w.Resizable || w.Maximized || w.Minimized || !w.Outer().Contains(x, y) {
+		return resizeNone
+	}
+	const edge = 5
+	left := x < w.X+edge
+	right := x >= w.X+w.W-edge
+	top := y < w.Y+edge
+	bottom := y >= w.Y+w.H-edge
+	switch {
+	case left && top:
+		return resizeTopLeft
+	case right && top:
+		return resizeTopRight
+	case left && bottom:
+		return resizeBottomLeft
+	case right && bottom:
+		return resizeBottomRight
+	case left:
+		return resizeLeft
+	case right:
+		return resizeRight
+	case top:
+		return resizeTop
+	case bottom:
+		return resizeBottom
+	default:
+		return resizeNone
+	}
+}
+
+func (r resizeDirection) cursor() string {
+	switch r {
+	case resizeLeft, resizeRight:
+		return "ew"
+	case resizeTop, resizeBottom:
+		return "ns"
+	case resizeTopLeft, resizeBottomRight:
+		return "nwse"
+	case resizeTopRight, resizeBottomLeft:
+		return "nesw"
+	default:
+		return ""
+	}
+}
+
+func resizeWindowBounds(start ui.Rect, dir resizeDirection, dx, dy, minW, minH, maxW, maxH int) ui.Rect {
+	r := start
+	switch dir {
+	case resizeLeft:
+		x := start.X + dx
+		x = maxInt(0, minInt(x, start.Right()-minW))
+		r.X, r.W = x, start.Right()-x
+	case resizeRight:
+		r.W = maxInt(minW, minInt(start.W+dx, maxW-start.X))
+	case resizeTop:
+		y := start.Y + dy
+		y = maxInt(0, minInt(y, start.Bottom()-minH))
+		r.Y, r.H = y, start.Bottom()-y
+	case resizeBottom:
+		r.H = maxInt(minH, minInt(start.H+dy, maxH-start.Y))
+	case resizeTopLeft:
+		r = resizeWindowBounds(start, resizeLeft, dx, 0, minW, minH, maxW, maxH)
+		r = resizeWindowBounds(r, resizeTop, 0, dy, minW, minH, maxW, maxH)
+	case resizeTopRight:
+		r = resizeWindowBounds(start, resizeRight, dx, 0, minW, minH, maxW, maxH)
+		r = resizeWindowBounds(r, resizeTop, 0, dy, minW, minH, maxW, maxH)
+	case resizeBottomLeft:
+		r = resizeWindowBounds(start, resizeLeft, dx, 0, minW, minH, maxW, maxH)
+		r = resizeWindowBounds(r, resizeBottom, 0, dy, minW, minH, maxW, maxH)
+	case resizeBottomRight:
+		r = resizeWindowBounds(start, resizeRight, dx, 0, minW, minH, maxW, maxH)
+		r = resizeWindowBounds(r, resizeBottom, 0, dy, minW, minH, maxW, maxH)
+	}
+	return r
+}

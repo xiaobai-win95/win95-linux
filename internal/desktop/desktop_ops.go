@@ -799,7 +799,7 @@ func (d *Desktop) taskbarButtons() []taskButton {
 	sort.SliceStable(wins, func(i, j int) bool { return wins[i].created.Before(wins[j].created) })
 	top := d.taskbarTop()
 	lan := d.lanTrayRect()
-	avail := lan.X - 6 - 8
+	avail := d.imeTrayRect().X - 6 - 8
 	n := len(wins)
 	bw := 160
 	if n > 0 {
